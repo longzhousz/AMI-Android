@@ -3,18 +3,16 @@ package com.longzhousz.ami.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -24,13 +22,12 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -83,7 +80,7 @@ import com.longzhousz.ami.core.durationLabel
                     if (current != null) MiniPlayer(current, playback.playing, playback.buffering, playback.position, playback.duration,
                         onOpen = { fullPlayer = true }, onToggle = { model.act("player.toggle") { model.player.toggle() } }, onNext = { model.act("player.next") { model.player.next() } })
                     NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 0.dp) {
-                        listOf(Triple("音乐馆", Icons.Rounded.Album, 0), Triple("我喜欢", Icons.Rounded.FavoriteBorder, 1), Triple("设置", Icons.Rounded.Tune, 2)).forEach { (label, icon, index) ->
+                        listOf(Triple("曲库", Icons.Rounded.Album, 0), Triple("我喜欢", Icons.Rounded.FavoriteBorder, 1), Triple("设置", Icons.Rounded.Tune, 2)).forEach { (label, icon, index) ->
                             NavigationBarItem(page == index, { page = index; albumKey = null }, { Icon(icon, label) }, label = { Text(label) })
                         }
                     }
@@ -105,7 +102,7 @@ import com.longzhousz.ami.core.durationLabel
                     selectedAlbum != null -> AlbumScreen(selectedAlbum, playback.id, model, { albumKey = null }, { remove = it })
                     page == 2 -> SettingsScreen(model, onImport, onNotifications, onBridgeFolder, onLyricsFolder)
                     else -> pageState.SaveableStateProvider("library-$page") {
-                        LibraryScreen(songs, albums, loading, page == 1, playback.id, onImport,
+                        LibraryScreen(songs, albums, loading, page == 1, playback.id, { page = 2 },
                             onAlbum = { albumKey = it.key }, onPlay = { list, index -> model.play(list, index) }, onFavorite = model::favorite, onRemove = { remove = it })
                     }
                 }
@@ -133,12 +130,14 @@ import com.longzhousz.ami.core.durationLabel
 }
 
 @Composable private fun LibraryScreen(
-    songs: List<Song>, albums: List<Album>, loading: Boolean, favorites: Boolean, currentId: String?, onImport: () -> Unit,
+    songs: List<Song>, albums: List<Album>, loading: Boolean, favorites: Boolean, currentId: String?, onSettings: () -> Unit,
     onAlbum: (Album) -> Unit, onPlay: (List<Song>, Int) -> Unit, onFavorite: (Song) -> Unit, onRemove: (Song) -> Unit,
 ) {
     var query by rememberSaveable(favorites) { mutableStateOf("") }
-    var mode by rememberSaveable { mutableIntStateOf(0) }
+    var mode by rememberSaveable { mutableIntStateOf(1) }
     var recent by rememberSaveable { mutableStateOf(false) }
+    var sorting by remember { mutableStateOf(false) }
+    val focus = LocalFocusManager.current
     val filteredSongs = remember(songs, query, favorites, recent) {
         val filtered = songs.filter { (!favorites || it.favorite) && "${it.title} ${it.album} ${it.artist}".contains(query.trim(), true) }
         if (recent) filtered.sortedByDescending { it.importedAt } else filtered
@@ -148,40 +147,31 @@ import com.longzhousz.ami.core.durationLabel
         if (recent) filtered.sortedByDescending { it.songs.maxOf { song -> song.importedAt } } else filtered
     }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(start = 24.dp, top = 12.dp, end = 16.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(if (favorites) "我喜欢" else "AMI", fontWeight = FontWeight.ExtraBold, fontSize = 29.sp, letterSpacing = if (favorites) 0.sp else 3.sp)
-                Text(if (favorites) "每一首，都是心之所向" else "私人音乐馆  /  YOUR PRIVATE COLLECTION", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = if (favorites) 12.sp else 9.sp, letterSpacing = .5.sp)
-            }
-            FilledTonalIconButton(onImport, Modifier.size(44.dp)) { Icon(Icons.Rounded.Add, "导入音乐文件夹") }
-        }
-        OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 24.dp), placeholder = { Text("搜索专辑、歌曲、艺人") },
+        OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).testTag("library-search"), placeholder = { Text("搜索专辑、歌曲、艺人") },
             leadingIcon = { Icon(Icons.Rounded.Search, null) }, trailingIcon = { if (query.isNotEmpty()) ActionIcon(Icons.Rounded.Close, "清空搜索", { query = "" }) },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
             singleLine = true, shape = RoundedCornerShape(18.dp), colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant))
-        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (!favorites) { FilterChip(mode == 0, { mode = 0 }, { Text("专辑") }); FilterChip(mode == 1, { mode = 1 }, { Text("歌曲") }) }
-            else Text("${filteredSongs.size} 首收藏", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
+            else Text("${filteredSongs.size} 首", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.weight(1f))
-            TextButton({ recent = !recent }) { Icon(Icons.Rounded.Sort, null, Modifier.size(17.dp)); Spacer(Modifier.width(5.dp)); Text(if (recent) "最近导入" else "默认排序", fontSize = 12.sp) }
+            Box {
+                ActionIcon(Icons.Rounded.Sort, "排序", { sorting = true }, tint = if (recent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                DropdownMenu(sorting, { sorting = false }) {
+                    DropdownMenuItem({ Text("默认排序") }, { recent = false; sorting = false }, trailingIcon = { if (!recent) Icon(Icons.Rounded.Check, null) })
+                    DropdownMenuItem({ Text("最近导入") }, { recent = true; sorting = false }, trailingIcon = { if (recent) Icon(Icons.Rounded.Check, null) })
+                }
+            }
+            ActionIcon(Icons.Rounded.Shuffle, "随机播放", { onPlay(filteredSongs.shuffled(), 0) }, enabled = filteredSongs.isNotEmpty() && !loading)
         }
-        when {
+        key(recent, query) { when {
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            songs.isEmpty() && !favorites -> EmptyLibrary(onImport)
-            (favorites || mode == 1) && filteredSongs.isEmpty() || !favorites && mode == 0 && filteredAlbums.isEmpty() -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) { Text(if (favorites && query.isEmpty()) "点亮歌曲旁的爱心，收藏喜欢的声音。" else "没有找到匹配的音乐", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            favorites || mode == 1 -> LazyColumn(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 4.dp)) {
-                item { TextButton({ onPlay(filteredSongs.shuffled(), 0) }) { Icon(Icons.Rounded.Shuffle, null); Spacer(Modifier.width(8.dp)); Text("随机播放") } }
+            songs.isEmpty() && !favorites -> EmptyLibrary(onSettings)
+            (favorites || mode == 1) && filteredSongs.isEmpty() || !favorites && mode == 0 && filteredAlbums.isEmpty() -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) { Text(if (favorites && query.isEmpty()) "暂无收藏" else "没有找到匹配的音乐", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            favorites || mode == 1 -> LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp)) {
                 items(filteredSongs, key = { it.id }) { song -> SongRow(song, song.id == currentId, { onPlay(filteredSongs, filteredSongs.indexOf(song)) }, { onFavorite(song) }, { onRemove(song) }) }
             }
             else -> LazyVerticalGrid(GridCells.Adaptive(145.dp), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-                if (query.isBlank()) item(span = { GridItemSpan(maxLineSpan) }) {
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("好音乐，\n值得慢慢听。", style = MaterialTheme.typography.titleLarge)
-                            Text("${albums.size} 张专辑 · ${songs.size} 首歌曲", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        FilledIconButton({ onPlay(songs.shuffled(), 0) }, Modifier.size(48.dp)) { Icon(Icons.Rounded.Shuffle, "随机播放全部音乐") }
-                    }
-                }
                 items(filteredAlbums, key = { it.key }) { album ->
                     Column(Modifier.clip(RoundedCornerShape(18.dp)).clickable { onAlbum(album) }) {
                         Cover(album.cover, album.title, Modifier.fillMaxWidth().aspectRatio(1f))
@@ -190,20 +180,16 @@ import com.longzhousz.ami.core.durationLabel
                     }
                 }
             }
-        }
+        } }
     }
 }
 
-@Composable private fun EmptyLibrary(onImport: () -> Unit) {
+@Composable private fun EmptyLibrary(onSettings: () -> Unit) {
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-        Column(Modifier.verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(104.dp).clip(CircleShape).background(Brush.radialGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.background))), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Album, null, Modifier.size(72.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = .8f))
-            }
-            Text("让音乐，回到身边。", Modifier.padding(top = 14.dp), style = MaterialTheme.typography.headlineMedium)
-            Text("选择你的音乐文件夹\n专辑、封面与歌词，都会在这里相遇", Modifier.padding(top = 10.dp, bottom = 20.dp), style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Button(onImport, contentPadding = PaddingValues(horizontal = 28.dp, vertical = 16.dp)) { Icon(Icons.Rounded.CreateNewFolder, null, Modifier.size(20.dp)); Spacer(Modifier.width(10.dp)); Text("导入我的音乐") }
-            Text("本地优先 · 不修改原始音频", Modifier.padding(top = 12.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("暂无音乐", style = MaterialTheme.typography.titleMedium)
+            Text("在设置中添加音乐文件夹", Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onSettings) { Text("前往设置") }
         }
     }
 }
@@ -227,19 +213,23 @@ import com.longzhousz.ami.core.durationLabel
     var reorder by remember { mutableStateOf(false) }
     Column {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            ActionIcon(Icons.Rounded.ArrowBack, "返回音乐馆", onBack)
-            Text("专辑", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            ActionIcon(Icons.Rounded.ArrowBack, "返回曲库", onBack)
+            Spacer(Modifier.weight(1f))
             TextButton({ reorder = true }) { Icon(Icons.Rounded.SwapVert, null, Modifier.size(18.dp)); Text("曲序") }
         }
         LazyColumn(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)) {
             item {
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Cover(album.cover, album.title, Modifier.widthIn(max = 280.dp).fillMaxWidth(.76f).aspectRatio(1f))
-                    Text(album.title, Modifier.padding(top = 22.dp), style = MaterialTheme.typography.headlineMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    Text(album.artist, Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${album.songs.size} 首歌曲 · ${durationLabel(album.duration)}", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(Modifier.padding(vertical = 22.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button({ model.play(album.songs) }, Modifier.weight(1f), contentPadding = PaddingValues(14.dp)) { Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("播放专辑") }
+                Column(Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Cover(album.cover, album.title, Modifier.size(88.dp))
+                        Column(Modifier.weight(1f).padding(start = 16.dp)) {
+                            Text(album.title, style = MaterialTheme.typography.headlineSmall)
+                            Text(album.artist, Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${album.songs.size} 首歌曲 · ${durationLabel(album.duration)}", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Row(Modifier.padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button({ model.play(album.songs) }, Modifier.weight(1f), contentPadding = PaddingValues(14.dp)) { Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("播放") }
                         FilledTonalButton({ model.play(album.songs.shuffled()) }, Modifier.weight(1f), contentPadding = PaddingValues(14.dp)) { Icon(Icons.Rounded.Shuffle, null); Spacer(Modifier.width(6.dp)); Text("随机播放") }
                     }
                 }

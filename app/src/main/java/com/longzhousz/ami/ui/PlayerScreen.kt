@@ -111,27 +111,21 @@ private val PlayerColors = darkColorScheme(
                             })
                     }.padding(horizontal = 12.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                         ActionIcon(Icons.Rounded.KeyboardArrowDown, "收起播放页", actions.close)
-                        Column(Modifier.weight(1f).padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("正在聆听", color = Color.White.copy(alpha = .5f), fontSize = 10.sp, letterSpacing = 2.sp)
-                            Text(song.album, color = Color.White.copy(alpha = .85f), style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
+                        Spacer(Modifier.weight(1f))
                         ActionIcon(Icons.Rounded.Bedtime, "定时停止", { sleepDialog = true }, tint = Color.White.copy(alpha = .7f))
                         Box {
                             ActionIcon(Icons.Rounded.MoreHoriz, "歌词选项", { lyricMenu = true }, tint = Color.White.copy(alpha = .7f))
                             DropdownMenu(lyricMenu, { lyricMenu = false }) {
                                 DropdownMenuItem(text = { Text("为这首歌导入歌词") }, onClick = { lyricMenu = false; actions.lyricFile() })
                                 if (song.manualLyrics) DropdownMenuItem(text = { Text("恢复自动匹配") }, onClick = { lyricMenu = false; actions.restoreLyrics() })
-                                if (!translation.isNullOrEmpty()) DropdownMenuItem(text = { Text(if (showTranslation) "隐藏译文" else "显示译文") }, onClick = { lyricMenu = false; showTranslation = !showTranslation })
                                 if (!translation.isNullOrEmpty()) DropdownMenuItem(text = { Text("重新翻译") }, onClick = { lyricMenu = false; actions.translate() }, enabled = !translating)
-                                DropdownMenuItem(text = { Text(song.neteaseId?.let { "网易云 ID：$it" } ?: "没有网易云 ID，可手动选择文件") }, onClick = {}, enabled = false)
-                                if (song.lyricsSource.isNotBlank()) DropdownMenuItem(text = { Text("来源：${song.lyricsSource}") }, onClick = {}, enabled = false)
                             }
                         }
                     }
                     val stage: @Composable (Modifier) -> Unit = { modifier ->
                         Crossfade(showLyrics, modifier, animationSpec = tween(350), label = "cover-lyrics") { lyrics ->
                             if (lyrics && lines.isNotEmpty()) LyricsStage(song.id, lines, translation.takeIf { showTranslation }, lyricPosition, actions.seek, Modifier.fillMaxSize())
-                            else if (lyrics) EmptyLyrics(actions.lyricFile)
+                            else if (lyrics) EmptyLyrics()
                             else BoxWithConstraints(Modifier.fillMaxSize().padding(28.dp), contentAlignment = Alignment.Center) {
                                 Cover(song.cover, song.album, Modifier.size(minOf(maxWidth, maxHeight)).testTag("player-cover"))
                             }
@@ -158,19 +152,15 @@ private val PlayerColors = darkColorScheme(
         }
         if (sleepDialog) AlertDialog({ sleepDialog = false }, title = { Text("定时停止") }, text = {
             Column {
-                Text("时间到后，音乐将轻轻暂停。", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 listOf(15, 30, 45, 60, 90, 0).forEach { minutes -> TextButton({ actions.sleep(minutes); sleepDialog = false }, Modifier.fillMaxWidth()) { Text(if (minutes == 0) "关闭定时停止" else "$minutes 分钟") } }
             }
         }, confirmButton = { TextButton({ sleepDialog = false }) { Text("取消") } })
     }
 }
 
-@Composable private fun EmptyLyrics(onLyricFile: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(30.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Icon(Icons.Rounded.Lyrics, null, Modifier.size(42.dp), tint = Color.White.copy(alpha = .5f))
-        Text("让歌词也陪你听", Modifier.padding(top = 20.dp), style = MaterialTheme.typography.titleLarge)
-        Text("可在设置中导入网易云歌词文件夹", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        TextButton(onLyricFile) { Text("为这首歌选择歌词文件") }
+@Composable private fun EmptyLyrics() {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text("暂无歌词", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -208,8 +198,10 @@ private val PlayerColors = darkColorScheme(
         Row(Modifier.fillMaxWidth()) {
             Text(durationLabel(seeking?.toLong() ?: playback.position), fontSize = 10.sp, color = Color.White.copy(alpha = .45f))
             Spacer(Modifier.weight(1f))
-            Text(if (playback.buffering) "正在缓冲…" else song.format, fontSize = 10.sp, color = Color.White.copy(alpha = .4f))
-            Spacer(Modifier.weight(1f))
+            if (playback.buffering) {
+                Text("正在缓冲…", fontSize = 10.sp, color = Color.White.copy(alpha = .4f))
+                Spacer(Modifier.weight(1f))
+            }
             Text(durationLabel(duration), fontSize = 10.sp, color = Color.White.copy(alpha = .45f))
         }
         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

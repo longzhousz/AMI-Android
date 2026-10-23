@@ -2,6 +2,7 @@ package com.longzhousz.ami
 
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -12,6 +13,9 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModelProvider
@@ -29,14 +33,15 @@ class InterfaceTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
     @Test fun emptyLibraryNavigationAndDarkAppearanceRender() {
-        compose.waitUntil(30000) { compose.onAllNodesWithText("导入我的音乐").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("导入我的音乐").assertIsDisplayed()
-        val labelHeight = compose.onNodeWithText("导入我的音乐", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.height
-        val fontHeight = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 14f, compose.activity.resources.displayMetrics)
-        assertTrue("Import label must retain its full text height", labelHeight >= fontHeight)
+        compose.waitUntil(30000) { compose.onAllNodesWithText("前往设置").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("暂无音乐").assertIsDisplayed()
+        compose.onNodeWithContentDescription("导入音乐文件夹").assertDoesNotExist()
         screenshot("empty-library")
+        compose.onNodeWithText("前往设置").performClick()
+        compose.onNodeWithText("导入音乐").assertIsDisplayed()
         compose.onNodeWithText("我喜欢").performClick()
-        compose.onNodeWithText("点亮歌曲旁的爱心，收藏喜欢的声音。").assertIsDisplayed()
+        compose.onAllNodesWithText("我喜欢").assertCountEquals(1)
+        compose.onNodeWithText("暂无收藏").assertIsDisplayed()
         compose.onNodeWithText("设置").performClick()
         compose.onNodeWithText("网易云歌词").performScrollTo().performClick()
         compose.onNodeWithText("选择歌词文件夹").assertIsDisplayed()
@@ -51,13 +56,46 @@ class InterfaceTest {
     private fun verifyFullPlayerWindow() {
         val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
         val song = Song("qa-player-window", "content://com.longzhousz.ami.test.fixtures/document/single.wav",
-            folder = "qa", title = "全屏歌词验证", album = "AMI", duration = 2000, format = "WAV",
+            folder = "qa", title = "风经过海面", artist = "AMI · 界面验证", album = "晚风与回声", duration = 2000, format = "WAV",
             lyrics = "[00:00.00]让歌词成为主角\n[00:01.00]让音乐留在身边")
+        val songs = listOf("风经过海面", "暮色", "遥远的回声", "城市灯火", "纸飞机", "下一场日落").mapIndexed { index, title ->
+            song.copy(id = "qa-player-window-$index", title = title, album = if (index < 3) "晚风与回声" else "海边来信", favorite = index == 0 || index == 2, importedAt = index.toLong())
+        }
         try {
-            model.repository.db.upsert(song); model.repository.reload()
+            songs.forEach { model.repository.db.upsert(it) }; model.repository.reload()
+            compose.onNodeWithText("曲库").performClick()
+            compose.onNodeWithText(songs.first().title).assertIsDisplayed()
+            compose.onNodeWithContentDescription("导入音乐文件夹").assertDoesNotExist()
+            screenshot("library-songs")
+            compose.onNodeWithTag("library-search").performTextInput("遥远")
+            compose.onNodeWithText(songs[2].title).assertIsDisplayed()
+            compose.onNodeWithText(songs.first().title).assertDoesNotExist()
+            compose.onNodeWithTag("library-search").performTextClearance()
+            compose.onNodeWithTag("library-search").performImeAction()
+            compose.onNodeWithContentDescription("排序").performClick()
+            compose.onNodeWithText("最近导入").performClick()
+            assertTrue(compose.onNodeWithText(songs.last().title).fetchSemanticsNode().boundsInRoot.top < compose.onNodeWithText(songs[3].title).fetchSemanticsNode().boundsInRoot.top)
+            compose.onNodeWithContentDescription("排序").performClick()
+            compose.onNodeWithText("默认排序").performClick()
+            compose.onNodeWithText("我喜欢").performClick()
+            compose.onAllNodesWithText("我喜欢").assertCountEquals(1)
+            compose.onNodeWithText(songs.first().title).assertIsDisplayed()
+            compose.onNodeWithText(songs[2].title).assertIsDisplayed()
+            compose.onNodeWithText(songs[1].title).assertDoesNotExist()
+            screenshot("favorites-songs")
+            compose.onNodeWithText("曲库").performClick()
+            compose.onNodeWithText("专辑").performClick()
+            screenshot("library-albums")
+            compose.onNodeWithText("晚风与回声").performClick()
+            compose.onNodeWithText(songs.first().title).assertIsDisplayed()
+            compose.onNodeWithText("曲序").assertIsDisplayed()
+            screenshot("album-tracks")
+            compose.onNodeWithContentDescription("返回曲库").performClick()
+            compose.onNodeWithText("歌曲").performClick()
             compose.waitUntil(30000) { model.player.state.value.connected }
-            compose.runOnIdle { model.play(listOf(song)); model.player.pause() }
-            compose.waitUntil(10000) { model.player.state.value.id == song.id }
+            compose.onNodeWithText(songs.first().title).performClick()
+            compose.runOnIdle { model.player.pause() }
+            compose.waitUntil(10000) { model.player.state.value.id == songs.first().id }
             compose.onNodeWithTag("mini-player").performClick()
             compose.onNodeWithTag("full-player").assertIsDisplayed()
             compose.onNodeWithTag("lyrics-stage").assertIsDisplayed()
@@ -65,7 +103,7 @@ class InterfaceTest {
             val directory = File(compose.activity.filesDir, "qa").apply { mkdirs() }
             File(directory, "lyrics-player-window.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
             compose.onNodeWithText("队列").performClick()
-            compose.onNodeWithText("播放队列 · 1").assertIsDisplayed()
+            compose.onNodeWithText("播放队列 · ${songs.size}").assertIsDisplayed()
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
             compose.onNodeWithTag("full-player").assertIsDisplayed()
             compose.onNodeWithContentDescription("收起播放页").performClick()
@@ -76,8 +114,8 @@ class InterfaceTest {
             }
             compose.onNodeWithTag("full-player").assertDoesNotExist()
         } finally {
-            compose.runOnIdle { model.player.pause(); model.player.remove(song.id) }
-            model.repository.db.remove(song.id); model.repository.reload()
+            compose.runOnIdle { model.player.pause(); songs.forEach { model.player.remove(it.id) } }
+            songs.forEach { model.repository.db.remove(it.id) }; model.repository.reload()
         }
     }
     private fun screenshot(name: String) {

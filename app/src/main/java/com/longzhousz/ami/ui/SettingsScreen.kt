@@ -16,7 +16,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,8 +48,6 @@ import kotlinx.coroutines.withContext
     }
     LazyColumn(contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 18.dp, bottom = 30.dp)) {
         item {
-            Text("按你的方式，听。", style = MaterialTheme.typography.headlineMedium)
-            Text("安静、私密，专注音乐本身。", Modifier.padding(top = 7.dp, bottom = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
             SectionLabel("我的曲库")
             SettingsGroup {
                 SettingRow(Icons.Rounded.CreateNewFolder, "导入音乐", "音频、LRC、CUE 与经典 NCM", onImport)
@@ -72,7 +69,6 @@ import kotlinx.coroutines.withContext
             SettingsGroup {
                 SettingRow(Icons.Rounded.Palette, "外观", when (theme) { "light" -> "浅色"; "dark" -> "深色"; else -> "跟随系统" }, { dialog = "theme" })
                 SettingRow(Icons.Rounded.NotificationsNone, "导入进度通知", "允许后台导入时显示进度", onNotifications)
-                SettingRow(Icons.Rounded.Bedtime, "定时停止", "在播放页点击月亮设置", { dialog = "sleep" })
             }
             SectionLabel("存储与隐私")
             SettingsGroup {
@@ -81,8 +77,7 @@ import kotlinx.coroutines.withContext
                 SettingRow(Icons.Rounded.History, "操作记录", "最近 50 条 · 仅保存在本机", { scope.launch { logs = withContext(Dispatchers.IO) { repo.db.actionLog() }; dialog = "logs" } })
                 SettingRow(Icons.Rounded.Security, "隐私说明", "音频与封面始终留在本机", { dialog = "privacy" })
             }
-            Text("AMI  /  ANDROID", Modifier.padding(top = 30.dp), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
-            Text("${com.longzhousz.ami.BuildConfig.VERSION_NAME} · 为你的私人音乐馆而造", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("AMI ${com.longzhousz.ami.BuildConfig.VERSION_NAME}", Modifier.padding(top = 24.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
     when (dialog) {
@@ -136,10 +131,9 @@ import kotlinx.coroutines.withContext
         "import" -> InfoDialog("最近导入结果", importState.message + if (importState.errors.isEmpty()) "\n\n没有发现问题。" else "\n\n" + importState.errors.joinToString("\n"), { dialog = null })
         "cache" -> AlertDialog({ dialog = null }, title = { Text("缓存管理") }, text = { Text("音乐转换与封面缓存：${megabytes(cache.bytes)}\n可安全清理：${megabytes(cache.reclaimable)}\n\n只清理未被曲库引用的应用缓存。正在使用的音频缓存和原始音乐都会保留。") },
             confirmButton = { TextButton({ scope.launch { runCatching { withContext(Dispatchers.IO) { repo.cleanup() } }.onSuccess { model.message.value = "已清理 ${megabytes(it)}" }.onFailure { model.message.value = it.message }; dialog = null } }, enabled = !importState.running && cache.reclaimable > 0) { Text("清理未引用缓存") } }, dismissButton = { TextButton({ dialog = null }) { Text("关闭") } })
-        "sleep" -> ChoiceDialog("定时停止", listOf("15" to "15 分钟", "30" to "30 分钟", "60" to "60 分钟", "90" to "90 分钟", "0" to "关闭"), "", { model.sleep(it.toInt()); dialog = null }, { dialog = null })
         "logs" -> InfoDialog("操作记录", logs.joinToString("\n\n").ifBlank { "还没有操作记录" }, { dialog = null })
         "agent" -> AgentDialog(model, onBridgeFolder, { dialog = null })
-        "privacy" -> InfoDialog("本地优先，安心聆听", "AMI 只读取你授权的音乐文件夹，不改写原始音频或标签。\n\n音频、封面、路径和曲库不会上传。仅当你主动翻译或测试连接时，应用才连接 DeepSeek。翻译只发送歌词文本、目标语言、模型和风格要求。\n\nAPI Key 由 Android Keystore 加密保护，排除在备份之外，不进入操作日志。\n\n卸载应用会删除曲库记录、翻译和应用缓存，请保留原始音乐文件。", { dialog = null })
+        "privacy" -> InfoDialog("隐私说明", "AMI 只读取你授权的音乐文件夹，不改写原始音频或标签。\n\n音频、封面、路径和曲库不会上传。仅当你主动翻译或测试连接时，应用才连接 DeepSeek。翻译只发送歌词文本、目标语言、模型和风格要求。\n\nAPI Key 由 Android Keystore 加密保护，排除在备份之外，不进入操作日志。\n\n卸载应用会删除曲库记录、翻译和应用缓存，请保留原始音乐文件。", { dialog = null })
     }
 }
 
