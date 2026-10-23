@@ -1,0 +1,2 @@
+0a4cee67cddccc1b1b79ce3914ac016ed4243bcee45b0ce030e96fe553b49e27  AMI-Android-0.1.3-preview.apk
+2cf8b03e303a6c8285c740f53be3ee052f2436e6134d5f937c724e1cd88e1ac2  INSTALL-0.1.3.zh-CN.md
