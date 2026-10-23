@@ -1,0 +1,208 @@
+name: Android
+on:
+  push:
+    branches: [main]
+    paths: ['app/**', 'gradle/**', '*.gradle.kts', 'gradle.properties', 'gradlew*', '.github/**']
+  pull_request:
+    paths: ['app/**', 'gradle/**', '*.gradle.kts', 'gradle.properties', 'gradlew*', '.github/**']
+  workflow_dispatch:
+    inputs:
+      device_tests_only:
+        description: 'Run device validation without rebuilding optimized distribution APKs'
+        type: boolean
+        required: false
+        default: false
+      smoke_run_id:
+        description: 'Check the optimized APK from an earlier workflow run (blank builds current source)'
+        required: false
+        default: ''
+      smoke_release_tag:
+        description: 'Check the exact APK attached to a private prerelease'
+        required: false
+        default: ''
+      upload_apk_commit:
+        description: 'Optional immutable commit containing the locally signed APK in .distribution/'
+        required: false
+        default: ''
+      upload_apk_sha256:
+        description: 'Expected SHA-256 of that APK'
+        required: false
+        default: ''
+      upgrade_from_tag:
+        description: 'Optional previous locally signed preview to install before the new APK'
+        required: false
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: android-${{ github.head_ref || github.ref_name }}-${{ github.event_name }}
+  cancel-in-progress: true
+jobs:
+  build:
+    if: ${{ github.event.inputs.device_tests_only != 'true' && github.event.inputs.smoke_run_id == '' && github.event.inputs.smoke_release_tag == '' && github.event.inputs.upload_apk_commit == '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      # Hosted Ubuntu runners already provide current command-line tools.
+      # Avoid setup-android v3's removed legacy "tools" package.
+      - name: Add hosted Android SDK tools to PATH
+        run: |
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
+      - run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew testDebugUnitTest lintDebug assemblePreview assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AMI-Android-preview
+          path: app/build/outputs/apk/preview/*.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Android-check-reports
+          path: |
+            app/build/reports/tests/
+            app/build/reports/lint-results-debug.html
+  device-tests:
+    if: ${{ github.event.inputs.smoke_run_id == '' && github.event.inputs.smoke_release_tag == '' && github.event.inputs.upload_apk_commit == '' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api: '30'
+            target: default
+          - api: '37.0'
+            target: google_apis
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      # API 37's baked userdata image cannot shrink below roughly 7 GB.
+      # Remove unrelated, preinstalled toolchains on this disposable runner.
+      - name: Reserve disk space for the Android 17 image
+        if: ${{ matrix.api == '37.0' }}
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/share/swift
+          df -h /
+      # API 37's guest competes heavily with javac/jlink and D8 on small runners.
+      # Prepare both APKs first; the emulator then only installs and runs tests.
+      - name: Compile test APKs before booting the emulator
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.0' 'build-tools;36.0.0'
+          ./gradlew assembleDebug assembleDebugAndroidTest
+      - name: Enable emulator acceleration
+        run: sudo chmod 666 /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: ${{ matrix.target }}
+          arch: x86_64
+          profile: pixel_2
+          disk-size: ${{ matrix.api == '37.0' && '8192M' || '2048M' }}
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: bash .github/scripts/android-device-test.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: device-test-results-${{ matrix.api }}
+          path: |
+            device-screenshots/
+            app/build/reports/androidTests/
+            app/build/outputs/androidTest-results/
+  upload-preview:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.upload_apk_commit != '' }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate distribution inputs
+        env:
+          APK_COMMIT: ${{ github.event.inputs.upload_apk_commit }}
+          APK_SHA256: ${{ github.event.inputs.upload_apk_sha256 }}
+          RELEASE_TAG: ${{ github.event.inputs.smoke_release_tag }}
+        run: |
+          [[ "$APK_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$APK_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$RELEASE_TAG" =~ ^android-v[0-9]+\.[0-9]+\.[0-9]+-preview$ ]]
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.upload_apk_commit }}
+      - name: Verify and upload locally signed distribution
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          APK_SHA256: ${{ github.event.inputs.upload_apk_sha256 }}
+          RELEASE_TAG: ${{ github.event.inputs.smoke_release_tag }}
+        run: |
+          mapfile -t apks < <(find .distribution -maxdepth 1 -type f -name '*.apk')
+          test "${#apks[@]}" -eq 1
+          printf '%s  %s\n' "$APK_SHA256" "${apks[0]}" | sha256sum --check
+          gh release upload "$RELEASE_TAG" .distribution/* --clobber
+  preview-smoke:
+    needs: [build, upload-preview]
+    if: ${{ always() && !cancelled() && (needs.build.result == 'success' || github.event.inputs.smoke_run_id != '' || (github.event.inputs.smoke_release_tag != '' && (needs.upload-preview.result == 'success' || needs.upload-preview.result == 'skipped'))) }}
+    permissions:
+      actions: read
+      contents: read
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        api: ['30', '37.0']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        if: ${{ github.event.inputs.smoke_release_tag == '' }}
+        with:
+          name: AMI-Android-preview
+          path: preview-apk
+          run-id: ${{ github.event.inputs.smoke_run_id || github.run_id }}
+          github-token: ${{ github.token }}
+      - name: Download the exact distribution APK
+        if: ${{ github.event.inputs.smoke_release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.inputs.smoke_release_tag }}
+        run: gh release download "$RELEASE_TAG" --pattern '*.apk' --dir preview-apk
+      - name: Download the previous APK for upgrade verification
+        if: ${{ github.event.inputs.smoke_release_tag != '' && github.event.inputs.upgrade_from_tag != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASELINE_TAG: ${{ github.event.inputs.upgrade_from_tag }}
+        run: |
+          [[ "$BASELINE_TAG" =~ ^android-v[0-9]+\.[0-9]+\.[0-9]+-preview$ ]]
+          gh release download "$BASELINE_TAG" --pattern '*.apk' --dir baseline-apk
+      - name: Enable emulator acceleration
+        run: sudo chmod 666 /dev/kvm
+      - name: Reserve disk space for the Android 17 image
+        if: ${{ matrix.api == '37.0' }}
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/share/swift
+          df -h /
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: ${{ matrix.api == '30' && 'default' || 'google_apis' }}
+          arch: x86_64
+          profile: pixel_2
+          disk-size: ${{ matrix.api == '37.0' && '8192M' || '2048M' }}
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          script: bash .github/scripts/android-preview-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: preview-smoke-${{ matrix.api }}
+          path: preview-smoke-results/

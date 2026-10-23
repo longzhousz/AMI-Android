@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Private synthetic fixtures for instrumentation; absent from preview / release. -->
+    <application>
+        <provider android:name="com.longzhousz.ami.FixtureDocumentsProvider"
+            android:authorities="com.longzhousz.ami.test.fixtures"
+            android:exported="false" />
+    </application>
+</manifest>

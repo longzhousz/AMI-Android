@@ -1,0 +1,14 @@
+.gradle/
+.kotlin/
+**/build/
+local.properties
+*.jks
+*.keystore
+.env
+.env.*
+/artifacts/
+/device-screenshots/
+/preview-smoke-results/
+.idea/
+*.iml
+.DS_Store

@@ -1,0 +1,57 @@
+package com.longzhousz.ami.ui
+
+import android.graphics.BitmapFactory
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+private data class ArtworkColors(val top: Color, val bottom: Color, val glow: Color)
+private val FallbackColors = ArtworkColors(Color(0xFF41465F), Color(0xFF151923), Color(0xFF69617C))
+
+/** Sample cached artwork once off the main thread; no full-resolution texture or perpetual animation. */
+@Composable internal fun PlayerBackdrop(cover: String?) {
+    val colors by produceState(FallbackColors, cover) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                if (cover == null) return@runCatching FallbackColors
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(cover, bounds)
+                var sample = 1
+                while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 48) sample *= 2
+                val bitmap = BitmapFactory.decodeFile(cover, BitmapFactory.Options().apply { inSampleSize = sample })
+                    ?: return@runCatching FallbackColors
+                try {
+                    var r = 0L; var g = 0L; var b = 0L; var count = 0
+                    for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) {
+                        val pixel = bitmap.getPixel(x, y)
+                        if (android.graphics.Color.alpha(pixel) > 128) {
+                            r += android.graphics.Color.red(pixel); g += android.graphics.Color.green(pixel); b += android.graphics.Color.blue(pixel); count++
+                        }
+                    }
+                    if (count == 0) return@runCatching FallbackColors
+                    val hsv = FloatArray(3)
+                    android.graphics.Color.RGBToHSV((r / count).toInt(), (g / count).toInt(), (b / count).toInt(), hsv)
+                    fun tone(hue: Float, saturation: Float, brightness: Float) = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue % 360, saturation, brightness)))
+                    val saturation = hsv[1].coerceIn(.16f, .45f)
+                    ArtworkColors(tone(hsv[0], saturation, .31f), tone(hsv[0] + 15, saturation, .10f), tone(hsv[0] + 24, saturation * .8f, .43f))
+                } finally { bitmap.recycle() }
+            }.getOrDefault(FallbackColors)
+        }
+    }
+    val top by animateColorAsState(colors.top, tween(1000), label = "artwork-top")
+    val bottom by animateColorAsState(colors.bottom, tween(1000), label = "artwork-bottom")
+    val glow by animateColorAsState(colors.glow, tween(1000), label = "artwork-glow")
+    Canvas(Modifier.fillMaxSize()) {
+        drawRect(Brush.verticalGradient(listOf(top, bottom)))
+        drawRect(Brush.radialGradient(listOf(glow.copy(alpha = .6f), Color.Transparent), center = Offset(size.width * .9f, size.height * .18f), radius = size.maxDimension * .7f))
+        drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .22f))))
+    }
+}
