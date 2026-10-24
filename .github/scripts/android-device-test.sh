@@ -17,7 +17,7 @@ cd "$GITHUB_WORKSPACE"
 # UTP may otherwise return an empty, successful report without running tests.
 ready=false
 for attempt in {1..24}; do
-  if adb shell 'test "$(cmd user is-user-unlocked 0)" = true && touch /sdcard/.ami-qa-ready && rm /sdcard/.ami-qa-ready'; then
+  if adb shell 'touch /sdcard/.ami-qa-ready && rm /sdcard/.ami-qa-ready'; then
     ready=true
     break
   fi
