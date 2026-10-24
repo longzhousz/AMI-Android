@@ -1,5 +1,6 @@
 package com.longzhousz.ami
 
+import android.os.ParcelFileDescriptor
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
@@ -135,7 +136,7 @@ class InterfaceTest {
             File(directory, "lyrics-player-window.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
             compose.onNodeWithText("队列").performClick()
             compose.onNodeWithText("播放队列 · ${songs.size}").assertIsDisplayed()
-            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+            pressSystemBack()
             compose.onNodeWithTag("full-player").assertIsDisplayed()
             compose.onNodeWithContentDescription("收起播放页").performClick()
             compose.onNodeWithTag("mini-player").assertIsDisplayed()
@@ -146,7 +147,7 @@ class InterfaceTest {
             compose.onNodeWithTag("full-player").assertDoesNotExist()
             compose.onNodeWithTag("mini-player").performClick()
             compose.onNodeWithTag("full-player").assertIsDisplayed()
-            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+            pressSystemBack()
             compose.onNodeWithTag("full-player").assertDoesNotExist()
             compose.onNodeWithTag("mini-player").assertIsDisplayed()
         } finally {
@@ -154,6 +155,14 @@ class InterfaceTest {
             songs.forEach { model.repository.db.remove(it.id) }; model.repository.reload()
         }
     }
+    private fun pressSystemBack() {
+        // The queue uses its own window. Shell input follows the actual focused window instead
+        // of Instrumentation's app-only injection, which can reject dialog/IME transitions.
+        val command = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("input keyevent 4")
+        ParcelFileDescriptor.AutoCloseInputStream(command).use { it.readBytes() }
+        compose.waitForIdle()
+    }
+
     private fun screenshot(name: String) {
         compose.waitForIdle()
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
