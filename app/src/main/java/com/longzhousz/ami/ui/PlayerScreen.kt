@@ -1,11 +1,14 @@
 package com.longzhousz.ami.ui
 
-import android.os.Build
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -16,26 +19,21 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import com.longzhousz.ami.AmiViewModel
 import com.longzhousz.ami.core.Lyrics
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.core.durationLabel
 import com.longzhousz.ami.playback.PlaybackState
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.abs
 
 internal data class PlayerActions(
     val close: () -> Unit = {}, val queue: () -> Unit = {}, val lyricFile: () -> Unit = {},
@@ -45,29 +43,11 @@ internal data class PlayerActions(
     val sleep: (Int) -> Unit = {},
 )
 
-@Composable fun PlayerScreen(song: Song, model: AmiViewModel, onClose: () -> Unit, onQueue: () -> Unit, onLyricFile: () -> Unit) {
+@Composable fun PlayerScreen(song: Song, model: AmiViewModel, onClose: () -> Unit, onQueue: () -> Unit, onLyricFile: () -> Unit, dragHandle: Modifier = Modifier) {
     val playback by model.player.state.collectAsStateWithLifecycle()
     val translation by model.translations.collectAsStateWithLifecycle()
     val translating by model.translating.collectAsStateWithLifecycle()
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val lyricClock = produceState(playback.position, model.player, lifecycle) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            while (true) {
-                value = model.player.currentPosition()
-                delay(if (model.player.state.value.playing) 50 else 250)
-            }
-        }
-    }
-    val view = LocalView.current
-    SideEffect {
-        (view.parent as? DialogWindowProvider)?.window?.let { window ->
-            WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = false
-                isAppearanceLightNavigationBars = false
-            }
-            if (Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
-        }
-    }
+    val clock = rememberPlaybackClock(model.player, playback)
     PlayerContent(song, playback, translation, translating, PlayerActions(
         close = onClose, queue = onQueue, lyricFile = onLyricFile, favorite = { model.favorite(song) },
         seek = { model.act("player.seek") { model.player.seek(it) } },
@@ -77,7 +57,7 @@ internal data class PlayerActions(
         shuffle = { model.act("player.shuffle") { model.player.shuffle() } },
         repeat = { model.act("player.repeat") { model.player.repeat() } },
         translate = { model.translate(song) }, restoreLyrics = { model.clearLyrics(song) }, sleep = model::sleep,
-    ), lyricPosition = { lyricClock.value })
+    ), lyricPosition = { clock.value }, dragHandle = dragHandle)
 }
 
 private val PlayerColors = darkColorScheme(
@@ -89,27 +69,20 @@ private val PlayerColors = darkColorScheme(
 @Composable internal fun PlayerContent(
     song: Song, playback: PlaybackState, translation: List<String>?, translating: Boolean,
     actions: PlayerActions, lyricPosition: () -> Long = { playback.position },
+    dragHandle: Modifier = Modifier,
 ) {
     var showLyrics by rememberSaveable { mutableStateOf(song.lyrics.isNotBlank()) }
     var showTranslation by rememberSaveable { mutableStateOf(true) }
     var sleepDialog by remember { mutableStateOf(false) }
     var lyricMenu by remember { mutableStateOf(false) }
-    val lines = remember(song.lyrics) { Lyrics.parse(song.lyrics) }
-    val close by rememberUpdatedState(actions.close)
     MaterialTheme(colorScheme = PlayerColors) {
         Surface(Modifier.fillMaxSize().testTag("full-player"), color = Color.Transparent, contentColor = Color.White) {
             PlayerBackdrop(song.cover)
             BoxWithConstraints(Modifier.fillMaxSize().systemBarsPadding()) {
                 val landscape = maxWidth > 600.dp && maxWidth > maxHeight
                 Column(Modifier.fillMaxSize()) {
-                    Row(Modifier.fillMaxWidth().testTag("player-header").pointerInput(Unit) {
-                        var distance = 0f
-                        val threshold = 56.dp.toPx()
-                        detectVerticalDragGestures(onDragStart = { distance = 0f }, onDragEnd = { if (distance > threshold) close() },
-                            onVerticalDrag = { change, delta ->
-                                if (delta > 0 || distance > 0) { change.consume(); distance = (distance + delta).coerceAtLeast(0f) }
-                            })
-                    }.padding(horizontal = 12.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().testTag("player-header").then(dragHandle)
+                        .padding(horizontal = 12.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                         ActionIcon(Icons.Rounded.KeyboardArrowDown, "收起播放页", actions.close)
                         Spacer(Modifier.weight(1f))
                         ActionIcon(Icons.Rounded.Bedtime, "定时停止", { sleepDialog = true }, tint = Color.White.copy(alpha = .7f))
@@ -123,18 +96,23 @@ private val PlayerColors = darkColorScheme(
                         }
                     }
                     val stage: @Composable (Modifier) -> Unit = { modifier ->
-                        Crossfade(showLyrics, modifier, animationSpec = tween(350), label = "cover-lyrics") { lyrics ->
-                            if (lyrics && lines.isNotEmpty()) LyricsStage(song.id, lines, translation.takeIf { showTranslation }, lyricPosition, actions.seek, Modifier.fillMaxSize())
-                            else if (lyrics) EmptyLyrics()
-                            else BoxWithConstraints(Modifier.fillMaxSize().padding(28.dp), contentAlignment = Alignment.Center) {
-                                Cover(song.cover, song.album, Modifier.size(minOf(maxWidth, maxHeight)).testTag("player-cover"))
+                        AnimatedContent(PlayerStage(song, showLyrics, translation.takeIf { showTranslation }), modifier,
+                            contentKey = { it.song.id to it.lyrics }, transitionSpec = {
+                                (fadeIn(tween(240, 40)) + scaleIn(tween(320), initialScale = .97f)) togetherWith
+                                    (fadeOut(tween(160)) + scaleOut(tween(240), targetScale = 1.02f))
+                            }, label = "player-stage") { stage ->
+                            val stageLines = remember(stage.song.lyrics) { Lyrics.parse(stage.song.lyrics) }
+                            if (stage.lyrics && stageLines.isNotEmpty()) LyricsStage(stage.song.id, stageLines, stage.translation, lyricPosition, actions.seek, Modifier.fillMaxSize())
+                            else if (stage.lyrics) EmptyLyrics()
+                            else BoxWithConstraints(Modifier.fillMaxSize().then(dragHandle).padding(28.dp), contentAlignment = Alignment.Center) {
+                                Cover(stage.song.cover, stage.song.album, Modifier.size(minOf(maxWidth, maxHeight)).testTag("player-cover"))
                             }
                         }
                     }
                     val controls: @Composable (Modifier) -> Unit = { modifier ->
                         PlayerControls(song, playback, actions, showLyrics, translating, translation != null,
                             showTranslation, onTranslation = { if (translation != null) showTranslation = !showTranslation else actions.translate() },
-                            onLyrics = { showLyrics = !showLyrics }, modifier = modifier)
+                            onLyrics = { showLyrics = !showLyrics }, position = lyricPosition, modifier = modifier)
                     }
                     if (landscape) Row(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp)) {
                         if (!showLyrics) stage(Modifier.weight(.45f).fillMaxHeight())
@@ -158,6 +136,8 @@ private val PlayerColors = darkColorScheme(
     }
 }
 
+private data class PlayerStage(val song: Song, val lyrics: Boolean, val translation: List<String>?)
+
 @Composable private fun EmptyLyrics() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text("暂无歌词", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -168,47 +148,32 @@ private val PlayerColors = darkColorScheme(
 @Composable private fun PlayerControls(
     song: Song, playback: PlaybackState, actions: PlayerActions, showLyrics: Boolean,
     translating: Boolean, translated: Boolean, showTranslation: Boolean, onTranslation: () -> Unit,
-    onLyrics: () -> Unit, modifier: Modifier,
+    onLyrics: () -> Unit, position: () -> Long, modifier: Modifier,
 ) {
     Column(modifier.padding(horizontal = 28.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (showLyrics) { Cover(song.cover, song.album, Modifier.size(46.dp)); Spacer(Modifier.width(12.dp)) }
-            Column(Modifier.weight(1f)) {
-                Text(song.title, fontSize = if (showLyrics) 19.sp else 25.sp, lineHeight = if (showLyrics) 25.sp else 32.sp,
-                    fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(song.artist, Modifier.padding(top = 3.dp), fontSize = 14.sp, lineHeight = 20.sp, color = Color.White.copy(alpha = .55f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            AnimatedContent(song.title to song.artist, Modifier.weight(1f), transitionSpec = { AmiMotion.page(true) }, label = "player-track") { track ->
+                Column {
+                    Text(track.first, fontSize = if (showLyrics) 19.sp else 25.sp, lineHeight = if (showLyrics) 25.sp else 32.sp,
+                        fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(track.second, Modifier.padding(top = 3.dp), fontSize = 14.sp, lineHeight = 20.sp, color = Color.White.copy(alpha = .55f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
             ActionIcon(if (song.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, if (song.favorite) "取消喜欢" else "加入喜欢", actions.favorite, tint = Color.White.copy(alpha = if (song.favorite) 1f else .55f))
         }
-        var seeking by remember(song.id) { mutableStateOf<Float?>(null) }
         val duration = playback.duration.takeIf { it > 0 } ?: song.duration
-        val sliderColors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White.copy(alpha = .8f), inactiveTrackColor = Color.White.copy(alpha = .15f))
-        Slider(value = seeking ?: playback.position.toFloat().coerceIn(0f, duration.coerceAtLeast(1).toFloat()),
-            onValueChange = { seeking = it }, onValueChangeFinished = { seeking?.let { actions.seek(it.toLong()) }; seeking = null },
-            valueRange = 0f..duration.coerceAtLeast(1).toFloat(), enabled = duration > 0,
-            colors = sliderColors,
-            thumb = {
-                Box(Modifier.width(8.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(8.dp).background(Color.White.copy(alpha = if (duration > 0) 1f else .3f), CircleShape))
-                }
-            },
-            track = { SliderDefaults.Track(it, Modifier.height(3.dp), enabled = duration > 0, colors = sliderColors,
-                drawStopIndicator = null, thumbTrackGapSize = 0.dp, trackInsideCornerSize = 0.dp) },
-            modifier = Modifier.fillMaxWidth().height(40.dp).testTag("playback-seek"))
-        Row(Modifier.fillMaxWidth()) {
-            Text(durationLabel(seeking?.toLong() ?: playback.position), fontSize = 10.sp, color = Color.White.copy(alpha = .45f))
-            Spacer(Modifier.weight(1f))
-            if (playback.buffering) {
-                Text("正在缓冲…", fontSize = 10.sp, color = Color.White.copy(alpha = .4f))
-                Spacer(Modifier.weight(1f))
-            }
-            Text(durationLabel(duration), fontSize = 10.sp, color = Color.White.copy(alpha = .45f))
-        }
+        PlayerTimeline(song.id, duration, playback.buffering, position, actions.seek)
         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             ActionIcon(Icons.Rounded.Shuffle, if (playback.shuffle) "关闭随机播放" else "开启随机播放", actions.shuffle, tint = Color.White.copy(alpha = if (playback.shuffle) 1f else .4f))
             ActionIcon(Icons.Rounded.SkipPrevious, "上一首", actions.previous)
             FilledIconButton(actions.toggle, Modifier.size(62.dp), shape = CircleShape) {
-                Icon(if (playback.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playback.playing) "暂停" else "播放", Modifier.size(34.dp))
+                AnimatedContent(playback.playing, transitionSpec = {
+                    (fadeIn(tween(140)) + scaleIn(tween(180), initialScale = .8f)) togetherWith
+                        (fadeOut(tween(100)) + scaleOut(tween(140), targetScale = .8f))
+                }, label = "transport-toggle") { playing ->
+                    Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "暂停" else "播放", Modifier.size(34.dp))
+                }
             }
             ActionIcon(Icons.Rounded.SkipNext, "下一首", actions.next)
             ActionIcon(if (playback.repeat == 1) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
@@ -225,6 +190,47 @@ private val PlayerColors = darkColorScheme(
                 Spacer(Modifier.width(6.dp)); Text(if (translating) "翻译中" else if (translated) "译文" else "翻译", fontSize = 12.sp, maxLines = 1)
             }
             TextButton(actions.queue, Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp)) { Icon(Icons.Rounded.QueueMusic, null, Modifier.size(20.dp)); Spacer(Modifier.width(6.dp)); Text("队列", fontSize = 12.sp, maxLines = 1) }
+        }
+    }
+}
+
+/** Frame-clock reads stop here: artwork, buttons and the library never observe each tick. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun PlayerTimeline(songId: String, duration: Long, buffering: Boolean, position: () -> Long, onSeek: (Long) -> Unit) {
+    var seeking by remember(songId) { mutableStateOf<Float?>(null) }
+    var pendingSeek by remember(songId) { mutableStateOf<Long?>(null) }
+    val currentPosition by rememberUpdatedState(position)
+    LaunchedEffect(pendingSeek) {
+        pendingSeek?.let { target ->
+            withTimeoutOrNull(800) { snapshotFlow { currentPosition() }.first { abs(it - target) < 500 } }
+            pendingSeek = null
+        }
+    }
+    val displayed = (seeking ?: pendingSeek?.toFloat() ?: position().toFloat()).coerceIn(0f, duration.coerceAtLeast(1).toFloat())
+    val colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White.copy(alpha = .8f), inactiveTrackColor = Color.White.copy(alpha = .15f))
+    Column {
+        Slider(value = displayed,
+            onValueChange = { seeking = it }, onValueChangeFinished = {
+                seeking?.toLong()?.let { pendingSeek = it; onSeek(it) }
+                seeking = null
+            },
+            valueRange = 0f..duration.coerceAtLeast(1).toFloat(), enabled = duration > 0, colors = colors,
+            thumb = {
+                Box(Modifier.width(8.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(8.dp).background(Color.White.copy(alpha = if (duration > 0) 1f else .3f), CircleShape))
+                }
+            },
+            track = { SliderDefaults.Track(it, Modifier.height(3.dp), enabled = duration > 0, colors = colors,
+                drawStopIndicator = null, thumbTrackGapSize = 0.dp, trackInsideCornerSize = 0.dp) },
+            modifier = Modifier.fillMaxWidth().height(40.dp).testTag("playback-seek"))
+        Row(Modifier.fillMaxWidth()) {
+            Text(durationLabel(displayed.toLong()), fontSize = 10.sp, color = Color.White.copy(alpha = .45f))
+            Spacer(Modifier.weight(1f))
+            if (buffering) {
+                Text("正在缓冲…", fontSize = 10.sp, color = Color.White.copy(alpha = .4f))
+                Spacer(Modifier.weight(1f))
+            }
+            Text(durationLabel(duration), fontSize = 10.sp, color = Color.White.copy(alpha = .45f))
         }
     }
 }

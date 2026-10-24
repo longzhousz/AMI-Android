@@ -2,14 +2,19 @@ package com.longzhousz.ami.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -23,43 +28,54 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.longzhousz.ami.AmiViewModel
 import com.longzhousz.ami.core.Album
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.core.albumsOf
 import com.longzhousz.ami.core.durationLabel
+import com.longzhousz.ami.playback.PlaybackState
+import com.longzhousz.ami.playback.PlayerConnection
+
+private data class AppDestination(val page: Int, val albumKey: String?)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun AmiApp(model: AmiViewModel, onImport: () -> Unit, onNotifications: () -> Unit, onBridgeFolder: () -> Unit,
     onLyricsFolder: () -> Unit, onLyricFile: (Song) -> Unit) {
     val theme by model.theme.collectAsStateWithLifecycle()
-    AmiTheme(theme) {
+    var fullPlayer by rememberSaveable { mutableStateOf(false) }
+    AmiTheme(theme, immersive = fullPlayer) {
+        val focus = LocalFocusManager.current
         val songs by model.repository.songs.collectAsStateWithLifecycle()
         val loading by model.repository.loading.collectAsStateWithLifecycle()
         val playback by model.player.state.collectAsStateWithLifecycle()
         val importing by model.repository.importState.collectAsStateWithLifecycle()
         val message by model.message.collectAsStateWithLifecycle()
         val albums = remember(songs) { albumsOf(songs) }
+        val songsById = remember(songs) { songs.associateBy { it.id } }
+        val albumsByKey = remember(albums) { albums.associateBy { it.key } }
         var page by rememberSaveable { mutableIntStateOf(0) }
         var albumKey by rememberSaveable { mutableStateOf<String?>(null) }
-        var fullPlayer by rememberSaveable { mutableStateOf(false) }
         var queue by rememberSaveable { mutableStateOf(false) }
         var remove by remember { mutableStateOf<Song?>(null) }
+        var miniBounds by remember { mutableStateOf<Rect?>(null) }
         val pageState = rememberSaveableStateHolder()
-        val current = songs.find { it.id == playback.id }
-        val selectedAlbum = albums.find { it.key == albumKey }
+        val current = songsById[playback.id]
+        val selectedAlbum = albumsByKey[albumKey]
         val bridgeAlbum by model.bridgeAlbum.collectAsStateWithLifecycle()
         val bridgeEnabled by model.bridgeEnabled.collectAsStateWithLifecycle()
         val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -70,61 +86,81 @@ import com.longzhousz.ami.core.durationLabel
             }
         }
         val snackbar = remember { SnackbarHostState() }
+        val queueSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val scope = rememberCoroutineScope()
+        LaunchedEffect(current?.id, loading) {
+            if (!loading && current == null) { fullPlayer = false; queue = false }
+        }
         LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); if (model.message.value == it) model.message.value = null } }
         LaunchedEffect(playback.error) { playback.error?.let { snackbar.showSnackbar(it) } }
         BackHandler(selectedAlbum != null && !fullPlayer && !queue) { albumKey = null }
-        Scaffold(
-            snackbarHost = { SnackbarHost(snackbar) },
-            bottomBar = {
-                Column {
-                    if (current != null) MiniPlayer(current, playback.playing, playback.buffering, playback.position, playback.duration,
-                        onOpen = { fullPlayer = true }, onToggle = { model.act("player.toggle") { model.player.toggle() } }, onNext = { model.act("player.next") { model.player.next() } })
-                    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 0.dp) {
-                        listOf(Triple("曲库", Icons.Rounded.Album, 0), Triple("我喜欢", Icons.Rounded.FavoriteBorder, 1), Triple("设置", Icons.Rounded.Tune, 2)).forEach { (label, icon, index) ->
-                            NavigationBarItem(page == index, { page = index; albumKey = null }, { Icon(icon, label) }, label = { Text(label) })
+        Box(Modifier.fillMaxSize()) {
+            Scaffold(
+                modifier = if (fullPlayer) Modifier.clearAndSetSemantics {} else Modifier,
+                snackbarHost = { SnackbarHost(snackbar) },
+                bottomBar = {
+                    Column {
+                        if (current != null) MiniPlayer(current, playback, model.player, clockEnabled = !fullPlayer,
+                            onBounds = { miniBounds = it }, onOpen = { focus.clearFocus(); fullPlayer = true },
+                            onToggle = { model.act("player.toggle") { model.player.toggle() } }, onNext = { model.act("player.next") { model.player.next() } })
+                        NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 0.dp) {
+                            listOf(Triple("曲库", Icons.Rounded.Album, 0), Triple("我喜欢", Icons.Rounded.FavoriteBorder, 1), Triple("设置", Icons.Rounded.Tune, 2)).forEach { (label, icon, index) ->
+                                NavigationBarItem(page == index, { page = index; albumKey = null }, { Icon(icon, label) }, label = { Text(label) })
+                            }
+                        }
+                    }
+                }
+            ) { padding ->
+                Column(Modifier.fillMaxSize().padding(padding)) {
+                    AnimatedVisibility(importing.running) {
+                        Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primaryContainer).padding(horizontal = 20.dp, vertical = 8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("${importing.done}/${importing.total}  ${importing.message}", Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
+                                TextButton({ model.repository.cancelScan() }) { Text("取消") }
+                            }
+                            if (importing.total > 0) LinearProgressIndicator(progress = { importing.done.toFloat() / importing.total }, modifier = Modifier.fillMaxWidth())
+                            else LinearProgressIndicator(Modifier.fillMaxWidth())
+                        }
+                    }
+                    AnimatedContent(AppDestination(page, albumKey), Modifier.weight(1f), transitionSpec = {
+                        AmiMotion.page(if (targetState.page != initialState.page) targetState.page > initialState.page else targetState.albumKey != null)
+                    }, label = "app-destination") { destination ->
+                        val album = albumsByKey[destination.albumKey]
+                        when {
+                            album != null -> AlbumScreen(album, playback.id, model, { albumKey = null }, { remove = it })
+                            destination.page == 2 -> SettingsScreen(model, onImport, onNotifications, onBridgeFolder, onLyricsFolder)
+                            else -> pageState.SaveableStateProvider("library-${destination.page}") {
+                                LibraryScreen(songs, albums, loading, destination.page == 1, playback.id, { page = 2 },
+                                    onAlbum = { albumKey = it.key }, onPlay = { list, index -> model.play(list, index) }, onFavorite = model::favorite, onRemove = { remove = it })
+                            }
                         }
                     }
                 }
             }
-        ) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding)) {
-                AnimatedVisibility(importing.running) {
-                    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primaryContainer).padding(horizontal = 20.dp, vertical = 8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("${importing.done}/${importing.total}  ${importing.message}", Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
-                            TextButton({ model.repository.cancelScan() }) { Text("取消") }
-                        }
-                        if (importing.total > 0) LinearProgressIndicator(progress = { importing.done.toFloat() / importing.total }, modifier = Modifier.fillMaxWidth())
-                        else LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (fullPlayer && current != null) PlayerSheet(miniBounds, { fullPlayer = false }, collapsedContent = {
+                MiniPlayer(current, playback, model.player, clockEnabled = false, verticalPadding = 0,
+                    onOpen = {}, onToggle = {}, onNext = {})
+            }) { close, dragHandle ->
+                Box(Modifier.fillMaxSize()) {
+                    PlayerScreen(current, model, close, { queue = true }, { onLyricFile(current) }, dragHandle)
+                    SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 64.dp))
+                }
+            }
+            if (queue) ModalBottomSheet({ queue = false }, sheetState = queueSheet) {
+                Text("播放队列 · ${playback.queue.size}", Modifier.padding(horizontal = 24.dp, vertical = 16.dp), style = MaterialTheme.typography.titleLarge)
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 560.dp).padding(horizontal = 20.dp).navigationBarsPadding()) {
+                    itemsIndexed(playback.queue, key = { index, id -> "$index:$id" }) { index, id ->
+                        songsById[id]?.let { song -> SongRow(song, playback.id == id, {
+                            model.act("player.jump") { model.player.jump(index) }
+                            scope.launch { queueSheet.hide(); queue = false }
+                        }, { model.favorite(song) }, number = index + 1, modifier = Modifier.animateItem()) }
                     }
                 }
-                when {
-                    selectedAlbum != null -> AlbumScreen(selectedAlbum, playback.id, model, { albumKey = null }, { remove = it })
-                    page == 2 -> SettingsScreen(model, onImport, onNotifications, onBridgeFolder, onLyricsFolder)
-                    else -> pageState.SaveableStateProvider("library-$page") {
-                        LibraryScreen(songs, albums, loading, page == 1, playback.id, { page = 2 },
-                            onAlbum = { albumKey = it.key }, onPlay = { list, index -> model.play(list, index) }, onFavorite = model::favorite, onRemove = { remove = it })
-                    }
-                }
             }
-        }
-        if (fullPlayer && current != null) Dialog({ fullPlayer = false }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-            Box(Modifier.fillMaxSize()) {
-                PlayerScreen(current, model, { fullPlayer = false }, { queue = true }, { onLyricFile(current) })
-                SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 64.dp))
+            remove?.let { song ->
+                AlertDialog({ remove = null }, title = { Text("从曲库移除？") }, text = { Text("《${song.title}》将从 AMI 曲库和播放队列中移除。原始音频会保留，重新扫描可再次导入。") },
+                    confirmButton = { TextButton({ model.remove(song); remove = null }) { Text("移除") } }, dismissButton = { TextButton({ remove = null }) { Text("取消") } })
             }
-        }
-        if (queue) ModalBottomSheet({ queue = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-            Text("播放队列 · ${playback.queue.size}", Modifier.padding(horizontal = 24.dp, vertical = 16.dp), style = MaterialTheme.typography.titleLarge)
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 560.dp).padding(horizontal = 20.dp).navigationBarsPadding()) {
-                items(playback.queue.withIndex().toList(), key = { "${it.index}:${it.value}" }) { (index, id) ->
-                    songs.find { it.id == id }?.let { song -> SongRow(song, playback.id == id, { model.player.jump(index); queue = false }, { model.favorite(song) }, number = index + 1) }
-                }
-            }
-        }
-        remove?.let { song ->
-            AlertDialog({ remove = null }, title = { Text("从曲库移除？") }, text = { Text("《${song.title}》将从 AMI 曲库和播放队列中移除。原始音频会保留，重新扫描可再次导入。") },
-                confirmButton = { TextButton({ model.remove(song); remove = null }) { Text("移除") } }, dismissButton = { TextButton({ remove = null }) { Text("取消") } })
         }
     }
 }
@@ -138,6 +174,18 @@ import com.longzhousz.ami.core.durationLabel
     var recent by rememberSaveable { mutableStateOf(false) }
     var sorting by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
+    val songList = rememberLazyListState()
+    val albumGrid = rememberLazyGridState()
+    var previousQuery by rememberSaveable { mutableStateOf(query) }
+    var previousSorting by rememberSaveable { mutableStateOf(recent) }
+    LaunchedEffect(query, recent) {
+        if (query != previousQuery || recent != previousSorting) {
+            previousQuery = query
+            previousSorting = recent
+            songList.scrollToItem(0)
+            albumGrid.scrollToItem(0)
+        }
+    }
     val filteredSongs = remember(songs, query, favorites, recent) {
         val filtered = songs.filter { (!favorites || it.favorite) && "${it.title} ${it.album} ${it.artist}".contains(query.trim(), true) }
         if (recent) filtered.sortedByDescending { it.importedAt } else filtered
@@ -164,16 +212,20 @@ import com.longzhousz.ami.core.durationLabel
             }
             ActionIcon(Icons.Rounded.Shuffle, "随机播放", { onPlay(filteredSongs.shuffled(), 0) }, enabled = filteredSongs.isNotEmpty() && !loading)
         }
-        key(recent, query) { when {
+        AnimatedContent(if (favorites) 1 else mode, Modifier.weight(1f), transitionSpec = { AmiMotion.page(targetState > initialState) }, label = "library-layout") { layout ->
+        when {
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             songs.isEmpty() && !favorites -> EmptyLibrary(onSettings)
-            (favorites || mode == 1) && filteredSongs.isEmpty() || !favorites && mode == 0 && filteredAlbums.isEmpty() -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) { Text(if (favorites && query.isEmpty()) "暂无收藏" else "没有找到匹配的音乐", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            favorites || mode == 1 -> LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp)) {
-                items(filteredSongs, key = { it.id }) { song -> SongRow(song, song.id == currentId, { onPlay(filteredSongs, filteredSongs.indexOf(song)) }, { onFavorite(song) }, { onRemove(song) }) }
+            layout == 1 && filteredSongs.isEmpty() || layout == 0 && filteredAlbums.isEmpty() -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) { Text(if (favorites && query.isEmpty()) "暂无收藏" else "没有找到匹配的音乐", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            layout == 1 -> LazyColumn(state = songList, modifier = Modifier.testTag("library-song-list"), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp)) {
+                itemsIndexed(filteredSongs, key = { _, song -> song.id }) { index, song ->
+                    SongRow(song, song.id == currentId, { onPlay(filteredSongs, index) }, { onFavorite(song) }, { onRemove(song) },
+                        modifier = Modifier.animateItem(placementSpec = spring(stiffness = 500f), fadeInSpec = tween(160), fadeOutSpec = tween(120)))
+                }
             }
-            else -> LazyVerticalGrid(GridCells.Adaptive(145.dp), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+            else -> LazyVerticalGrid(GridCells.Adaptive(145.dp), state = albumGrid, contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
                 items(filteredAlbums, key = { it.key }) { album ->
-                    Column(Modifier.clip(RoundedCornerShape(18.dp)).clickable { onAlbum(album) }) {
+                    Column(Modifier.animateItem(placementSpec = spring(stiffness = 500f)).clip(RoundedCornerShape(18.dp)).clickable { onAlbum(album) }) {
                         Cover(album.cover, album.title, Modifier.fillMaxWidth().aspectRatio(1f))
                         Text(album.title, Modifier.padding(top = 10.dp, start = 2.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text("${album.artist} · ${album.songs.size} 首", Modifier.padding(start = 2.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -194,17 +246,27 @@ import com.longzhousz.ami.core.durationLabel
     }
 }
 
-@Composable private fun MiniPlayer(song: Song, playing: Boolean, buffering: Boolean, position: Long, duration: Long, onOpen: () -> Unit, onToggle: () -> Unit, onNext: () -> Unit) {
-    Surface(Modifier.fillMaxWidth().testTag("mini-player").padding(horizontal = 12.dp, vertical = 5.dp).clip(RoundedCornerShape(20.dp)).clickable(onClick = onOpen), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 2.dp) {
+@Composable private fun MiniPlayer(
+    song: Song, playback: PlaybackState, player: PlayerConnection,
+    onOpen: () -> Unit, onToggle: () -> Unit, onNext: () -> Unit,
+    clockEnabled: Boolean = true, onBounds: (Rect) -> Unit = {}, verticalPadding: Int = 5,
+) {
+    val clock = rememberPlaybackClock(player, playback, clockEnabled)
+    val duration = playback.duration.takeIf { it > 0 } ?: song.duration
+    Surface(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = verticalPadding.dp)
+        .onGloballyPositioned { onBounds(it.boundsInRoot()) }.testTag("mini-player")
+        .clip(RoundedCornerShape(20.dp)).clickable(onClick = onOpen), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 2.dp) {
         Column {
             Row(Modifier.padding(start = 9.dp, top = 7.dp, bottom = 7.dp, end = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                 Cover(song.cover, song.album, Modifier.size(46.dp)); Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) { Text(song.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
-                if (buffering) CircularProgressIndicator(Modifier.size(24.dp).padding(4.dp), strokeWidth = 2.dp)
-                ActionIcon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "暂停" else "播放", onToggle)
+                AnimatedContent(song.title to song.artist, Modifier.weight(1f), transitionSpec = { AmiMotion.page(true) }, label = "mini-track") { track ->
+                    Column { Text(track.first, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(track.second, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
+                }
+                if (playback.buffering) CircularProgressIndicator(Modifier.size(24.dp).padding(4.dp), strokeWidth = 2.dp)
+                ActionIcon(if (playback.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playback.playing) "暂停" else "播放", onToggle)
                 ActionIcon(Icons.Rounded.SkipNext, "下一首", onNext)
             }
-            LinearProgressIndicator(progress = { if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f }, modifier = Modifier.fillMaxWidth().height(2.dp), color = MaterialTheme.colorScheme.primary, trackColor = Color.Transparent, drawStopIndicator = {})
+            LinearProgressIndicator(progress = { if (duration > 0) (clock.value.toFloat() / duration).coerceIn(0f, 1f) else 0f }, modifier = Modifier.fillMaxWidth().height(2.dp), color = MaterialTheme.colorScheme.primary, trackColor = Color.Transparent, drawStopIndicator = {})
         }
     }
 }
@@ -234,7 +296,10 @@ import com.longzhousz.ami.core.durationLabel
                     }
                 }
             }
-            items(album.songs, key = { it.id }) { song -> SongRow(song, currentId == song.id, { model.play(album.songs, album.songs.indexOf(song)) }, { model.favorite(song) }, { onRemove(song) }, album.songs.indexOf(song) + 1) }
+            itemsIndexed(album.songs, key = { _, song -> song.id }) { index, song ->
+                SongRow(song, currentId == song.id, { model.play(album.songs, index) }, { model.favorite(song) }, { onRemove(song) }, index + 1,
+                    modifier = Modifier.animateItem(placementSpec = spring(stiffness = 500f)))
+            }
         }
     }
     if (reorder) ReorderDialog(album, { reorder = false }, { ids -> model.reorder(ids); reorder = false })

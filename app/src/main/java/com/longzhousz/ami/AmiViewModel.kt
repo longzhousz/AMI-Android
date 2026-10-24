@@ -25,7 +25,7 @@ import kotlinx.coroutines.withContext
 
 class AmiViewModel(app: Application) : AndroidViewModel(app) {
     val repository = (app as AmiApplication).repository
-    val player = PlayerConnection(app, viewModelScope)
+    val player = PlayerConnection(app)
     val theme = MutableStateFlow(repository.prefs.getString("theme", "system")!!)
     val message = MutableStateFlow<String?>(null)
     val translations = MutableStateFlow<List<String>?>(null)

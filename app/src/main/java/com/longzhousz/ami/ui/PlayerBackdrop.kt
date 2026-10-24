@@ -1,6 +1,7 @@
 package com.longzhousz.ami.ui
 
 import android.graphics.BitmapFactory
+import android.util.LruCache
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -12,9 +13,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 
 private data class ArtworkColors(val top: Color, val bottom: Color, val glow: Color)
 private val FallbackColors = ArtworkColors(Color(0xFF41465F), Color(0xFF151923), Color(0xFF69617C))
+private val ArtworkColorCache = LruCache<String, ArtworkColors>(32)
 
 /** Sample cached artwork once off the main thread; no full-resolution texture or perpetual animation. */
 @Composable internal fun PlayerBackdrop(cover: String?) {
@@ -22,6 +25,8 @@ private val FallbackColors = ArtworkColors(Color(0xFF41465F), Color(0xFF151923),
         value = withContext(Dispatchers.IO) {
             runCatching {
                 if (cover == null) return@runCatching FallbackColors
+                val key = "$cover:${File(cover).lastModified()}"
+                ArtworkColorCache.get(key)?.let { return@runCatching it }
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeFile(cover, bounds)
                 var sample = 1
@@ -42,16 +47,17 @@ private val FallbackColors = ArtworkColors(Color(0xFF41465F), Color(0xFF151923),
                     fun tone(hue: Float, saturation: Float, brightness: Float) = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue % 360, saturation, brightness)))
                     val saturation = hsv[1].coerceIn(.16f, .45f)
                     ArtworkColors(tone(hsv[0], saturation, .31f), tone(hsv[0] + 15, saturation, .10f), tone(hsv[0] + 24, saturation * .8f, .43f))
+                        .also { ArtworkColorCache.put(key, it) }
                 } finally { bitmap.recycle() }
             }.getOrDefault(FallbackColors)
         }
     }
-    val top by animateColorAsState(colors.top, tween(1000), label = "artwork-top")
-    val bottom by animateColorAsState(colors.bottom, tween(1000), label = "artwork-bottom")
-    val glow by animateColorAsState(colors.glow, tween(1000), label = "artwork-glow")
+    val top = animateColorAsState(colors.top, tween(600), label = "artwork-top")
+    val bottom = animateColorAsState(colors.bottom, tween(600), label = "artwork-bottom")
+    val glow = animateColorAsState(colors.glow, tween(600), label = "artwork-glow")
     Canvas(Modifier.fillMaxSize()) {
-        drawRect(Brush.verticalGradient(listOf(top, bottom)))
-        drawRect(Brush.radialGradient(listOf(glow.copy(alpha = .6f), Color.Transparent), center = Offset(size.width * .9f, size.height * .18f), radius = size.maxDimension * .7f))
+        drawRect(Brush.verticalGradient(listOf(top.value, bottom.value)))
+        drawRect(Brush.radialGradient(listOf(glow.value.copy(alpha = .6f), Color.Transparent), center = Offset(size.width * .9f, size.height * .18f), radius = size.maxDimension * .7f))
         drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .22f))))
     }
 }

@@ -12,6 +12,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextClearance
@@ -31,6 +33,27 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class InterfaceTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+
+    @Test fun returningFromSettingsPreservesLibraryScroll() {
+        val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
+        val songs = (0 until 60).map { index ->
+            Song("qa-scroll-$index", "file:///unused-$index", folder = "qa-scroll", title = "滚动验证 ${index.toString().padStart(2, '0')}", importedAt = index.toLong())
+        }
+        try {
+            songs.forEach { model.repository.db.upsert(it) }
+            model.repository.reload()
+            compose.waitUntil(30000) { compose.onAllNodesWithText(songs.first().title).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("library-song-list").performScrollToIndex(35)
+            compose.onNodeWithText(songs[35].title).assertIsDisplayed()
+            compose.onNodeWithText("设置").performClick()
+            compose.onNodeWithText("曲库").performClick()
+            compose.onNodeWithText(songs[35].title).assertIsDisplayed()
+            compose.onNodeWithText(songs.first().title).assertDoesNotExist()
+        } finally {
+            songs.forEach { model.repository.db.remove(it.id) }
+            model.repository.reload()
+        }
+    }
 
     @Test fun emptyLibraryNavigationAndDarkAppearanceRender() {
         compose.waitUntil(30000) { compose.onAllNodesWithText("前往设置").fetchSemanticsNodes().isNotEmpty() }
@@ -62,7 +85,9 @@ class InterfaceTest {
             song.copy(id = "qa-player-window-$index", title = title, album = if (index < 3) "晚风与回声" else "海边来信", favorite = index == 0 || index == 2, importedAt = index.toLong())
         }
         try {
-            songs.forEach { model.repository.db.upsert(it) }; model.repository.reload()
+            // Import upsert preserves user state; seed favorites through their dedicated API.
+            songs.forEach { model.repository.db.upsert(it); model.repository.db.favorite(it.id, it.favorite) }
+            model.repository.reload()
             compose.onNodeWithText("曲库").performClick()
             compose.onNodeWithText(songs.first().title).assertIsDisplayed()
             compose.onNodeWithContentDescription("导入音乐文件夹").assertDoesNotExist()
@@ -79,7 +104,13 @@ class InterfaceTest {
             compose.onNodeWithText("默认排序").performClick()
             compose.onNodeWithText("我喜欢").performClick()
             compose.onAllNodesWithText("我喜欢").assertCountEquals(1)
-            compose.onNodeWithText(songs.first().title).assertIsDisplayed()
+            try {
+                compose.onNodeWithText(songs.first().title).assertIsDisplayed()
+            } catch (failure: AssertionError) {
+                val tree = compose.onRoot().printToString()
+                screenshot("favorites-failure")
+                throw AssertionError("${failure.message}\n$tree", failure)
+            }
             compose.onNodeWithText(songs[2].title).assertIsDisplayed()
             compose.onNodeWithText(songs[1].title).assertDoesNotExist()
             screenshot("favorites-songs")
@@ -113,6 +144,11 @@ class InterfaceTest {
                 swipe(Offset(centerX, height * .4f), Offset(centerX, height + 200f), durationMillis = 300)
             }
             compose.onNodeWithTag("full-player").assertDoesNotExist()
+            compose.onNodeWithTag("mini-player").performClick()
+            compose.onNodeWithTag("full-player").assertIsDisplayed()
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+            compose.onNodeWithTag("full-player").assertDoesNotExist()
+            compose.onNodeWithTag("mini-player").assertIsDisplayed()
         } finally {
             compose.runOnIdle { model.player.pause(); songs.forEach { model.player.remove(it.id) } }
             songs.forEach { model.repository.db.remove(it.id) }; model.repository.reload()

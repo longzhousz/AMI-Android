@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
 import android.app.Activity
+import android.os.Build
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -37,14 +38,17 @@ private val Type = Typography(
     bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 22.sp),
     labelLarge = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp),
 )
-@Composable fun AmiTheme(preference: String, content: @Composable () -> Unit) {
+@Composable fun AmiTheme(preference: String, immersive: Boolean = false, content: @Composable () -> Unit) {
     val dark = when (preference) { "dark" -> true; "light" -> false; else -> isSystemInDarkTheme() }
     val view = LocalView.current
     if (!view.isInEditMode) SideEffect {
         val activity = view.context as? Activity
-        if (activity != null) WindowCompat.getInsetsController(activity.window, view).apply {
-            isAppearanceLightStatusBars = !dark
-            isAppearanceLightNavigationBars = !dark
+        if (activity != null) {
+            WindowCompat.getInsetsController(activity.window, view).apply {
+                isAppearanceLightStatusBars = !dark && !immersive
+                isAppearanceLightNavigationBars = !dark && !immersive
+            }
+            if (Build.VERSION.SDK_INT >= 29) activity.window.isNavigationBarContrastEnforced = !immersive
         }
     }
     MaterialTheme(colorScheme = if (dark) Dark else Light, typography = Type, content = content)

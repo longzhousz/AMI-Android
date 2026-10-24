@@ -1,8 +1,21 @@
 package com.longzhousz.ami.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
@@ -29,12 +43,14 @@ import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.core.durationLabel
 import java.io.File
 
+private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0xFFB58C82), Color(0xFF8D86A6), Color(0xFF789D9E))
+
 @Composable fun Cover(path: String?, title: String, modifier: Modifier = Modifier) {
-    val palette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0xFFB58C82), Color(0xFF8D86A6), Color(0xFF789D9E))
-    val color = palette[(title.hashCode().toLong().let { if (it < 0) -it else it } % palette.size).toInt()]
-    Box(modifier.clip(RoundedCornerShape(18.dp)).background(Brush.linearGradient(listOf(color.copy(alpha = 0.65f), color))), contentAlignment = Alignment.Center) {
-        if (path != null) AsyncImage(File(path), "《$title》封面", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        else Canvas(Modifier.fillMaxSize().padding(18.dp).semantics { contentDescription = "《$title》占位封面" }) {
+    Crossfade(path to title, modifier.clip(RoundedCornerShape(18.dp)), animationSpec = tween(260), label = "artwork") { artwork ->
+        val color = CoverPalette[(artwork.second.hashCode().toLong().let { if (it < 0) -it else it } % CoverPalette.size).toInt()]
+        Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(color.copy(alpha = 0.65f), color))), contentAlignment = Alignment.Center) {
+        if (artwork.first != null) AsyncImage(File(artwork.first!!), "《${artwork.second}》封面", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else Canvas(Modifier.fillMaxSize().padding(18.dp).semantics { contentDescription = "《${artwork.second}》占位封面" }) {
             val radius = size.minDimension * .43f
             drawCircle(Color.White.copy(alpha = .17f), radius)
             drawCircle(Color.White.copy(alpha = .13f), radius * .72f, style = androidx.compose.ui.graphics.drawscope.Stroke(radius * .02f))
@@ -43,16 +59,27 @@ import java.io.File
             drawCircle(color, radius * .055f)
             drawLine(Color.White.copy(alpha = .2f), Offset(size.width * .2f, size.height * .8f), Offset(size.width * .8f, size.height * .2f), radius * .025f)
         }
+        }
     }
 }
 
 @Composable fun ActionIcon(icon: ImageVector, label: String, onClick: () -> Unit, tint: Color = MaterialTheme.colorScheme.onSurface, enabled: Boolean = true, modifier: Modifier = Modifier) {
-    IconButton(onClick, modifier.size(48.dp), enabled = enabled) { Icon(icon, label, tint = if (enabled) tint else tint.copy(alpha = .38f)) }
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale = animateFloatAsState(if (pressed) .86f else 1f, spring(dampingRatio = .72f, stiffness = 700f), label = "icon-press")
+    val color by animateColorAsState(if (enabled) tint else tint.copy(alpha = .38f), tween(180), label = "icon-tint")
+    IconButton(onClick, modifier.size(48.dp), enabled = enabled, interactionSource = interaction) {
+        AnimatedContent(icon to label, Modifier.graphicsLayer { scaleX = scale.value; scaleY = scale.value }, transitionSpec = {
+            (fadeIn(tween(140)) + scaleIn(tween(180), initialScale = .8f)) togetherWith
+                (fadeOut(tween(100)) + scaleOut(tween(140), targetScale = .8f))
+        }, label = "action-icon") { target -> Icon(target.first, target.second, tint = color) }
+    }
 }
 
-@Composable fun SongRow(song: Song, playing: Boolean, onPlay: () -> Unit, onFavorite: () -> Unit, onRemove: (() -> Unit)? = null, number: Int? = null) {
+@Composable fun SongRow(song: Song, playing: Boolean, onPlay: () -> Unit, onFavorite: () -> Unit, onRemove: (() -> Unit)? = null, number: Int? = null, modifier: Modifier = Modifier) {
     var menu by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onPlay).padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+    val background by animateColorAsState(if (playing) MaterialTheme.colorScheme.primary.copy(alpha = .08f) else Color.Transparent, tween(220), label = "track-highlight")
+    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(background).clickable(onClick = onPlay).padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
         if (number != null) Box(Modifier.width(35.dp), contentAlignment = Alignment.Center) {
             if (playing) Icon(Icons.Rounded.Equalizer, "正在播放", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
             else Text("%02d".format(number), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)

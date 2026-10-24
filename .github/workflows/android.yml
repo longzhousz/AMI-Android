@@ -109,7 +109,8 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disk-size: ${{ matrix.api == '37.0' && '8192M' || '2048M' }}
-          disable-animations: true
+          # Gesture reversals and spring settling are part of the UI contract.
+          disable-animations: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
           script: bash .github/scripts/android-device-test.sh
       - uses: actions/upload-artifact@v4
