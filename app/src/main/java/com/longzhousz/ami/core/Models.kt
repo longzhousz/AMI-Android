@@ -51,8 +51,18 @@ fun albumsOf(songs: List<Song>): List<Album> {
     }.sortedWith { a, b -> collator.compare(a.title, b.title) }
 }
 
-fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
-    .digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
+fun digest(value: String): String = digest(value.toByteArray(Charsets.UTF_8))
+fun digest(value: ByteArray): String {
+    val bytes = MessageDigest.getInstance("SHA-256").digest(value)
+    val hex = "0123456789abcdef"
+    return CharArray(bytes.size * 2).also { chars ->
+        bytes.forEachIndexed { index, byte ->
+            val n = byte.toInt() and 255
+            chars[index * 2] = hex[n ushr 4]
+            chars[index * 2 + 1] = hex[n and 15]
+        }
+    }.concatToString()
+}
 
 fun durationLabel(ms: Long): String {
     val seconds = ms.coerceAtLeast(0) / 1000

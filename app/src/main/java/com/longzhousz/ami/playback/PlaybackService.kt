@@ -2,38 +2,73 @@ package com.longzhousz.ami.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.SharedPreferences
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.SettableFuture
 import com.longzhousz.ami.AmiApplication
 import com.longzhousz.ami.MainActivity
+import com.longzhousz.ami.core.PlaybackSnapshot
 import com.longzhousz.ami.core.Song
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 
 fun Song.mediaItem(): MediaItem = MediaItem.Builder().setMediaId(id).setUri(uri)
     .setMediaMetadata(MediaMetadata.Builder().setTitle(title).setArtist(artist).setAlbumTitle(album)
+        .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC).setIsPlayable(true).setIsBrowsable(false)
+        .setDurationMs(duration.takeIf { it > 0 })
         .setArtworkUri(cover?.let { android.net.Uri.fromFile(java.io.File(it)) }).build())
     .setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setStartPositionMs(start)
         .apply { end?.let { setEndPositionMs(it) } }.build()).build()
 
-class PlaybackService : MediaSessionService() {
+class PlaybackService : MediaLibraryService() {
     private val repository get() = (application as AmiApplication).repository
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var player: ExoPlayer
-    private var session: MediaSession? = null
+    private var session: MediaLibrarySession? = null
     private var restored = false
+    private val restoration = CompletableDeferred<Unit>()
+    private var queue: List<String> = emptyList()
+    private var positionJob: Job? = null
+    private var sleepJob: Job? = null
+    private val preferences = SharedPreferences.OnSharedPreferenceChangeListener { _, key -> if (key == "sleepAt") scheduleSleep() }
+    private val callback = object : MediaLibrarySession.Callback {
+        @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+        override fun onPlaybackResumption(session: MediaSession, controller: MediaSession.ControllerInfo, isForPlayback: Boolean): com.google.common.util.concurrent.ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            val future = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
+            scope.launch {
+                try {
+                    restoration.await()
+                    check(player.mediaItemCount > 0) { "没有可恢复的播放队列" }
+                    future.set(MediaSession.MediaItemsWithStartPosition((0 until player.mediaItemCount).map { player.getMediaItemAt(it) }, player.currentMediaItemIndex, player.currentPosition))
+                } catch (e: Exception) { future.setException(e) }
+            }
+            return future
+        }
+        override fun onGetLibraryRoot(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, params: LibraryParams?) =
+            Futures.immediateFuture(LibraryResult.ofItem(MediaItem.Builder().setMediaId("ami-root")
+                .setMediaMetadata(MediaMetadata.Builder().setTitle("AMI").setIsBrowsable(true).setIsPlayable(false).setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED).build()).build(), params))
+        // A non-null empty root lets platform/legacy clients connect to the media controls.
+        // The app's private collection is not exported through a new browsing UI.
+        override fun onGetChildren(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, parentId: String,
+            page: Int, pageSize: Int, params: LibraryParams?) = Futures.immediateFuture(LibraryResult.ofItemList(emptyList<MediaItem>(), params))
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -44,55 +79,75 @@ class PlaybackService : MediaSessionService() {
             repeatMode = repository.prefs.getInt("repeat", Player.REPEAT_MODE_ALL)
             shuffleModeEnabled = repository.prefs.getBoolean("shuffle", false)
         }
-        session = MediaSession.Builder(this, player)
-            .setSessionActivity(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
-            .setCallback(object : MediaSession.Callback {
-                override fun onPlayerCommandRequest(session: MediaSession, controller: MediaSession.ControllerInfo, playerCommand: Int): Int {
-                    repository.scope.launch { repository.db.log("media.command.$playerCommand", "system", "success") }
-                    return androidx.media3.session.SessionResult.RESULT_SUCCESS
-                }
-            }).build()
+        session = MediaLibrarySession.Builder(this, player, callback)
+            .setSessionActivity(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)).build()
         player.addListener(object : Player.Listener {
-            override fun onEvents(player: Player, events: Player.Events) { persist() }
+            override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+                    val ids = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }
+                    if (ids != queue) queue = ids
+                }
+            }
+            override fun onEvents(player: Player, events: Player.Events) {
+                if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_POSITION_DISCONTINUITY,
+                        Player.EVENT_PLAY_WHEN_READY_CHANGED, Player.EVENT_PLAYBACK_STATE_CHANGED,
+                        Player.EVENT_IS_PLAYING_CHANGED, Player.EVENT_REPEAT_MODE_CHANGED, Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED)) checkpoint()
+                updatePositionJob()
+            }
         })
+        repository.prefs.registerOnSharedPreferenceChangeListener(preferences)
+        scheduleSleep()
         scope.launch {
-            val songs = withContext(Dispatchers.IO) { repository.db.songs() }
-            // A controller may have already supplied a new queue while disk restoration ran.
+            val snapshot = repository.playback.load()
+            val songs = withContext(Dispatchers.IO) { repository.db.playbackSongs(snapshot.queue) }
+            // Commands received while disk restoration ran take precedence over the old queue.
             if (player.mediaItemCount == 0) {
-                val ids = runCatching { JSONArray(repository.prefs.getString("queue", "[]")) }.getOrDefault(JSONArray())
-                val indexed = songs.associateBy { it.id }
-                val queue = (0 until ids.length()).mapNotNull { indexed[ids.optString(it)] }
-                if (queue.isNotEmpty()) {
-                    val index = repository.prefs.getInt("queueIndex", 0).coerceIn(queue.indices)
-                    val position = repository.prefs.getLong("position", 0).coerceAtLeast(0)
-                    player.setMediaItems(queue.map { it.mediaItem() }, index, position)
+                val (items, location) = snapshot.restore(songs)
+                player.repeatMode = snapshot.repeat.coerceIn(Player.REPEAT_MODE_OFF, Player.REPEAT_MODE_ALL)
+                player.shuffleModeEnabled = snapshot.shuffle
+                if (items.isNotEmpty()) {
+                    player.setMediaItems(items.map { it.mediaItem() }, location.first, location.second)
                     player.prepare()
                 }
             }
             restored = true
-            while (true) {
-                val sleepAt = repository.prefs.getLong("sleepAt", 0)
-                if (sleepAt > 0 && System.currentTimeMillis() >= sleepAt) {
-                    player.pause(); repository.prefs.edit().remove("sleepAt").apply()
-                }
-                persist()
-                delay(2000)
+            checkpoint()
+            updatePositionJob()
+            restoration.complete(Unit)
+        }
+    }
+    private fun updatePositionJob() {
+        if (!restored || !player.isPlaying) { positionJob?.cancel(); positionJob = null; return }
+        if (positionJob?.isActive == true) return
+        positionJob = scope.launch {
+            while (player.isPlaying) {
+                delay(10_000)
+                if (player.isPlaying) checkpoint()
             }
         }
     }
-    private fun persist() {
+    private fun checkpoint() {
         if (!restored) return
-        if (player.mediaItemCount == 0) {
-            repository.prefs.edit().remove("queue").remove("queueIndex").remove("position").apply()
-            return
-        }
-        val ids = JSONArray().apply { repeat(player.mediaItemCount) { put(player.getMediaItemAt(it).mediaId) } }
-        repository.prefs.edit().putString("queue", ids.toString()).putInt("queueIndex", player.currentMediaItemIndex)
-            .putLong("position", player.currentPosition.coerceAtLeast(0)).putInt("repeat", player.repeatMode)
-            .putBoolean("shuffle", player.shuffleModeEnabled).apply()
+        val position = if (queue.isEmpty() || player.playbackState == Player.STATE_ENDED) 0 else player.currentPosition.coerceAtLeast(0)
+        repository.playback.publish(PlaybackSnapshot(queue, player.currentMediaItemIndex.coerceAtLeast(0), position, player.repeatMode, player.shuffleModeEnabled))
     }
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+    private fun scheduleSleep() {
+        sleepJob?.cancel()
+        val deadline = repository.prefs.getLong("sleepAt", 0)
+        sleepJob = if (deadline <= 0) null else scope.launch {
+            delay((deadline - System.currentTimeMillis()).coerceAtLeast(0))
+            player.pause()
+            repository.prefs.edit().remove("sleepAt").apply()
+        }
+    }
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
     override fun onDestroy() {
-        persist(); scope.cancel(); session?.release(); player.release(); super.onDestroy()
+        checkpoint()
+        restored = false
+        restoration.cancel()
+        repository.prefs.unregisterOnSharedPreferenceChangeListener(preferences)
+        scope.cancel()
+        session?.release(); player.release()
+        super.onDestroy()
     }
 }

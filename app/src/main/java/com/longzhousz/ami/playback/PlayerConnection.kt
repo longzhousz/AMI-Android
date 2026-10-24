@@ -21,23 +21,28 @@ class PlayerConnection(context: Context) {
     val state = MutableStateFlow(PlaybackState())
     private val future = MediaController.Builder(context, SessionToken(context, ComponentName(context, PlaybackService::class.java))).buildAsync()
     private var controller: MediaController? = null
+    private var queue: List<String> = emptyList()
     private val listener = object : Player.Listener {
-        override fun onEvents(player: Player, events: Player.Events) = update()
+        override fun onEvents(player: Player, events: Player.Events) = update(events.contains(Player.EVENT_TIMELINE_CHANGED))
     }
     init {
         future.addListener({
             runCatching {
                 controller = future.get().also { it.addListener(listener) }
-                update()
+                update(true)
             }.onFailure { state.value = state.value.copy(error = "无法连接播放服务，请重启应用") }
         }, ContextCompat.getMainExecutor(context))
     }
-    private fun update() {
+    private fun update(updateQueue: Boolean = false) {
         val c = controller ?: return
+        if (updateQueue) {
+            val ids = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }
+            if (ids != queue) queue = ids
+        }
         val playRequested = c.playWhenReady && c.playbackState != Player.STATE_ENDED && c.playerError == null
         state.value = PlaybackState(true, c.currentMediaItem?.mediaId, playRequested, c.currentPosition.coerceAtLeast(0),
             c.duration.coerceAtLeast(0), c.playbackState == Player.STATE_BUFFERING, c.shuffleModeEnabled, c.repeatMode,
-            (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId },
+            queue,
             c.playerError?.let { "无法播放此音频（${it.errorCodeName}），请检查文件授权或格式" }, advancing = c.isPlaying)
     }
     fun play(songs: List<Song>, index: Int = 0) {

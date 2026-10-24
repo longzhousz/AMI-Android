@@ -6,8 +6,12 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.core.LocalLyrics
+import com.longzhousz.ami.core.PlaybackSnapshot
+import org.json.JSONArray
 
-class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOpenHelper(context, name, null, 2) {
+data class ScanRecord(val key: String, val fingerprint: String, val ids: List<String>, val sources: List<String> = emptyList(), val artifacts: List<String> = emptyList())
+
+class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOpenHelper(context, name, null, 3) {
     init { setWriteAheadLoggingEnabled(true) }
     override fun onConfigure(db: SQLiteDatabase) { db.setForeignKeyConstraintsEnabled(true) }
     override fun onCreate(db: SQLiteDatabase) {
@@ -21,6 +25,7 @@ class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOp
         db.execSQL("CREATE TABLE translations (cache_key TEXT PRIMARY KEY, body TEXT NOT NULL)")
         db.execSQL("CREATE TABLE actions (id INTEGER PRIMARY KEY AUTOINCREMENT, time INTEGER NOT NULL, name TEXT NOT NULL, source TEXT NOT NULL, status TEXT NOT NULL)")
         createLyricsTables(db)
+        createPerformanceTables(db)
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
@@ -28,6 +33,13 @@ class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOp
             db.execSQL("ALTER TABLE songs ADD COLUMN lyric_translated TEXT NOT NULL DEFAULT ''")
             createLyricsTables(db)
         }
+        if (oldVersion < 3) createPerformanceTables(db)
+    }
+    private fun createPerformanceTables(db: SQLiteDatabase) {
+        db.execSQL("CREATE INDEX songs_import_order ON songs(imported_at,id)")
+        db.execSQL("CREATE TABLE scan_cache (cache_key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, ids TEXT NOT NULL, sources TEXT NOT NULL, artifacts TEXT NOT NULL)")
+        db.execSQL("CREATE TABLE playback_queue (position INTEGER PRIMARY KEY, song_id TEXT NOT NULL)")
+        db.execSQL("CREATE TABLE playback_checkpoint (singleton INTEGER PRIMARY KEY CHECK(singleton=1), queue_index INTEGER NOT NULL, position_ms INTEGER NOT NULL, repeat_mode INTEGER NOT NULL, shuffle INTEGER NOT NULL)")
     }
     private fun createLyricsTables(db: SQLiteDatabase) {
         db.execSQL("CREATE INDEX songs_netease_id ON songs(netease_id)")
@@ -40,9 +52,10 @@ class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOp
         n.translated AS netease_translated, n.name AS netease_name FROM songs s
         LEFT JOIN lyric_overrides o ON s.id=o.song_id LEFT JOIN netease_lyrics n ON s.netease_id=n.music_id
         ORDER BY s.imported_at,s.id""", null).use { c ->
-        fun s(key: String) = c.getString(c.getColumnIndexOrThrow(key)) ?: ""
-        fun l(key: String) = c.getLong(c.getColumnIndexOrThrow(key))
-        fun nullableLong(key: String) = c.getColumnIndexOrThrow(key).let { if (c.isNull(it)) null else c.getLong(it) }
+        val columns = c.columnNames.withIndex().associate { it.value to it.index }
+        fun s(key: String) = c.getString(columns.getValue(key)) ?: ""
+        fun l(key: String) = c.getLong(columns.getValue(key))
+        fun nullableLong(key: String) = columns.getValue(key).let { if (c.isNull(it)) null else c.getLong(it) }
         buildList {
             while (c.moveToNext()) add(Song(
                 id = s("id"), uri = s("uri"), sourceUri = s("source"), folder = s("folder"), title = s("title"),
@@ -56,6 +69,54 @@ class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOp
                 favorite = l("favorite") != 0L, importedAt = l("imported_at"),
             ))
         }
+    }
+
+    @Synchronized fun songIds(): Set<String> = readableDatabase.rawQuery("SELECT id FROM songs", null).use { c -> buildSet { while (c.moveToNext()) add(c.getString(0)) } }
+    @Synchronized fun cachedFileReferences(): Set<String> = readableDatabase.rawQuery("SELECT uri,cover FROM songs", null).use { c ->
+        buildSet { while (c.moveToNext()) {
+            c.getString(0)?.takeIf { it.startsWith("file:") }?.let { android.net.Uri.parse(it).path }?.let { add(it) }
+            c.getString(1)?.let { add(it) }
+        } }
+    }
+    @Synchronized fun lyricIds(): Set<String> = readableDatabase.rawQuery("SELECT music_id FROM netease_lyrics", null).use { c -> buildSet { while (c.moveToNext()) add(c.getString(0)) } }
+
+    @Synchronized fun scanRecords(): Map<String, ScanRecord> = readableDatabase.rawQuery("SELECT * FROM scan_cache", null).use { c ->
+        fun strings(column: Int) = JSONArray(c.getString(column)).let { a -> (0 until a.length()).map { a.getString(it) } }
+        buildMap { while (c.moveToNext()) runCatching { ScanRecord(c.getString(0), c.getString(1), strings(2), strings(3), strings(4)) }
+            .getOrNull()?.let { put(it.key, it) } }
+    }
+    @Synchronized fun saveScanRecord(record: ScanRecord) {
+        writableDatabase.insertWithOnConflict("scan_cache", null, ContentValues().apply {
+            put("cache_key", record.key); put("fingerprint", record.fingerprint)
+            put("ids", JSONArray(record.ids).toString()); put("sources", JSONArray(record.sources).toString()); put("artifacts", JSONArray(record.artifacts).toString())
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+    @Synchronized fun removeScanRecord(key: String) { writableDatabase.delete("scan_cache", "cache_key=?", arrayOf(key)) }
+
+    /** Restore a queue without loading every lyric or joining the full collection. */
+    @Synchronized fun playbackSongs(ids: List<String>): List<Song> = ids.distinct().chunked(400).flatMap { batch ->
+        readableDatabase.rawQuery("SELECT id,uri,source,folder,title,artist,album,duration,cover,start,end FROM songs WHERE id IN (${batch.joinToString { "?" }})", batch.toTypedArray()).use { c ->
+            buildList { while (c.moveToNext()) add(Song(c.getString(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4),
+                artist = c.getString(5), album = c.getString(6), duration = c.getLong(7), cover = c.getString(8), start = c.getLong(9), end = if (c.isNull(10)) null else c.getLong(10))) }
+        }
+    }
+
+    @Synchronized fun playbackSnapshot(): PlaybackSnapshot? = readableDatabase.rawQuery("SELECT queue_index,position_ms,repeat_mode,shuffle FROM playback_checkpoint WHERE singleton=1", null).use { c ->
+        if (!c.moveToFirst()) return@use null
+        val queue = readableDatabase.rawQuery("SELECT song_id FROM playback_queue ORDER BY position", null).use { q -> buildList { while (q.moveToNext()) add(q.getString(0)) } }
+        PlaybackSnapshot(queue, c.getInt(0), c.getLong(1), c.getInt(2), c.getInt(3) != 0)
+    }
+    @Synchronized fun savePlayback(snapshot: PlaybackSnapshot, queueChanged: Boolean) = transaction {
+        if (queueChanged) {
+            writableDatabase.delete("playback_queue", null, null)
+            val insert = writableDatabase.compileStatement("INSERT INTO playback_queue(position,song_id) VALUES (?,?)")
+            insert.use { statement -> snapshot.queue.forEachIndexed { index, id ->
+                statement.bindLong(1, index.toLong()); statement.bindString(2, id); statement.executeInsert()
+            } }
+        }
+        writableDatabase.execSQL("INSERT OR REPLACE INTO playback_checkpoint(singleton,queue_index,position_ms,repeat_mode,shuffle) VALUES (1,?,?,?,?)",
+            arrayOf<Any>(snapshot.index, snapshot.position.coerceAtLeast(0), snapshot.repeat, if (snapshot.shuffle) 1 else 0))
+        Unit
     }
 
     @Synchronized fun upsert(song: Song) {

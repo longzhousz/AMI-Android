@@ -30,6 +30,7 @@ class TranslationModelDialogTest {
         }
         compose.onNodeWithText("立即更新预设").performScrollTo().performClick()
         assertEquals(1, refreshes)
+        compose.onNodeWithText("手动选择").performScrollTo().performClick()
         compose.onNodeWithText("手动输入模型 ID").performScrollTo().performClick()
         compose.onNodeWithTag("custom-model-id").performScrollTo().performTextInput("future-translation-model")
         compose.runOnIdle { state.value = state.value.copy(models = listOf(TranslationModel("deepseek-flash", "DeepSeek-V5-Flash"))) }

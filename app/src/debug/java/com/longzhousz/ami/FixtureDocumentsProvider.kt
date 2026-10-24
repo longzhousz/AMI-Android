@@ -20,6 +20,11 @@ import org.json.JSONObject
 
 /** Private debug-only document fixtures, sharing the instrumented target's runtime. */
 class FixtureDocumentsProvider : ContentProvider() {
+    companion object {
+        val opened = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
+        @Volatile var unknownModified = false
+        val failOnce = java.util.concurrent.atomic.AtomicReference<String?>(null)
+    }
     private lateinit var directory: File
     override fun onCreate(): Boolean {
         directory = File(context!!.cacheDir, "saf-fixtures").apply { mkdirs() }
@@ -43,7 +48,7 @@ class FixtureDocumentsProvider : ContentProvider() {
         val file = if (id in setOf("root", "alias")) directory else File(directory, id)
         return mapOf(Document.COLUMN_DOCUMENT_ID to id, Document.COLUMN_DISPLAY_NAME to if (id == "root") "Fixtures" else file.name,
             Document.COLUMN_MIME_TYPE to when { file.isDirectory -> Document.MIME_TYPE_DIR; id.endsWith("wav") -> "audio/wav"; id.endsWith("jpg") -> "image/jpeg"; else -> "text/plain" },
-            Document.COLUMN_LAST_MODIFIED to file.lastModified(), Document.COLUMN_SIZE to file.length(), Document.COLUMN_FLAGS to 0)
+            Document.COLUMN_LAST_MODIFIED to if (unknownModified) 0L else file.lastModified(), Document.COLUMN_SIZE to file.length(), Document.COLUMN_FLAGS to 0)
     }
     private fun queryDocument(documentId: String, projection: Array<out String>?): Cursor {
         val cols = projection ?: columns
@@ -65,6 +70,9 @@ class FixtureDocumentsProvider : ContentProvider() {
     override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = throw UnsupportedOperationException()
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
         val documentId = DocumentsContract.getDocumentId(uri)
+        opened.getOrPut(documentId) { java.util.concurrent.atomic.AtomicInteger() }.incrementAndGet()
+        val failure = failOnce.get()
+        if (failure == documentId && failOnce.compareAndSet(failure, null)) throw java.io.FileNotFoundException("Temporary fixture read failure")
         val file = File(directory, documentId)
         require(mode == "r" && file.isFile && file.canonicalPath.startsWith(directory.canonicalPath + "/"))
         return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)

@@ -6,6 +6,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.longzhousz.ami.core.Song
+import com.longzhousz.ami.core.LibrarySnapshot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,15 +22,29 @@ class LibraryRepository(val context: Context) {
     val secrets = SecretStore(context)
     val prefs = context.getSharedPreferences("ami", Context.MODE_PRIVATE)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val playback = PlaybackStore(db, prefs, scope)
     val songs = MutableStateFlow<List<Song>>(emptyList())
+    val library = MutableStateFlow(LibrarySnapshot(emptyList()))
     val loading = MutableStateFlow(true)
     val importState = MutableStateFlow(ImportState())
     val importLock = Mutex()
     val audioDir = File(context.filesDir, "AudioCache").apply { mkdirs() }
     val coverDir = File(context.filesDir, "Covers").apply { mkdirs() }
+    private val libraryRequested = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    fun load() { scope.launch { try { reload() } finally { loading.value = false } } }
-    fun reload() { songs.value = db.songs() }
+    fun load() {
+        if (libraryRequested.compareAndSet(false, true)) scope.launch { try { reload() } finally { loading.value = false } }
+    }
+    @Synchronized fun reload() {
+        // A headset, system browser or background import does not need the UI/search snapshot.
+        if (!libraryRequested.get()) return
+        val fresh = db.songs()
+        if (fresh != library.value.songs) {
+            val snapshot = LibrarySnapshot(fresh)
+            library.value = snapshot
+            songs.value = fresh
+        }
+    }
     fun roots(): Set<String> = prefs.getStringSet("roots", emptySet())!!.toSet()
     fun lyricRoots(): Set<String> = prefs.getStringSet("lyricRoots", emptySet())!!.toSet()
     fun addLyricRoot(uri: Uri) {
@@ -66,6 +81,5 @@ class LibraryRepository(val context: Context) {
         } }
         return freed
     }
-    private fun referencedFiles(): Set<String> = db.songs().flatMap { listOfNotNull(it.cover, it.uri.takeIf { uri -> uri.startsWith("file:") }?.let { uri -> Uri.parse(uri).path }) }
-        .map { File(it).canonicalPath }.toSet()
+    private fun referencedFiles(): Set<String> = db.cachedFileReferences().map { File(it).canonicalPath }.toSet()
 }

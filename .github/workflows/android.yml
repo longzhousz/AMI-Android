@@ -100,6 +100,8 @@ jobs:
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.0' 'build-tools;36.0.0'
           ./gradlew assembleDebug assembleDebugAndroidTest
+          # Release the compiler heap before the 4 GB Android 17 guest starts.
+          ./gradlew --stop
       - name: Enable emulator acceleration
         run: sudo chmod 666 /dev/kvm
       - uses: reactivecircus/android-emulator-runner@v2

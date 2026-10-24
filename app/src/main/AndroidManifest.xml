@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
         android:name=".AmiApplication"
+        android:appCategory="audio"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="false"
@@ -22,10 +23,19 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+            </intent-filter>
         </activity>
         <!-- Media3 must be exported for the system media controller and headset clients. -->
         <service android:name=".playback.PlaybackService" android:foregroundServiceType="mediaPlayback" android:exported="true" xmlns:tools="http://schemas.android.com/tools" tools:ignore="ExportedService">
-            <intent-filter><action android:name="androidx.media3.session.MediaSessionService" /></intent-filter>
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="androidx.media3.session.MediaLibraryService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
         </service>
         <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="dataSync" android:exported="false" xmlns:tools="http://schemas.android.com/tools" tools:node="merge" />
     </application>

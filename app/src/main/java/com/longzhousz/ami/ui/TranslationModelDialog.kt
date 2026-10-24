@@ -13,8 +13,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.longzhousz.ami.core.TranslationModels
 import com.longzhousz.ami.data.TranslationModelState
-import java.text.DateFormat
-import java.util.Date
 
 @Composable
 internal fun TranslationModelDialog(
@@ -27,6 +25,7 @@ internal fun TranslationModelDialog(
 ) {
     var selection by remember { mutableStateOf(state.selection) }
     var updates by remember { mutableStateOf(state.automaticUpdates) }
+    var manual by remember { mutableStateOf(!state.selection.startsWith("auto:")) }
     var custom by remember { mutableStateOf(state.selection.takeUnless { it.startsWith("auto:") }.orEmpty()) }
     val selected = if (selection == "custom") custom.trim() else selection
     val resolved = runCatching { TranslationModels.resolve(selected, state.models) }.getOrNull()
@@ -40,8 +39,6 @@ internal fun TranslationModelDialog(
                 }
                 Switch(updates, { updates = it }, Modifier.testTag("automatic-model-updates"))
             }
-            Text(if (state.updatedAt > 0) "最近更新：${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(state.updatedAt))}" else "尚未获取官方列表，当前显示内置预设",
-                Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton(refresh, enabled = hasKey && !state.refreshing, contentPadding = PaddingValues(vertical = 8.dp)) {
                 if (state.refreshing) { CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)) }
                 Text(if (state.refreshing) "正在获取官方列表…" else "立即更新预设")
@@ -53,7 +50,8 @@ internal fun TranslationModelDialog(
                 val target = runCatching { TranslationModels.resolve(id, state.models) }.getOrNull()
                 ModelChoice(label, target?.name ?: "官方列表暂未提供此系列", selection == id, target != null) { selection = id }
             }
-            Text("手动选择", Modifier.padding(top = 12.dp, bottom = 4.dp), style = MaterialTheme.typography.labelLarge)
+            TextButton({ manual = !manual }) { Text(if (manual) "收起手动选择" else "手动选择") }
+            if (manual) {
             state.models.forEach { model ->
                 ModelChoice(model.name, model.id, selection == model.id) { selection = model.id; custom = model.id }
             }
@@ -65,7 +63,7 @@ internal fun TranslationModelDialog(
                     isError = custom.isNotBlank() && !TranslationModels.validId(custom.trim()),
                     supportingText = { Text("使用 DeepSeek 官方 API 支持的模型 ID") })
             }
-            resolved?.let { Text("本次选择：${it.id}", Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodySmall) }
+            }
         }
     }, confirmButton = { TextButton({ automaticUpdates(updates); select(selected) }, enabled = resolved != null) { Text("保存") } },
         dismissButton = { TextButton(dismiss) { Text("取消") } })

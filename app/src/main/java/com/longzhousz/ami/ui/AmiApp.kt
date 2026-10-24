@@ -43,10 +43,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.longzhousz.ami.AmiViewModel
 import com.longzhousz.ami.core.Album
 import com.longzhousz.ami.core.Song
-import com.longzhousz.ami.core.albumsOf
+import com.longzhousz.ami.core.LibrarySnapshot
 import com.longzhousz.ami.core.durationLabel
 import com.longzhousz.ami.playback.PlaybackState
 import com.longzhousz.ami.playback.PlayerConnection
@@ -60,14 +62,14 @@ private data class AppDestination(val page: Int, val albumKey: String?)
     var fullPlayer by rememberSaveable { mutableStateOf(false) }
     AmiTheme(theme, immersive = fullPlayer) {
         val focus = LocalFocusManager.current
-        val songs by model.repository.songs.collectAsStateWithLifecycle()
+        val library by model.repository.library.collectAsStateWithLifecycle()
+        val songs = library.songs
         val loading by model.repository.loading.collectAsStateWithLifecycle()
         val playback by model.player.state.collectAsStateWithLifecycle()
         val importing by model.repository.importState.collectAsStateWithLifecycle()
         val message by model.message.collectAsStateWithLifecycle()
-        val albums = remember(songs) { albumsOf(songs) }
-        val songsById = remember(songs) { songs.associateBy { it.id } }
-        val albumsByKey = remember(albums) { albums.associateBy { it.key } }
+        val songsById = library.songsById
+        val albumsByKey = library.albumsByKey
         var page by rememberSaveable { mutableIntStateOf(0) }
         var albumKey by rememberSaveable { mutableStateOf<String?>(null) }
         var queue by rememberSaveable { mutableStateOf(false) }
@@ -130,7 +132,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                             album != null -> AlbumScreen(album, playback.id, model, { albumKey = null }, { remove = it })
                             destination.page == 2 -> SettingsScreen(model, onImport, onNotifications, onBridgeFolder, onLyricsFolder)
                             else -> pageState.SaveableStateProvider("library-${destination.page}") {
-                                LibraryScreen(songs, albums, loading, destination.page == 1, playback.id, { page = 2 },
+                                LibraryScreen(library, loading, destination.page == 1, playback.id, { page = 2 },
                                     onAlbum = { albumKey = it.key }, onPlay = { list, index -> model.play(list, index) }, onFavorite = model::favorite, onRemove = { remove = it })
                             }
                         }
@@ -166,9 +168,10 @@ private data class AppDestination(val page: Int, val albumKey: String?)
 }
 
 @Composable private fun LibraryScreen(
-    songs: List<Song>, albums: List<Album>, loading: Boolean, favorites: Boolean, currentId: String?, onSettings: () -> Unit,
+    library: LibrarySnapshot, loading: Boolean, favorites: Boolean, currentId: String?, onSettings: () -> Unit,
     onAlbum: (Album) -> Unit, onPlay: (List<Song>, Int) -> Unit, onFavorite: (Song) -> Unit, onRemove: (Song) -> Unit,
 ) {
+    val songs = library.songs
     var query by rememberSaveable(favorites) { mutableStateOf("") }
     var mode by rememberSaveable { mutableIntStateOf(1) }
     var recent by rememberSaveable { mutableStateOf(false) }
@@ -186,14 +189,13 @@ private data class AppDestination(val page: Int, val albumKey: String?)
             albumGrid.scrollToItem(0)
         }
     }
-    val filteredSongs = remember(songs, query, favorites, recent) {
-        val filtered = songs.filter { (!favorites || it.favorite) && "${it.title} ${it.album} ${it.artist}".contains(query.trim(), true) }
-        if (recent) filtered.sortedByDescending { it.importedAt } else filtered
+    val initial = remember(library, favorites) { library.search("", favorites, false) }
+    val searched by produceState(initial, library, query, favorites, recent) {
+        value = withContext(Dispatchers.Default) { library.search(query, favorites, recent) }
     }
-    val filteredAlbums = remember(albums, query, recent) {
-        val filtered = albums.filter { "${it.title} ${it.artist} ${it.songs.joinToString { s -> s.title }}".contains(query.trim(), true) }
-        if (recent) filtered.sortedByDescending { it.songs.maxOf { song -> song.importedAt } } else filtered
-    }
+    val results = if (query.isBlank() && !recent) initial else searched
+    val filteredSongs = results.songs
+    val filteredAlbums = results.albums
     Column(Modifier.fillMaxSize()) {
         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).testTag("library-search"), placeholder = { Text("搜索专辑、歌曲、艺人") },
             leadingIcon = { Icon(Icons.Rounded.Search, null) }, trailingIcon = { if (query.isNotEmpty()) ActionIcon(Icons.Rounded.Close, "清空搜索", { query = "" }) },

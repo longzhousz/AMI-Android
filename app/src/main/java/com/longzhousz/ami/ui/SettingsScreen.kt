@@ -41,7 +41,7 @@ import kotlinx.coroutines.withContext
     val style by model.translationStyle.collectAsStateWithLifecycle()
     val savedKey by model.hasKey.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    LaunchedEffect(importState.running, songs) {
+    LaunchedEffect(importState.running) {
         cache = withContext(Dispatchers.IO) { repo.cacheInfo() }
         lyricCount = withContext(Dispatchers.IO) { repo.db.lyricsCount() }
         roots = repo.roots(); lyricRoots = repo.lyricRoots()

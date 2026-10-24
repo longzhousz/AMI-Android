@@ -41,6 +41,7 @@ class AmiViewModel(app: Application) : AndroidViewModel(app) {
     private val client = TranslationClient(repository, translationModels)
     private var translationJob: Job? = null
     init {
+        repository.load()
         viewModelScope.launch {
             combine(player.state.map { it.id }.distinctUntilChanged(), repository.songs,
                 translationModels.state.map { it.selection }.distinctUntilChanged(), translationStyle) { id, songs, selection, style ->
