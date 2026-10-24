@@ -37,8 +37,8 @@ import kotlinx.coroutines.withContext
     var lyricCount by remember { mutableIntStateOf(0) }
     var cache by remember { mutableStateOf(LibraryRepository.CacheInfo(0, 0, 0)) }
     var logs by remember { mutableStateOf<List<String>>(emptyList()) }
-    var modelName by remember { mutableStateOf(repo.prefs.getString("model", "deepseek-v4-flash")!!) }
-    var style by remember { mutableStateOf(repo.prefs.getString("style", TranslationClient.DEFAULT_STYLE)!!) }
+    val modelState by model.translationModels.state.collectAsStateWithLifecycle()
+    val style by model.translationStyle.collectAsStateWithLifecycle()
     val savedKey by model.hasKey.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     LaunchedEffect(importState.running, songs) {
@@ -60,8 +60,8 @@ import kotlinx.coroutines.withContext
             SectionLabel("歌词与翻译")
             SettingsGroup {
                 SettingRow(Icons.Rounded.Lyrics, "网易云歌词", "$lyricCount 份歌词 · 按歌曲 ID 自动关联", { lyricRoots = repo.lyricRoots(); dialog = "neteaseLyrics" })
-                SettingRow(Icons.Rounded.Key, "DeepSeek API Key", if (savedKey) "已加密保存 · 点击更换或删除" else "仅在你发起翻译时使用", { dialog = "key" })
-                SettingRow(Icons.Rounded.AutoAwesome, "翻译模型", modelName, { dialog = "model" })
+                SettingRow(Icons.Rounded.Key, "DeepSeek API Key", if (savedKey) "已加密保存 · 点击更换或删除" else "用于翻译与获取官方模型列表", { dialog = "key" })
+                SettingRow(Icons.Rounded.AutoAwesome, "翻译模型", modelState.summary, { model.refreshModels(); dialog = "model" })
                 SettingRow(Icons.Rounded.EditNote, "翻译风格", "按顺序遵循你的表达偏好", { dialog = "style" })
                 SettingRow(Icons.Rounded.NetworkCheck, "测试连接", "发送一条简短测试消息", { model.testConnection() })
             }
@@ -108,7 +108,8 @@ import kotlinx.coroutines.withContext
                 }
             }, confirmButton = { TextButton({ model.saveKey(key); key = ""; dialog = null }, enabled = key.isNotBlank()) { Text("加密保存") } }, dismissButton = { TextButton({ key = ""; dialog = null }) { Text("取消") } })
         }
-        "model" -> ChoiceDialog("翻译模型", listOf("deepseek-v4-flash" to "DeepSeek V4 Flash", "deepseek-v4-pro" to "DeepSeek V4 Pro"), modelName, { name -> modelName = name; repo.prefs.edit().putString("model", name).apply(); model.translations.value = null; dialog = null }, { dialog = null })
+        "model" -> TranslationModelDialog(modelState, savedKey, { model.refreshModels(force = true) },
+            model::setAutomaticModelUpdates, { model.selectTranslationModel(it); dialog = null }, { dialog = null })
         "theme" -> ChoiceDialog("外观", listOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色"), theme, { model.setTheme(it); dialog = null }, { dialog = null })
         "style" -> {
             var draft by remember { mutableStateOf(style) }
@@ -117,7 +118,7 @@ import kotlinx.coroutines.withContext
                     OutlinedTextField(draft, { if (it.length <= 3000) draft = it }, Modifier.fillMaxWidth().padding(top = 12.dp), minLines = 6, maxLines = 10)
                     TextButton({ draft = TranslationClient.DEFAULT_STYLE }) { Text("恢复默认风格") }
                 }
-            }, confirmButton = { TextButton({ style = draft; repo.prefs.edit().putString("style", draft).apply(); model.translations.value = null; dialog = null }, enabled = draft.isNotBlank()) { Text("保存") } }, dismissButton = { TextButton({ dialog = null }) { Text("取消") } })
+            }, confirmButton = { TextButton({ model.setTranslationStyle(draft); dialog = null }, enabled = draft.isNotBlank()) { Text("保存") } }, dismissButton = { TextButton({ dialog = null }) { Text("取消") } })
         }
         "roots" -> AlertDialog({ dialog = null }, title = { Text("音乐文件夹") }, text = {
             LazyColumn { if (roots.isEmpty()) item { Text("还没有添加文件夹") }
@@ -133,7 +134,7 @@ import kotlinx.coroutines.withContext
             confirmButton = { TextButton({ scope.launch { runCatching { withContext(Dispatchers.IO) { repo.cleanup() } }.onSuccess { model.message.value = "已清理 ${megabytes(it)}" }.onFailure { model.message.value = it.message }; dialog = null } }, enabled = !importState.running && cache.reclaimable > 0) { Text("清理未引用缓存") } }, dismissButton = { TextButton({ dialog = null }) { Text("关闭") } })
         "logs" -> InfoDialog("操作记录", logs.joinToString("\n\n").ifBlank { "还没有操作记录" }, { dialog = null })
         "agent" -> AgentDialog(model, onBridgeFolder, { dialog = null })
-        "privacy" -> InfoDialog("隐私说明", "AMI 只读取你授权的音乐文件夹，不改写原始音频或标签。\n\n音频、封面、路径和曲库不会上传。仅当你主动翻译或测试连接时，应用才连接 DeepSeek。翻译只发送歌词文本、目标语言、模型和风格要求。\n\nAPI Key 由 Android Keystore 加密保护，排除在备份之外，不进入操作日志。\n\n卸载应用会删除曲库记录、翻译和应用缓存，请保留原始音乐文件。", { dialog = null })
+        "privacy" -> InfoDialog("隐私说明", "AMI 只读取你授权的音乐文件夹，不改写原始音频或标签。\n\n音频、封面、路径和曲库不会上传。保存 API Key 后，应用会在前台每天检查官方模型列表；可在翻译模型中关闭自动更新。获取列表只发送鉴权信息，不发送歌词，也不发起翻译。\n\n你主动翻译时只发送歌词文本、目标语言、模型和风格要求；测试连接会发送一条简短消息。更新预设不会自动重译已有歌词。\n\nAPI Key 由 Android Keystore 加密保护，排除在备份之外，不进入操作日志。\n\n卸载应用会删除曲库记录、翻译和应用缓存，请保留原始音乐文件。", { dialog = null })
     }
 }
 

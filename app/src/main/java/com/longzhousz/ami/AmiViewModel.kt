@@ -7,6 +7,7 @@ import com.longzhousz.ami.core.Lyrics
 import com.longzhousz.ami.core.NeteaseLyrics
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.data.TranslationClient
+import com.longzhousz.ami.data.TranslationModelCatalog
 import com.longzhousz.ami.data.AgentBridge
 import com.longzhousz.ami.data.LyricImporter
 import android.net.Uri
@@ -18,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -34,12 +36,16 @@ class AmiViewModel(app: Application) : AndroidViewModel(app) {
     val bridge = AgentBridge(repository)
     val bridgeEnabled = MutableStateFlow(repository.prefs.getBoolean("bridgeEnabled", false))
     val bridgeAlbum = MutableStateFlow<String?>(null)
-    private val client = TranslationClient(repository)
+    val translationModels = TranslationModelCatalog(repository)
+    val translationStyle = MutableStateFlow(repository.prefs.getString("style", TranslationClient.DEFAULT_STYLE)!!)
+    private val client = TranslationClient(repository, translationModels)
     private var translationJob: Job? = null
     init {
         viewModelScope.launch {
-            combine(player.state.map { it.id }.distinctUntilChanged(), repository.songs) { id, songs -> songs.find { it.id == id } }
-                .distinctUntilChanged().collect { song ->
+            combine(player.state.map { it.id }.distinctUntilChanged(), repository.songs,
+                translationModels.state.map { it.selection }.distinctUntilChanged(), translationStyle) { id, songs, selection, style ->
+                Triple(songs.find { it.id == id }, selection, style)
+            }.distinctUntilChanged().collectLatest { (song, _, _) ->
                     translationJob?.cancel(); translations.value = null; translating.value = false
                     if (song != null) {
                         val lines = Lyrics.parse(song.lyrics)
@@ -77,20 +83,39 @@ class AmiViewModel(app: Application) : AndroidViewModel(app) {
         persistAction("library.remove") { repository.remove(song) }
     }
     fun setTheme(value: String) { theme.value = value; repository.prefs.edit().putString("theme", value).apply() }
-    fun translate(song: Song) {
+    fun translate(song: Song, force: Boolean = false) {
         if (translating.value) return
         translationJob = viewModelScope.launch {
             translating.value = true
-            try { translations.value = client.translate(song, Lyrics.parse(song.lyrics)); message.value = "翻译已保存，可离线查看" }
+            try { translations.value = client.translate(song, Lyrics.parse(song.lyrics), force); message.value = "翻译已保存，可离线查看" }
             catch (e: CancellationException) { throw e }
             catch (e: Exception) { message.value = e.message?.take(150) ?: "翻译失败，请检查网络" }
             finally { translating.value = false }
         }
     }
+    fun refreshModels(force: Boolean = false) {
+        viewModelScope.launch {
+            val state = translationModels.refresh(force)
+            if (force) message.value = state.error ?: "模型预设已更新"
+        }
+    }
+    fun selectTranslationModel(selection: String) { translationModels.select(selection) }
+    fun setAutomaticModelUpdates(enabled: Boolean) {
+        translationModels.setAutomaticUpdates(enabled)
+        if (enabled) refreshModels()
+    }
+    fun setTranslationStyle(style: String) {
+        repository.prefs.edit().putString("style", style).apply()
+        translationStyle.value = style
+    }
     fun saveKey(value: String) {
         viewModelScope.launch {
             runCatching { withContext(Dispatchers.IO) { repository.secrets.save(value) } }
-                .onSuccess { hasKey.value = repository.secrets.configured(); message.value = if (value.isBlank()) "API Key 已删除" else "API Key 已加密保存" }
+                .onSuccess {
+                    hasKey.value = repository.secrets.configured()
+                    message.value = if (value.isBlank()) "API Key 已删除" else "API Key 已加密保存"
+                    if (hasKey.value && translationModels.state.value.automaticUpdates) refreshModels(force = true)
+                }
                 .onFailure { message.value = "密钥保存失败，请重试" }
         }
     }

@@ -39,7 +39,7 @@ internal data class PlayerActions(
     val close: () -> Unit = {}, val queue: () -> Unit = {}, val lyricFile: () -> Unit = {},
     val favorite: () -> Unit = {}, val seek: (Long) -> Unit = {}, val toggle: () -> Unit = {},
     val previous: () -> Unit = {}, val next: () -> Unit = {}, val shuffle: () -> Unit = {},
-    val repeat: () -> Unit = {}, val translate: () -> Unit = {}, val restoreLyrics: () -> Unit = {},
+    val repeat: () -> Unit = {}, val translate: () -> Unit = {}, val retranslate: () -> Unit = translate, val restoreLyrics: () -> Unit = {},
     val sleep: (Int) -> Unit = {},
 )
 
@@ -56,7 +56,8 @@ internal data class PlayerActions(
         next = { model.act("player.next") { model.player.next() } },
         shuffle = { model.act("player.shuffle") { model.player.shuffle() } },
         repeat = { model.act("player.repeat") { model.player.repeat() } },
-        translate = { model.translate(song) }, restoreLyrics = { model.clearLyrics(song) }, sleep = model::sleep,
+        translate = { model.translate(song) }, retranslate = { model.translate(song, force = true) },
+        restoreLyrics = { model.clearLyrics(song) }, sleep = model::sleep,
     ), lyricPosition = { clock.value }, dragHandle = dragHandle)
 }
 
@@ -91,7 +92,7 @@ private val PlayerColors = darkColorScheme(
                             DropdownMenu(lyricMenu, { lyricMenu = false }) {
                                 DropdownMenuItem(text = { Text("为这首歌导入歌词") }, onClick = { lyricMenu = false; actions.lyricFile() })
                                 if (song.manualLyrics) DropdownMenuItem(text = { Text("恢复自动匹配") }, onClick = { lyricMenu = false; actions.restoreLyrics() })
-                                if (!translation.isNullOrEmpty()) DropdownMenuItem(text = { Text("重新翻译") }, onClick = { lyricMenu = false; actions.translate() }, enabled = !translating)
+                                if (!translation.isNullOrEmpty()) DropdownMenuItem(text = { Text("重新翻译") }, onClick = { lyricMenu = false; actions.retranslate() }, enabled = !translating)
                             }
                         }
                     }

@@ -56,6 +56,10 @@ class MainActivity : ComponentActivity() {
             })
         }
     }
+    override fun onStart() {
+        super.onStart()
+        model.refreshModels()
+    }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("lyricSongId", lyricSongId)
         super.onSaveInstanceState(outState)
