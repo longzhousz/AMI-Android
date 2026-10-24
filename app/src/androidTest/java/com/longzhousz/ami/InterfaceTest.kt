@@ -1,6 +1,6 @@
 package com.longzhousz.ami
 
-import android.os.ParcelFileDescriptor
+import androidx.test.espresso.Espresso
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
@@ -167,10 +167,8 @@ class InterfaceTest {
         }
     }
     private fun pressSystemBack() {
-        // The queue uses its own window. Shell input follows the actual focused window instead
-        // of Instrumentation's app-only injection, which can reject dialog/IME transitions.
-        val command = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("input keyevent 4")
-        ParcelFileDescriptor.AutoCloseInputStream(command).use { it.readBytes() }
+        // Let Espresso select and synchronize the focused native dialog before injecting Back.
+        Espresso.pressBack()
         compose.waitForIdle()
     }
 
