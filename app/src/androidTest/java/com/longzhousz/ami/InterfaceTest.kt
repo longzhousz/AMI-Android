@@ -10,11 +10,14 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.printToString
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextClearance
@@ -125,8 +128,12 @@ class InterfaceTest {
             compose.onNodeWithContentDescription("返回曲库").performClick()
             compose.onNodeWithText("歌曲").performClick()
             compose.waitUntil(30000) { model.player.state.value.connected }
-            compose.onNodeWithText(songs.first().title).performClick()
-            compose.runOnIdle { model.player.pause() }
+            // This flow verifies the UI with a two-second fixture. Pause in the same main-thread
+            // action so a slow renderer cannot advance the queue before the window assertions.
+            compose.onNodeWithText(songs.first().title).performSemanticsAction(SemanticsActions.OnClick) { click ->
+                assertTrue(click())
+                model.player.pause()
+            }
             compose.waitUntil(10000) { model.player.state.value.id == songs.first().id }
             compose.onNodeWithTag("mini-player").performClick()
             compose.onNodeWithTag("full-player").assertIsDisplayed()
@@ -136,7 +143,9 @@ class InterfaceTest {
             File(directory, "lyrics-player-window.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
             compose.onNodeWithText("队列").performClick()
             compose.onNodeWithText("播放队列 · ${songs.size}").assertIsDisplayed()
+            compose.waitUntil(10000) { !compose.activity.hasWindowFocus() }
             pressSystemBack()
+            compose.waitUntil(10000) { compose.onAllNodesWithText("播放队列 · ${songs.size}").fetchSemanticsNodes().isEmpty() }
             compose.onNodeWithTag("full-player").assertIsDisplayed()
             compose.onNodeWithContentDescription("收起播放页").performClick()
             compose.onNodeWithTag("mini-player").assertIsDisplayed()
@@ -147,7 +156,9 @@ class InterfaceTest {
             compose.onNodeWithTag("full-player").assertDoesNotExist()
             compose.onNodeWithTag("mini-player").performClick()
             compose.onNodeWithTag("full-player").assertIsDisplayed()
+            compose.waitUntil(10000) { compose.activity.hasWindowFocus() }
             pressSystemBack()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("full-player").fetchSemanticsNodes().isEmpty() }
             compose.onNodeWithTag("full-player").assertDoesNotExist()
             compose.onNodeWithTag("mini-player").assertIsDisplayed()
         } finally {
