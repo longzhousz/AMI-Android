@@ -1,6 +1,7 @@
 package com.longzhousz.ami
 
-import androidx.test.espresso.Espresso
+import android.accessibilityservice.AccessibilityService
+import android.os.ParcelFileDescriptor
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
@@ -161,14 +162,24 @@ class InterfaceTest {
             compose.waitUntil(10000) { compose.onAllNodesWithTag("full-player").fetchSemanticsNodes().isEmpty() }
             compose.onNodeWithTag("full-player").assertDoesNotExist()
             compose.onNodeWithTag("mini-player").assertIsDisplayed()
+        } catch (failure: Throwable) {
+            val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+            val windows = ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand("dumpsys window windows"))
+                .bufferedReader().use { it.readText() }
+            val focus = windows.lineSequence().filter {
+                it.contains("mCurrentFocus") || it.contains("mFocusedApp") || it.contains("Window #")
+            }.joinToString("\n")
+            throw AssertionError("${failure.message}\nWindows at failure:\n$focus", failure)
         } finally {
             compose.runOnIdle { model.player.pause(); songs.forEach { model.player.remove(it.id) } }
             songs.forEach { model.repository.db.remove(it.id) }; model.repository.reload()
         }
     }
     private fun pressSystemBack() {
-        // Let Espresso select and synchronize the focused native dialog before injecting Back.
-        Espresso.pressBack()
+        // Route through the system so native sheets and the activity receive the same Back
+        // action as accessibility/navigation controls, without Espresso choosing an old root.
+        assertTrue(InstrumentationRegistry.getInstrumentation().uiAutomation
+            .performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK))
         compose.waitForIdle()
     }
 
