@@ -90,7 +90,10 @@ class AmiViewModel(app: Application) : AndroidViewModel(app) {
             try { translations.value = client.translate(song, Lyrics.parse(song.lyrics), force); message.value = "翻译已保存，可离线查看" }
             catch (e: CancellationException) { throw e }
             catch (e: Exception) { message.value = e.message?.take(150) ?: "翻译失败，请检查网络" }
-            finally { translating.value = false }
+            finally {
+                // A cancelled request may finish unwinding after the user starts another one.
+                if (translationJob === coroutineContext[Job]) translating.value = false
+            }
         }
     }
     fun refreshModels(force: Boolean = false) {
