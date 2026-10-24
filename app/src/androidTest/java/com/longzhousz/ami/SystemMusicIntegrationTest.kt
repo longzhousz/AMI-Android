@@ -23,6 +23,37 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class SystemMusicIntegrationTest {
+    private fun stopPreviousPlaybackSession() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val connected = CountDownLatch(1)
+        val destroyed = CountDownLatch(1)
+        var browser: MediaBrowser? = null
+        var controls: MediaController? = null
+        val callback = object : MediaController.Callback() {
+            override fun onSessionDestroyed() { destroyed.countDown() }
+        }
+        try {
+            instrumentation.runOnMainSync {
+                browser = MediaBrowser(context, ComponentName(context, PlaybackService::class.java), object : MediaBrowser.ConnectionCallback() {
+                    override fun onConnected() {
+                        controls = MediaController(context, browser!!.sessionToken).also { it.registerCallback(callback) }
+                        connected.countDown()
+                    }
+                    override fun onConnectionFailed() { connected.countDown() }
+                }, null)
+                browser!!.connect()
+            }
+            assertTrue(connected.await(40, TimeUnit.SECONDS))
+            assertNotNull(controls)
+            instrumentation.runOnMainSync { browser!!.disconnect(); context.stopService(Intent(context, PlaybackService::class.java)) }
+            // stopService() returns before onDestroy(); observe the actual old session release.
+            assertTrue("Previous media session should finish shutting down", destroyed.await(30, TimeUnit.SECONDS))
+            instrumentation.waitForIdleSync()
+        } finally {
+            instrumentation.runOnMainSync { controls?.unregisterCallback(callback); browser?.disconnect() }
+        }
+    }
     @Test fun packageDeclaresAudioCategoryMusicEntryAndLegacyBrowserService() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         assertEquals(ApplicationInfo.CATEGORY_AUDIO, context.applicationInfo.category)
@@ -37,16 +68,15 @@ class SystemMusicIntegrationTest {
         checkNotNull(context.packageManager.resolveContentProvider("com.longzhousz.ami.test.fixtures", 0))
         val repo = (context.applicationContext as AmiApplication).repository
         val activity = ActivityScenario.launch(ComponentActivity::class.java)
-        instrumentation.runOnMainSync { context.stopService(Intent(context, PlaybackService::class.java)) }
-        instrumentation.waitForIdleSync()
         val id = "qa-system-music-${System.nanoTime()}"
         val song = Song(id, "content://com.longzhousz.ami.test.fixtures/document/album.wav", folder = "qa", title = "System Music", artist = "System Artist", duration = 6000)
-        repo.db.upsert(song)
-        repo.playback.publish(PlaybackSnapshot(listOf(id), 0, 500, 1, false))
         val connected = CountDownLatch(1)
         var browser: MediaBrowser? = null
         var platform: MediaController? = null
         try {
+            stopPreviousPlaybackSession()
+            repo.db.upsert(song)
+            repo.playback.publish(PlaybackSnapshot(listOf(id), 0, 500, 1, false))
             instrumentation.runOnMainSync {
                 browser = MediaBrowser(context, ComponentName(context, PlaybackService::class.java), object : MediaBrowser.ConnectionCallback() {
                     override fun onConnected() { platform = MediaController(context, browser!!.sessionToken); connected.countDown() }
@@ -60,11 +90,16 @@ class SystemMusicIntegrationTest {
             fun awaitState(state: Int) {
                 val deadline = System.currentTimeMillis() + 30000
                 var reached = false
+                var observed = ""
                 while (!reached && System.currentTimeMillis() < deadline) {
-                    instrumentation.runOnMainSync { reached = platform!!.playbackState?.state == state && platform!!.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) == "System Music" }
+                    instrumentation.runOnMainSync {
+                        val title = platform!!.metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
+                        reached = platform!!.playbackState?.state == state && title == "System Music"
+                        observed = "${platform!!.playbackState}; title=$title"
+                    }
                     if (!reached) Thread.sleep(50)
                 }
-                assertTrue("Platform playback state should become $state", reached)
+                assertTrue("Platform playback state should become $state; observed $observed", reached)
             }
             awaitState(PlaybackState.STATE_PLAYING)
             instrumentation.runOnMainSync {
