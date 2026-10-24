@@ -21,6 +21,7 @@ import java.io.File
 import java.util.Locale
 
 class LibraryScanner(private val context: Context, private val repository: LibraryRepository) {
+    private data class FolderAssets(val lyrics: Map<String, DocumentEntry>, val cover: DocumentEntry?)
     private val resolver = context.contentResolver
     private val files = DocumentFiles(context)
     private val audioExtensions = setOf("mp3", "m4a", "flac", "wav", "ogg", "opus", "aac", "aiff", "ape", "ncm")
@@ -41,13 +42,17 @@ class LibraryScanner(private val context: Context, private val repository: Libra
         val records = repository.db.scanRecords()
         val lyricReport = LyricImporter(context, repository).folders(lyricRoots, unique, records)
         errors += lyricReport.errors
-        val byFolder = unique.groupBy { it.folder }.mapValues { (_, items) -> items.sortedBy { it.name.lowercase(Locale.ROOT) } }
+        val byFolder = unique.groupBy { it.folder }.mapValues { (_, items) ->
+            val sorted = items.sortedBy { it.name.lowercase(Locale.ROOT) }
+            val lyrics = sorted.filter { it.extension == "lrc" }.distinctBy { it.stem.lowercase(Locale.ROOT) }.associateBy { it.stem.lowercase(Locale.ROOT) }
+            FolderAssets(lyrics, sorted.firstOrNull { it.stem.lowercase(Locale.ROOT) in setOf("cover", "folder", "front") && it.extension in setOf("jpg", "jpeg", "png", "webp") })
+        }
+        fun assets(entry: DocumentEntry) = byFolder.getValue(entry.folder)
         val byRelative = entries.asReversed().associateBy { it.uri.authority to (it.uri.toString().substringBefore("/document/") + ":" + it.relative.lowercase(Locale.ROOT)) }
         val byIdentity = entries.groupBy { identity(it.uri) }
-        fun cover(entry: DocumentEntry) = entry.stem.lowercase(Locale.ROOT) in setOf("cover", "folder", "front") && entry.extension in setOf("jpg", "jpeg", "png", "webp")
         fun dependencies(entry: DocumentEntry, lyrics: Boolean): List<DocumentEntry> {
-            val siblings = byFolder[entry.folder].orEmpty()
-            return listOfNotNull(entry, siblings.firstOrNull { lyrics && it.stem.equals(entry.stem, true) && it.extension == "lrc" }, siblings.firstOrNull(::cover))
+            val folder = assets(entry)
+            return listOfNotNull(entry, folder.lyrics[entry.stem.lowercase(Locale.ROOT)].takeIf { lyrics }, folder.cover)
         }
         fun cueFingerprint(cue: DocumentEntry, sources: List<DocumentEntry>): String? = ScanFingerprint.of("cue-scan-v1",
             (listOf(cue) + sources.flatMap { dependencies(it, false) }).distinctBy { it.uri }.map { it.stamp() })
@@ -94,7 +99,6 @@ class LibraryScanner(private val context: Context, private val repository: Libra
                 }
                 if (identity(entry.uri) in handled) { skipped++; return@forEachIndexed }
                 try {
-                    val siblings = byFolder[entry.folder].orEmpty()
                     val key = "audio:" + identity(entry.uri)
                     if (entry.extension == "cue") {
                         val previous = records[key]
@@ -113,7 +117,7 @@ class LibraryScanner(private val context: Context, private val repository: Libra
                             val audio = byRelative[entry.uri.authority to (entry.uri.toString().substringBefore("/document/") + ":" + relative.lowercase(Locale.ROOT))]
                                 ?: error("CUE 引用文件不存在：$name")
                             require(audio.extension in audioExtensions) { "CUE 引用格式不支持" }
-                            audio to readSong(audio, byFolder[audio.folder].orEmpty(), includeLyrics = false)
+                            audio to readSong(audio, assets(audio), includeLyrics = false)
                         }
                         val songs = sheet.tracks.mapIndexed { trackIndex, track ->
                             val (source, base) = baseByFile.getValue(track.file)
@@ -132,7 +136,7 @@ class LibraryScanner(private val context: Context, private val repository: Libra
                         val fingerprint = ScanFingerprint.of("audio-scan-v1", dependencies(entry, true).map { it.stamp() })
                         if (records[key]?.reusable(fingerprint, present, checkedFiles) != true) {
                             val errorsBefore = errors.size
-                            val song = readSong(entry, siblings)
+                            val song = readSong(entry, assets(entry))
                             add(listOf(song), key, fingerprint.takeIf { errors.size == errorsBefore })
                         }
                     }
@@ -144,7 +148,7 @@ class LibraryScanner(private val context: Context, private val repository: Libra
         repository.importState.value = ImportState(false, work.size, work.size, "已导入 / 更新 $imported 首 · 网易云歌词 ${lyricReport.imported} 份 · 跳过 $skipped 个音频镜像 · ${errors.size} 个问题", errors.takeLast(50))
     }
 
-    private suspend fun readSong(entry: DocumentEntry, siblings: List<DocumentEntry>, includeLyrics: Boolean = true): Song {
+    private suspend fun readSong(entry: DocumentEntry, assets: FolderAssets, includeLyrics: Boolean = true): Song {
         currentCoroutineContext().ensureActive()
         var audioUri = entry.uri
         var ncmHeader: NcmDecoder.Header? = null
@@ -174,11 +178,10 @@ class LibraryScanner(private val context: Context, private val repository: Libra
             val artists = metadata?.optJSONArray("artist")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONArray(it)?.optString(0) }.joinToString("、") }.orEmpty()
             var coverBytes = retriever.embeddedPicture ?: ncmHeader?.cover?.takeIf { it.isNotEmpty() }
             if (coverBytes == null) {
-                val coverFile = siblings.firstOrNull { it.stem.lowercase(Locale.ROOT) in setOf("cover", "folder", "front") && it.extension in setOf("jpg", "jpeg", "png", "webp") }
-                coverBytes = coverFile?.let { files.readBounded(it.uri, 16 * 1024 * 1024) }
+                coverBytes = assets.cover?.let { files.readBounded(it.uri, 16 * 1024 * 1024) }
             }
             val cover = coverBytes?.let { cacheCover(it) }
-            val lyricFile = siblings.firstOrNull { includeLyrics && it.stem.equals(entry.stem, true) && it.extension == "lrc" }
+            val lyricFile = assets.lyrics[entry.stem.lowercase(Locale.ROOT)].takeIf { includeLyrics }
             val sidecar = lyricFile?.let {
                 try { NeteaseLyrics.decode(files.readBounded(it.uri, 2 * 1024 * 1024)) }
                 catch (e: CancellationException) { throw e }
