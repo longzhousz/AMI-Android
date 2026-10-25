@@ -2,6 +2,17 @@
 
 本地音乐播放器。源自 [AMI](https://github.com/longzhousz/AMI)，安卓版本在此独立维护。Kotlin、Jetpack Compose、Media3；面向 Android 17（target / compile API 37），最低 Android 8.0（API 26）。
 
+## 在本地继续开发
+
+默认 **`main` 分支**包含截至 0.1.9 的全部 Android 改动与本地交接说明。克隆后可直接用 Android Studio 打开仓库根目录，无需原桌面仓库。
+
+```sh
+git clone https://github.com/longzhousz/AMI-Android.git
+cd AMI-Android
+```
+
+参见 [本地构建与 USB 真机调试](docs/LOCAL_DEVELOPMENT.md)、[当前状态与后续排查交接](docs/LOCAL_HANDOFF.md)。本地开发助手也可读取根目录的 [AGENTS.md](AGENTS.md)。
+
 ## 使用
 
 1. 安装预览 APK，打开「设置 → 导入音乐」，在系统文件选择器中选择音乐文件夹。
