@@ -54,7 +54,8 @@ class RapidInteractionEvidenceTest {
                 data_sources { config { name: "linux.process_stats" process_stats_config { scan_all_processes_on_start: true } } }
             """.trimIndent())
             // --background and text configs work on both Android 11 and 17. Capture stderr too.
-            script.writeText("perfetto --background --txt -c ${config.absolutePath} -o $trace 2>&1\nprintf '\\nAMI_PERFETTO_EXIT=%s\\n' \$?\n")
+            // perfetto's SELinux domain cannot open app-owned external files; shell streams stdin.
+            script.writeText("cat ${config.absolutePath} | perfetto --background --txt -c - -o $trace 2>&1\nprintf '\\nAMI_PERFETTO_EXIT=%s\\n' \$?\n")
             val traceOutput=shell("sh ${script.absolutePath}").toString(Charsets.UTF_8)
             traceStarted=traceOutput.contains("AMI_PERFETTO_EXIT=0")
             File(output,"rapid-perfetto-start.txt").writeText(traceOutput)

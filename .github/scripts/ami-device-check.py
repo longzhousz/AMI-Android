@@ -8,7 +8,7 @@ parser.add_argument('--serial',required=True,help='adb target serial')
 parser.add_argument('--package',default='com.longzhousz.ami.preview')
 parser.add_argument('--duration',type=int,default=0,help='Observation seconds; 1800 for a 30-minute screen-off run')
 parser.add_argument('--interval',type=int,default=60)
-parser.add_argument('--scenario',choices=['snapshot','screen-off','bluetooth','call','recovery'],default='snapshot')
+parser.add_argument('--scenario',choices=['snapshot','screen-off','bluetooth','call','recovery','island'],default='snapshot')
 parser.add_argument('--output',type=Path,default=Path('artifacts/device-check'))
 args=parser.parse_args()
 if not re.fullmatch(r'[A-Za-z0-9_.]+',args.package) or args.duration<0 or args.interval<1:
@@ -24,11 +24,20 @@ def read(*command):
     return re.sub(r'(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b','[device-address]',text)
 
 def property(name):return read('getprop',name).strip()
-props={name:property(name) for name in ['ro.product.manufacturer','ro.product.model','ro.build.version.release','ro.build.version.sdk','ro.build.display.id','ro.vivo.os.name','ro.vivo.os.version','ro.kernel.qemu']}
+props={name:property(name) for name in ['ro.product.manufacturer','ro.product.model','ro.build.version.release','ro.build.version.sdk','ro.build.display.id','ro.build.version.incremental','ro.vivo.os.name','ro.vivo.os.version','ro.kernel.qemu']}
 if 'package:' not in read('pm','path',args.package):
     raise SystemExit('Package is not installed: '+args.package)
 manifest={'package':args.package,'scenario':args.scenario,'properties':props,'isVivo':'vivo' in props['ro.product.manufacturer'].lower(),'isEmulator':props['ro.kernel.qemu']=='1','requestedDurationSeconds':args.duration,'startedUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'verdict':'evidence_only; physical actions and feature results require observation'}
 (args.output/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2))
+# Record only relevant, actually installed system components; names vary across ROM builds.
+components=[]
+for line in read('pm','list','packages','-s').splitlines():
+    candidate=line.removeprefix('package:').strip()
+    if re.fullmatch(r'[A-Za-z0-9_.]+',candidate) and re.search(r'musicwidget|island|superx|systemui|smartscene',candidate,re.I):
+        details=read('dumpsys','package',candidate)
+        versions=[row.strip() for row in details.splitlines() if re.match(r'\s*(?:versionCode|versionName|lastUpdateTime)=',row)]
+        components.append({'package':candidate,'version':versions})
+(args.output/'system-components.json').write_text(json.dumps(components,ensure_ascii=False,indent=2))
 start=time.monotonic();snapshots=[]
 while True:
     elapsed=time.monotonic()-start

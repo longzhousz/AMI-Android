@@ -1,6 +1,6 @@
 # vivo / OriginOS 音乐兼容性
 
-核对日期：2026-10-25。当前没有连接用户的 vivo 真机；OriginOS 版本和具体缺失功能尚待确认。
+核对日期：2026-10-25。用户确认目标为 **vivo X300 / OriginOS 7 / 原子岛音乐显示与控制**；完整系统构建号和原子岛组件版本尚未采集。当前工作区没有连接该真机。
 
 ## 标准音乐应用接入
 
@@ -29,6 +29,16 @@ AMI 使用 Media3，并按 Android 标准提供以下声明和接口：
 旧版官方客服的[原子随身听使用说明](https://kefu.vivo.com.cn/robot/imgmsgData/9ce81582ecfd49ec88d88736f29fce71/index_1.html?t=1641643370734) 描述了设置播放源的入口，但该资料较旧，不能推定当前所有 OriginOS 版本支持相同的应用列表或规则。
 
 上述开发者站点页面使用脚本渲染，正文已通过其同域公开文档接口 `/webapi/doc/info?id=...` 核对，未登录开发者账户或提交接入申请。
+
+## X300 / OriginOS 7 的原子岛
+
+本次验收目标是原子岛的音乐卡片。标准媒体会话、锁屏控制和最近播放恢复的自动化结果不能替代该卡片的真机验收；原子通知的接入流程也不能证明系统音乐卡片自动收录了 AMI。
+
+2026-10-25 再次检索 vivo 开发者公开目录，未找到面向任意音乐应用的原子岛音乐卡片通用注册接口。vivo 的原子通知指导仍要求上架、准入、权限开通与联调；[阿里云的 vivo 原子岛推送接入说明](https://help.aliyun.com/zh/document_detail/3030718.html)也明确依赖 vivo 原子岛权限。该通知路径不能直接视为音乐卡片支持。
+
+同时核对了开源 [MeloX 的 VivoAtomicIslandBridge](https://github.com/lladlam/MeloX-Android/blob/main/android/app/src/main/kotlin/com/lladlam/melox/platform/vivo/VivoAtomicIslandBridge.kt)。它通过独立通知及 `notification.superx.*` 扩展尝试展示，每 10 秒节流；代码中的尝试发布不是取得系统准入或 X300 / OS 7 实测成功的证据。AMI 本次不引入这条额外通知通路；继续使用标准音乐通知与 MediaSession，避免在普通通知栏重复出现音乐卡片。
+
+下一步真机证据应包含完整系统构建、`com.vivo.musicwidgetmix` 等实际存在的系统音乐组件版本、AMI 媒体会话、音乐通知、原子岛相关系统日志，以及同一首歌曲在系统媒体面板与原子岛的显示差异。未获得对应证据或厂商确认前，不把“已被系统识别为音乐软件”写成原子岛适配完成。
 
 ## 真机核对项目
 

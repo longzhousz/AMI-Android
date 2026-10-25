@@ -205,8 +205,8 @@ private data class PlayerStage(val song: Song, val lyrics: Boolean, val translat
             }
             if (showLyrics && song.lyrics.isNotBlank()) TextButton(onTranslation, Modifier.weight(1f), enabled = !translating,
                 contentPadding = PaddingValues(horizontal = 6.dp), colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = if (translated && !showTranslation) .45f else 1f))) {
-                if (translating) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.Translate, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp)); Text(if (translating) "翻译中" else if (translated) "译文" else "翻译", fontSize = 12.sp, maxLines = 1)
+                Icon(Icons.Rounded.Translate, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp)); Text(if (translated) "译文" else "翻译", fontSize = 12.sp, maxLines = 1)
             }
             TextButton(actions.queue, Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp)) { Icon(Icons.Rounded.QueueMusic, null, Modifier.size(20.dp)); Spacer(Modifier.width(6.dp)); Text("队列", fontSize = 12.sp, maxLines = 1) }
         }

@@ -1,6 +1,6 @@
 # Android 0.1.8：曲库、连续操作与后台播放验证
 
-应用内保持原有入口，不增加性能面板、翻译任务列表或历史界面。
+应用内保持原有入口，不增加性能面板、翻译任务列表或历史界面。翻译在后台完成；按钮保留简单的「翻译／译文」，不展示生成进度。
 
 ## 歌词按需读取
 
@@ -35,13 +35,17 @@ vivo 专属能力仍按 [OriginOS 兼容性记录](ORIGINOS_COMPATIBILITY.md)区
 - 系统最近曲目、熄屏播放、临时音频焦点失去/恢复、后台定时停止。
 - 主机独立进行 SIGKILL 回收，然后只用系统媒体键恢复/暂停；检查前台播放服务和没有打开主界面。它与用户主动“强行停止”应用是不同的测试场景。
 
+回收夹具仅在 AOSP userdebug 模拟器中使用 `adb root` 后发送 SIGKILL，验证原 PID 已消失，并记录服务是否自动重启；不关闭 SELinux。媒体键经 `input keyevent` 的系统输入路径发送。Android 11 的 `cmd media_session dispatch` 会向旧会话传入空调用包名，不能替代该硬件媒体键路径。
+
 `qa/performance/` 保存内存、帧统计、连续操作记录及可用的 Perfetto 轨迹；测试结束后导出到设备测试产物中的 `performance.tar`。回收恢复的证据保存在 `device-screenshots/recovery/`。这些均为开发与测试产物，不增加应用界面。
 
 Android 17 自动化使用不带 Google 后台组件的标准 AOSP 镜像，保留动画与全部界面断言。模拟器上的内存、时长和帧统计用于定位，不作为 vivo 真机帧率或续航提升比例。
 
+该镜像在高负载启动时仍可能出现 System UI 的 ANR 弹窗。原生窗口测试仅在确认为模拟器、且系统窗口明确显示 `System UI isn't responding` 时保存窗口/截图证据并点击其 `Wait`，然后继续原来的系统 Back 与界面断言；AMI 自身无响应、崩溃或界面断言失败均不作此处理。
+
 ## vivo 真机操作
 
-当前工作区未连接 vivo 手机，不能把模拟器结果称作 vivo 真机验收。准备 Android platform-tools，在手机开启 USB 调试并允许电脑连接。安装预览包后，先在手机上选歌播放。
+目标已确认是 vivo X300 / OriginOS 7，重点检查原子岛音乐卡片。当前工作区未连接该手机，不能把模拟器结果称作 vivo 真机验收。准备 Android platform-tools，在手机开启 USB 调试并允许电脑连接。安装预览包后，先在手机上选歌播放。
 
 查看设备：
 
@@ -62,6 +66,8 @@ python3 .github/scripts/ami-device-check.py --serial YOUR_SERIAL --scenario scre
 ```
 
 蓝牙、来电、进程恢复分别用 `--scenario bluetooth`、`call`、`recovery` 保存证据。在采集期间由使用者连接/断开耳机、接听/结束实际来电或执行预定的进程回收操作；脚本不会替使用者拨号、修改应用设置、开启后台白名单或操作播放。
+
+原子岛专项使用 `--scenario island`；脚本同时记录系统中实际安装的音乐卡片、原子岛与 System UI 相关组件版本。播放时观察标准媒体面板与原子岛是否同时出现 AMI，分别记录结果。
 
 脚本记录手机型号、系统版本、音乐声明、媒体会话、音频路由、前台服务、内存及电量相关系统统计；不读取应用数据库、歌词正文或 API Key，蓝牙地址会遮盖。`verdict=evidence_only` 表示这些是诊断证据，不会自动把未执行的物理操作标为通过。USB 供电和调试本身会影响耗电观察，不据此直接换算真实续航。
 

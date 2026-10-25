@@ -1,7 +1,9 @@
 package com.longzhousz.ami
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.os.ParcelFileDescriptor
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
@@ -177,11 +179,36 @@ class InterfaceTest {
         }
     }
     private fun pressSystemBack() {
+        recoverEmulatorSystemUiOverlay()
         // Route through the system so native sheets and the activity receive the same Back
         // action as accessibility/navigation controls, without Espresso choosing an old root.
         assertTrue(InstrumentationRegistry.getInstrumentation().uiAutomation
             .performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK))
         compose.waitForIdle()
+    }
+
+    private fun recoverEmulatorSystemUiOverlay() {
+        val automation=InstrumentationRegistry.getInstrumentation().uiAutomation
+        automation.serviceInfo=automation.serviceInfo.apply { flags=flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS }
+        val root=(automation.windows.mapNotNull { it.root }+listOfNotNull(automation.rootInActiveWindow)).firstOrNull { window ->
+            window.findAccessibilityNodeInfosByText("System UI isn't responding")
+                .any { it.packageName?.toString()=="android" && it.text?.toString()=="System UI isn't responding" }
+        } ?: return
+        val emulator=ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand("getprop ro.kernel.qemu"))
+            .bufferedReader().use { it.readText().trim() }
+        check(emulator=="1") { "System UI ANR recovery is emulator-only" }
+        val output=File(compose.activity.filesDir,"qa/performance").apply { mkdirs() }
+        val stamp=System.nanoTime()
+        File(output,"system-ui-anr-$stamp.txt").writeText(ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand("dumpsys window windows"))
+            .bufferedReader().use { it.readText() })
+        automation.takeScreenshot()?.let { bitmap -> File(output,"system-ui-anr-$stamp.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) };bitmap.recycle() }
+        val wait=root.findAccessibilityNodeInfosByText("Wait")
+            .single { it.packageName?.toString()=="android" && it.text?.toString()=="Wait" }
+        check(wait.performAction(AccessibilityNodeInfo.ACTION_CLICK)) { "System UI Wait action failed" }
+        compose.waitUntil(10000) {
+            automation.rootInActiveWindow?.findAccessibilityNodeInfosByText("System UI isn't responding")
+                ?.none { it.packageName?.toString()=="android" }==true
+        }
     }
 
     private fun screenshot(name: String) {
