@@ -47,8 +47,7 @@ import com.longzhousz.ami.core.durationLabel
 import java.io.File
 
 private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0xFFB58C82), Color(0xFF8D86A6), Color(0xFF789D9E))
-internal class ArtworkMemory {
-    var expectedPath: String? = null
+internal class ArtworkMemory(val expectedPath: () -> String?) {
     var key by mutableStateOf<MemoryCache.Key?>(null)
 }
 
@@ -63,7 +62,7 @@ internal class ArtworkMemory {
             val request = remember(artwork.first, context) { ImageRequest.Builder(context).data(File(artwork.first!!))
                 .placeholderMemoryCacheKey(memory?.key ?: previousImage).crossfade(150).build() }
             AsyncImage(request, "《${artwork.second}》封面", Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
-                onSuccess = { if (artwork.first == latestPath && (memory == null || memory.expectedPath == artwork.first)) {
+                onSuccess = { if (artwork.first == latestPath && (memory == null || memory.expectedPath() == artwork.first)) {
                     if (memory == null) previousImage = it.result.memoryCacheKey else memory.key = it.result.memoryCacheKey
                 } })
         }

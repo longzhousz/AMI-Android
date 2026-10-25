@@ -12,7 +12,7 @@ android {
         targetSdk = 37
         versionCode = 9
         versionName = "0.1.8"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.longzhousz.ami.RecoverySeedInstrumentation"
     }
     buildFeatures { compose = true; buildConfig = true }
     signingConfigs {

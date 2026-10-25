@@ -1,4 +1,0 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <instrumentation android:name="com.longzhousz.ami.RecoverySeedInstrumentation"
-        android:targetPackage="com.longzhousz.ami" android:functionalTest="true" />
-</manifest>

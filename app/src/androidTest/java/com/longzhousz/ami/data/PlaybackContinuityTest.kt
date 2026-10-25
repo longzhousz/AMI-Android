@@ -98,7 +98,7 @@ class PlaybackContinuityTest {
         await("Gamma should be selected in background") { model.lyrics.value.songId==songs[2].id && model.player.state.value.id==songs[2].id }
         assertNull(model.lyrics.value.document)
         assertEquals(0,model.repository.lyrics.cachedBytes)
-        assertEquals(0L,model.player.currentPosition(songs[0].id))
+        instrumentation.runOnMainSync { assertEquals(0L,model.player.currentPosition(songs[0].id)) }
         instrumentation.runOnMainSync { model.setUiActive(true) }
         await("Only the selected lyrics should return") { model.lyrics.value.document?.original==songs[2].lyrics }
         assertEquals(songs[2].id,model.lyrics.value.songId)

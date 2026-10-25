@@ -36,7 +36,14 @@ try:
     seed=shell('am','instrument','-w','-r','-e','phase','seed',package+'.test/com.longzhousz.ami.RecoverySeedInstrumentation')
     (out/'seed.txt').write_text(seed)
     assert 'AMI_RECOVERY_OK phase=seed' in seed,seed
+    # Finishing instrumentation may itself end the target process. Establish a live,
+    # uninstrumented background session before simulating system reclamation.
+    shell('cmd','media_session','dispatch','play')
+    (out/'before-reclaim-playing.txt').write_text(wait_state(3))
+    shell('cmd','media_session','dispatch','pause')
+    (out/'before-reclaim-paused.txt').write_text(wait_state(2))
     pids=shell('pidof',package,check=False).strip().split()
+    assert pids,'No live background process to reclaim'
     for pid in pids:
         assert pid.isdigit()
         # SIGKILL simulates reclamation without setting Android's force-stopped package flag.

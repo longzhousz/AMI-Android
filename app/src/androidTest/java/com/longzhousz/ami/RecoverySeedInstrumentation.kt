@@ -1,7 +1,6 @@
 package com.longzhousz.ami
 
 import android.app.Activity
-import android.app.Instrumentation
 import android.content.ComponentName
 import android.content.Intent
 import android.media.browse.MediaBrowser
@@ -9,24 +8,24 @@ import android.media.session.MediaController
 import android.media.session.PlaybackState
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.runner.AndroidJUnitRunner
 import com.longzhousz.ami.core.PlaybackSnapshot
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.playback.PlaybackService
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/** Host-only fixture; it is never packaged in Preview/Release or discovered as a JUnit test. */
-class RecoverySeedInstrumentation : Instrumentation() {
-    private var phase="seed"
+/** Normal JUnit runner with host-only recovery fixtures; never packaged in Preview/Release. */
+class RecoverySeedInstrumentation : AndroidJUnitRunner() {
+    private var phase: String? = null
     override fun onCreate(arguments: Bundle?) {
+        phase=arguments?.getString("phase")
         super.onCreate(arguments)
-        phase=arguments?.getString("phase") ?: "seed"
-        InstrumentationRegistry.registerInstance(this,arguments ?: Bundle())
-        start()
     }
     override fun onStart() {
+        if (phase==null) { super.onStart();return }
         try {
+            check(phase=="seed" || phase=="cleanup") { "Unknown fixture phase: $phase" }
             waitForIdleSync()
             val repo=(targetContext.applicationContext as AmiApplication).repository
             if (phase=="cleanup") {

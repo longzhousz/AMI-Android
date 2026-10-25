@@ -85,8 +85,8 @@ private val PlayerColors = darkColorScheme(
     var showTranslation by rememberSaveable { mutableStateOf(true) }
     var sleepDialog by remember { mutableStateOf(false) }
     var lyricMenu by remember { mutableStateOf(false) }
-    val artworkMemory = remember { ArtworkMemory() }
-    SideEffect { artworkMemory.expectedPath = song.cover }
+    val latestCover by rememberUpdatedState(song.cover)
+    val artworkMemory = remember { ArtworkMemory { latestCover } }
     LaunchedEffect(song.id) { lyricMenu = false }
     MaterialTheme(colorScheme = PlayerColors) {
         Surface(Modifier.fillMaxSize().testTag("full-player"), color = Color.Transparent, contentColor = Color.White) {

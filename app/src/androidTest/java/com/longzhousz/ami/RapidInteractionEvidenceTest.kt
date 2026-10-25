@@ -25,6 +25,9 @@ class RapidInteractionEvidenceTest {
         val songs=(0..2).map { Song("$prefix-$it","content://com.longzhousz.ami.test.fixtures/document/album.wav",folder="qa-rapid",title="Rapid $it",duration=6000,lyrics="[00:00]Line $it\n[00:03]End $it") }
         val output=File(compose.activity.filesDir,"qa/performance").apply { mkdirs() }
         val trace="/data/misc/perfetto-traces/ami-rapid.pftrace"
+        // Shell can read Android/media; it cannot read this app's private files directory.
+        val config=File(compose.activity.externalMediaDirs.first(),"ami-perfetto.txt")
+        val script=File(config.parentFile,"ami-perfetto.sh")
         var traceStarted=false
         try {
             songs.forEach(model.repository.db::upsert);model.repository.reload()
@@ -32,8 +35,28 @@ class RapidInteractionEvidenceTest {
             compose.runOnIdle { model.play(songs,0);model.player.pause() }
             compose.waitUntil(10000) { model.lyrics.value.document!=null && model.lyrics.value.songId==songs[0].id }
             shell("dumpsys gfxinfo ${compose.activity.packageName} reset")
-            val traceOutput=shell("perfetto --background-wait -o $trace -t 15s --app ${compose.activity.packageName} sched freq idle am wm gfx view binder_driver dalvik").toString(Charsets.UTF_8)
-            traceStarted=Regex("\\b[0-9]+\\b").containsMatchIn(traceOutput) && !traceOutput.contains("error",true)
+            config.parentFile!!.mkdirs()
+            config.writeText("""
+                duration_ms: 15000
+                buffers { size_kb: 16384 fill_policy: RING_BUFFER }
+                data_sources { config { name: "linux.ftrace" ftrace_config {
+                    ftrace_events: "sched/sched_switch"
+                    ftrace_events: "sched/sched_waking"
+                    ftrace_events: "power/cpu_frequency"
+                    atrace_categories: "am"
+                    atrace_categories: "wm"
+                    atrace_categories: "gfx"
+                    atrace_categories: "view"
+                    atrace_categories: "binder_driver"
+                    atrace_categories: "dalvik"
+                    atrace_apps: "${compose.activity.packageName}"
+                } } }
+                data_sources { config { name: "linux.process_stats" process_stats_config { scan_all_processes_on_start: true } } }
+            """.trimIndent())
+            // --background and text configs work on both Android 11 and 17. Capture stderr too.
+            script.writeText("perfetto --background --txt -c ${config.absolutePath} -o $trace 2>&1\nprintf '\\nAMI_PERFETTO_EXIT=%s\\n' \$?\n")
+            val traceOutput=shell("sh ${script.absolutePath}").toString(Charsets.UTF_8)
+            traceStarted=traceOutput.contains("AMI_PERFETTO_EXIT=0")
             File(output,"rapid-perfetto-start.txt").writeText(traceOutput)
             val started=System.nanoTime()
             repeat(6) { n ->
@@ -62,6 +85,7 @@ class RapidInteractionEvidenceTest {
             }
         } finally {
             if(traceStarted) shell("rm -f $trace")
+            config.delete();script.delete()
             compose.runOnIdle { model.player.pause();songs.forEach { model.player.remove(it.id) } }
             songs.forEach { model.repository.db.remove(it.id) };model.repository.reload()
         }
