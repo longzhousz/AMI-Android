@@ -18,8 +18,8 @@ internal class FakeDeepSeekApi : DeepSeekApi {
     val completions = mutableListOf<JSONObject>()
     var list: () -> String = { """{"data":[{"id":"deepseek-flash","name":"DeepSeek-V4.1-Flash"},{"id":"deepseek-v4-pro","name":"DeepSeek-V4-Pro"}]}""" }
     var completion: (JSONObject) -> String = { error("No completion expected") }
-    override fun models(apiKey: String): String { listCalls++; return list() }
-    override fun complete(apiKey: String, body: JSONObject): String { completions += body; return completion(body) }
+    override suspend fun models(apiKey: String): String { listCalls++; return list() }
+    override suspend fun complete(apiKey: String, body: JSONObject): String { completions += body; return completion(body) }
 }
 
 @RunWith(AndroidJUnit4::class)

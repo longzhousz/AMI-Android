@@ -28,7 +28,11 @@ data class Song(
     val lyricTranslation: String = "",
     val lyricsSource: String = "",
     val manualLyrics: Boolean = false,
-)
+    val lyricsAvailable: Boolean? = null,
+    val lyricsVersion: String = "",
+) {
+    val hasLyrics: Boolean get() = lyricsAvailable ?: lyrics.isNotBlank()
+}
 
 data class Album(val key: String, val title: String, val artist: String, val songs: List<Song>) {
     val cover get() = songs.firstNotNullOfOrNull { it.cover }

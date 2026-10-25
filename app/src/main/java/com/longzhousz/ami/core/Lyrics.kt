@@ -16,11 +16,14 @@ object Lyrics {
             when {
                 header.matches(trimmed) || text.isBlank() -> emptySequence()
                 matches.isEmpty() -> sequenceOf(LyricLine(null, text))
-                else -> matches.asSequence().map { match ->
+                else -> matches.mapNotNull { match ->
                     val (min, sec, fraction) = match.destructured
                     val millis = fraction.padEnd(3, '0').take(3).toLongOrNull() ?: 0
-                    LyricLine((min.toLong() * 60000 + sec.toLong() * 1000 + millis + offset).coerceAtLeast(0), text)
-                }
+                    val minutes = min.toLongOrNull() ?: return@mapNotNull null
+                    val seconds = sec.toLongOrNull() ?: return@mapNotNull null
+                    runCatching { Math.addExact(Math.addExact(Math.multiplyExact(minutes,60000L),seconds*1000+millis),offset) }
+                        .getOrNull()?.let { LyricLine(it.coerceAtLeast(0),text) }
+                }.ifEmpty { listOf(LyricLine(null,text)) }.asSequence()
             }
         }.sortedBy { it.time ?: Long.MAX_VALUE }.toList()
     }

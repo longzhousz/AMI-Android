@@ -1,6 +1,6 @@
 # vivo / OriginOS 音乐兼容性
 
-核对日期：2026-10-24。当前没有连接用户的 vivo 真机；OriginOS 版本和具体缺失功能尚待确认。
+核对日期：2026-10-25。当前没有连接用户的 vivo 真机；OriginOS 版本和具体缺失功能尚待确认。
 
 ## 标准音乐应用接入
 
@@ -12,7 +12,7 @@ AMI 使用 Media3，并按 Android 标准提供以下声明和接口：
 - `USAGE_MEDIA` / `CONTENT_TYPE_MUSIC` 音频属性；
 - 歌曲的音乐媒体类型、标题、歌手、封面与时长元数据；
 - MediaLibraryService 与 `android.media.browse.MediaBrowserService` 连接入口，供平台/旧版客户端获得媒体控制会话；
-- 系统播放恢复请求等待队列恢复完成。浏览根为空，不通过新增系统浏览层导出整个私人曲库。
+- 系统播放恢复请求等待队列恢复完成；标准媒体按键接收器支持系统在进程回收后请求恢复。普通浏览根为空，系统最近播放根最多返回一首可恢复曲目，不导出整个私人曲库。
 
 这些是音乐应用的标准声明，不是向 vivo 注册或获取专属能力的凭据。Android 对 appCategory 的公开说明是用于分类统计等场景，不能据此保证 OriginOS 的原子随身听或音效名单一定收录 AMI。
 
@@ -45,3 +45,5 @@ AMI 使用 Media3，并按 Android 标准提供以下声明和接口：
 - [CATEGORY_APP_MUSIC](https://developer.android.com/reference/android/content/Intent#CATEGORY_APP_MUSIC)
 - [后台媒体会话](https://developer.android.com/media/media3/session/background-playback)
 - [MediaLibraryService](https://developer.android.com/media/media3/session/serve-content)
+
+0.1.8 的自动化场景、证据与真机采集步骤见 [Android 设备验证](ANDROID_DEVICE_QA.md)。

@@ -15,6 +15,7 @@ data class PlaybackState(
     val shuffle: Boolean = false, val repeat: Int = Player.REPEAT_MODE_ALL,
     val queue: List<String> = emptyList(), val error: String? = null,
     val advancing: Boolean = false,
+    val nextId: String? = null,
 )
 
 class PlayerConnection(context: Context) {
@@ -43,7 +44,8 @@ class PlayerConnection(context: Context) {
         state.value = PlaybackState(true, c.currentMediaItem?.mediaId, playRequested, c.currentPosition.coerceAtLeast(0),
             c.duration.coerceAtLeast(0), c.playbackState == Player.STATE_BUFFERING, c.shuffleModeEnabled, c.repeatMode,
             queue,
-            c.playerError?.let { "无法播放此音频（${it.errorCodeName}），请检查文件授权或格式" }, advancing = c.isPlaying)
+            c.playerError?.let { "无法播放此音频（${it.errorCodeName}），请检查文件授权或格式" }, advancing = c.isPlaying,
+            nextId = c.nextMediaItemIndex.takeIf { it >= 0 }?.let { c.getMediaItemAt(it).mediaId })
     }
     fun play(songs: List<Song>, index: Int = 0) {
         val c = controller ?: error("播放服务正在连接，请稍后再试")
@@ -64,7 +66,9 @@ class PlayerConnection(context: Context) {
     fun seek(ms: Long) { controller?.seekTo(ms.coerceAtLeast(0)) }
     // Only player events publish structural state. Visible progress/lyrics read the controller's
     // locally interpolated clock; advancing time must not rebuild the queue or the library UI.
-    fun currentPosition(): Long = controller?.currentPosition?.coerceAtLeast(0) ?: state.value.position
+    fun currentPosition(expectedId: String? = state.value.id): Long = controller?.let {
+        if (it.currentMediaItem?.mediaId == expectedId) it.currentPosition.coerceAtLeast(0) else 0L
+    } ?: state.value.position.takeIf { state.value.id == expectedId } ?: 0L
     fun shuffle() { controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }
     fun repeat() { controller?.let { it.repeatMode = when (it.repeatMode) { Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL; Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE; else -> Player.REPEAT_MODE_OFF } } }
     fun jump(index: Int) { controller?.let { it.seekTo(index, 0); it.play() } }

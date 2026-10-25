@@ -63,20 +63,19 @@ class PlaybackStoreTest {
         } finally { restart.cancelAndJoin() }
     }
     @Test fun versionTwoUpgradePreservesSongsFavoritesAndTranslations() = scenario { db, _, _ ->
-        val song = Song("upgrade", "file:///unused", folder = "test", title = "Preserved")
-        db.upsert(song); db.favorite(song.id, true); db.cacheTranslation("translation", "[\"保留译文\"]")
         val path = db.readableDatabase.path
-        db.writableDatabase.execSQL("DROP TABLE scan_cache")
-        db.writableDatabase.execSQL("DROP TABLE playback_queue")
-        db.writableDatabase.execSQL("DROP TABLE playback_checkpoint")
-        db.writableDatabase.execSQL("DROP INDEX songs_import_order")
-        db.writableDatabase.version = 2
+        val name = java.io.File(path).name
         db.close()
+        legacyLibrary(context,name,2) { old ->
+            old.execSQL("INSERT INTO songs VALUES ('upgrade','file:///unused','file:///unused','test','Preserved','Artist','Album','',0,1,1000,'WAV',NULL,'',0,NULL,NULL,1,1,NULL,'')")
+            old.execSQL("INSERT INTO translations VALUES (?,?)",arrayOf("translation","[\"保留译文\"]"))
+        }
+        val song=Song("upgrade","file:///unused",folder="test",title="Preserved")
         assertTrue(db.songs().single { it.id == song.id }.favorite)
         assertEquals("[\"保留译文\"]", db.translation("translation"))
         assertTrue(db.scanRecords().isEmpty())
         assertNull(db.playbackSnapshot())
-        assertEquals(3, db.readableDatabase.version)
+        assertEquals(4, db.readableDatabase.version)
         assertEquals(path, db.readableDatabase.path)
     }
 }

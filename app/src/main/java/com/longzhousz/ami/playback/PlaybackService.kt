@@ -13,6 +13,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionError
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.SettableFuture
 import com.longzhousz.ami.AmiApplication
@@ -38,6 +39,7 @@ fun Song.mediaItem(): MediaItem = MediaItem.Builder().setMediaId(id).setUri(uri)
         .apply { end?.let { setEndPositionMs(it) } }.build()).build()
 
 class PlaybackService : MediaLibraryService() {
+    private val recentRoot = "ami-recent"
     private val repository get() = (application as AmiApplication).repository
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var player: ExoPlayer
@@ -62,12 +64,27 @@ class PlaybackService : MediaLibraryService() {
             return future
         }
         override fun onGetLibraryRoot(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, params: LibraryParams?) =
-            Futures.immediateFuture(LibraryResult.ofItem(MediaItem.Builder().setMediaId("ami-root")
+            Futures.immediateFuture(LibraryResult.ofItem(MediaItem.Builder().setMediaId(if (params?.isRecent == true) recentRoot else "ami-root")
                 .setMediaMetadata(MediaMetadata.Builder().setTitle("AMI").setIsBrowsable(true).setIsPlayable(false).setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED).build()).build(), params))
-        // A non-null empty root lets platform/legacy clients connect to the media controls.
-        // The app's private collection is not exported through a new browsing UI.
+        // The standard recent root exposes one resumable item, not the private collection.
         override fun onGetChildren(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, parentId: String,
-            page: Int, pageSize: Int, params: LibraryParams?) = Futures.immediateFuture(LibraryResult.ofItemList(emptyList<MediaItem>(), params))
+            page: Int, pageSize: Int, params: LibraryParams?): com.google.common.util.concurrent.ListenableFuture<LibraryResult<com.google.common.collect.ImmutableList<MediaItem>>> {
+            if (parentId != recentRoot || page != 0) return Futures.immediateFuture(LibraryResult.ofItemList(emptyList(), params))
+            val future = SettableFuture.create<LibraryResult<com.google.common.collect.ImmutableList<MediaItem>>>()
+            scope.launch {
+                try {
+                    restoration.await()
+                    future.set(LibraryResult.ofItemList(listOfNotNull(player.currentMediaItem), params))
+                } catch (e: Exception) { future.setException(e) }
+            }
+            return future
+        }
+        override fun onGetItem(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, mediaId: String) =
+            Futures.immediateFuture(player.currentMediaItem?.takeIf { it.mediaId == mediaId }?.let { LibraryResult.ofItem(it, null) }
+                ?: LibraryResult.ofError<MediaItem>(SessionError.ERROR_BAD_VALUE))
+        override fun onSubscribe(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, parentId: String, params: LibraryParams?) =
+            Futures.immediateFuture(if (parentId == recentRoot || parentId == "ami-root") LibraryResult.ofVoid(params)
+                else LibraryResult.ofError<Void>(SessionError.ERROR_BAD_VALUE))
     }
 
     override fun onCreate() {
@@ -89,6 +106,8 @@ class PlaybackService : MediaLibraryService() {
                 }
             }
             override fun onEvents(player: Player, events: Player.Events) {
+                if (restored && events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION))
+                    session?.notifyChildrenChanged(recentRoot, if (player.currentMediaItem == null) 0 else 1, null)
                 if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_POSITION_DISCONTINUITY,
                         Player.EVENT_PLAY_WHEN_READY_CHANGED, Player.EVENT_PLAYBACK_STATE_CHANGED,
                         Player.EVENT_IS_PLAYING_CHANGED, Player.EVENT_REPEAT_MODE_CHANGED, Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED)) checkpoint()
@@ -114,6 +133,7 @@ class PlaybackService : MediaLibraryService() {
             checkpoint()
             updatePositionJob()
             restoration.complete(Unit)
+            session?.notifyChildrenChanged(recentRoot, if (player.currentMediaItem == null) 0 else 1, null)
         }
     }
     private fun updatePositionJob() {

@@ -39,17 +39,34 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.memory.MemoryCache
+import coil.request.ImageRequest
+import androidx.compose.ui.platform.LocalContext
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.core.durationLabel
 import java.io.File
 
 private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0xFFB58C82), Color(0xFF8D86A6), Color(0xFF789D9E))
+internal class ArtworkMemory {
+    var expectedPath: String? = null
+    var key by mutableStateOf<MemoryCache.Key?>(null)
+}
 
-@Composable fun Cover(path: String?, title: String, modifier: Modifier = Modifier) {
+@Composable internal fun Cover(path: String?, title: String, modifier: Modifier = Modifier, memory: ArtworkMemory? = null) {
+    val context = LocalContext.current
+    var previousImage by remember { mutableStateOf<MemoryCache.Key?>(null) }
+    val latestPath by rememberUpdatedState(path)
     Crossfade(path to title, modifier.clip(RoundedCornerShape(18.dp)), animationSpec = tween(260), label = "artwork") { artwork ->
         val color = CoverPalette[(artwork.second.hashCode().toLong().let { if (it < 0) -it else it } % CoverPalette.size).toInt()]
         Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(color.copy(alpha = 0.65f), color))), contentAlignment = Alignment.Center) {
-        if (artwork.first != null) AsyncImage(File(artwork.first!!), "《${artwork.second}》封面", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        if (artwork.first != null) {
+            val request = remember(artwork.first, context) { ImageRequest.Builder(context).data(File(artwork.first!!))
+                .placeholderMemoryCacheKey(memory?.key ?: previousImage).crossfade(150).build() }
+            AsyncImage(request, "《${artwork.second}》封面", Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                onSuccess = { if (artwork.first == latestPath && (memory == null || memory.expectedPath == artwork.first)) {
+                    if (memory == null) previousImage = it.result.memoryCacheKey else memory.key = it.result.memoryCacheKey
+                } })
+        }
         else Canvas(Modifier.fillMaxSize().padding(18.dp).semantics { contentDescription = "《${artwork.second}》占位封面" }) {
             val radius = size.minDimension * .43f
             drawCircle(Color.White.copy(alpha = .17f), radius)

@@ -30,6 +30,9 @@
             </intent-filter>
         </activity>
         <!-- Media3 must be exported for the system media controller and headset clients. -->
+        <receiver android:name="androidx.media3.session.MediaButtonReceiver" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MEDIA_BUTTON" /></intent-filter>
+        </receiver>
         <service android:name=".playback.PlaybackService" android:foregroundServiceType="mediaPlayback" android:exported="true" xmlns:tools="http://schemas.android.com/tools" tools:ignore="ExportedService">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />

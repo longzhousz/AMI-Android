@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -81,6 +82,14 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         val bridgeAlbum by model.bridgeAlbum.collectAsStateWithLifecycle()
         val bridgeEnabled by model.bridgeEnabled.collectAsStateWithLifecycle()
         val lifecycle = LocalLifecycleOwner.current.lifecycle
+        LaunchedEffect(model, lifecycle) {
+            try {
+                lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    model.setUiActive(true)
+                    try { awaitCancellation() } finally { model.setUiActive(false) }
+                }
+            } finally { model.setUiActive(false) }
+        }
         LaunchedEffect(bridgeAlbum) { bridgeAlbum?.let { albumKey = it; model.bridgeAlbum.value = null } }
         LaunchedEffect(bridgeEnabled, lifecycle) {
             if (bridgeEnabled) lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {

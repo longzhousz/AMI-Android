@@ -21,9 +21,7 @@ import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-@RunWith(AndroidJUnit4::class)
-class SystemMusicIntegrationTest {
-    private fun stopPreviousPlaybackSession() {
+internal fun stopPreviousPlaybackSession() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val connected = CountDownLatch(1)
@@ -54,6 +52,9 @@ class SystemMusicIntegrationTest {
             instrumentation.runOnMainSync { controls?.unregisterCallback(callback); browser?.disconnect() }
         }
     }
+
+@RunWith(AndroidJUnit4::class)
+class SystemMusicIntegrationTest {
     @Test fun packageDeclaresAudioCategoryMusicEntryAndLegacyBrowserService() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         assertEquals(ApplicationInfo.CATEGORY_AUDIO, context.applicationInfo.category)

@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.longzhousz.ami.AmiViewModel
+import com.longzhousz.ami.core.LyricLine
 import com.longzhousz.ami.core.Lyrics
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.core.durationLabel
@@ -45,12 +46,16 @@ internal data class PlayerActions(
 
 @Composable fun PlayerScreen(song: Song, model: AmiViewModel, onClose: () -> Unit, onQueue: () -> Unit, onLyricFile: () -> Unit, dragHandle: Modifier = Modifier) {
     val playback by model.player.state.collectAsStateWithLifecycle()
-    val translation by model.translations.collectAsStateWithLifecycle()
-    val translating by model.translating.collectAsStateWithLifecycle()
+    val lyrics by model.lyrics.collectAsStateWithLifecycle()
+    val matched = lyrics.songId == song.id && lyrics.revision == song.lyricsVersion
+    val document = lyrics.document.takeIf { matched }
+    val detailed = song.copy(lyrics = document?.original.orEmpty(), lyricTranslation = document?.translated.orEmpty())
+    val translation = lyrics.translation.takeIf { matched }
+    val translating = matched && lyrics.translating
     val clock = rememberPlaybackClock(model.player, playback)
-    PlayerContent(song, playback, translation, translating, PlayerActions(
+    PlayerContent(detailed, playback, translation, translating, PlayerActions(
         close = onClose, queue = onQueue, lyricFile = onLyricFile, favorite = { model.favorite(song) },
-        seek = { model.act("player.seek") { model.player.seek(it) } },
+        seek = { if (model.player.state.value.id == song.id) model.act("player.seek") { model.player.seek(it) } },
         toggle = { model.act("player.toggle") { model.player.toggle() } },
         previous = { model.act("player.previous") { model.player.previous() } },
         next = { model.act("player.next") { model.player.next() } },
@@ -58,7 +63,7 @@ internal data class PlayerActions(
         repeat = { model.act("player.repeat") { model.player.repeat() } },
         translate = { model.translate(song) }, retranslate = { model.translate(song, force = true) },
         restoreLyrics = { model.clearLyrics(song) }, sleep = model::sleep,
-    ), lyricPosition = { clock.value }, dragHandle = dragHandle)
+    ), lyricPosition = { clock.value }, dragHandle = dragHandle, preparedLines = document?.lines, lyricsReady = document != null)
 }
 
 private val PlayerColors = darkColorScheme(
@@ -71,11 +76,18 @@ private val PlayerColors = darkColorScheme(
     song: Song, playback: PlaybackState, translation: List<String>?, translating: Boolean,
     actions: PlayerActions, lyricPosition: () -> Long = { playback.position },
     dragHandle: Modifier = Modifier,
+    preparedLines: List<LyricLine>? = null,
+    lyricsReady: Boolean = true,
 ) {
-    var showLyrics by rememberSaveable { mutableStateOf(song.lyrics.isNotBlank()) }
+    var showLyrics by rememberSaveable { mutableStateOf(song.hasLyrics) }
+    val latestSongId by rememberUpdatedState(song.id)
+    val latestActions by rememberUpdatedState(actions)
     var showTranslation by rememberSaveable { mutableStateOf(true) }
     var sleepDialog by remember { mutableStateOf(false) }
     var lyricMenu by remember { mutableStateOf(false) }
+    val artworkMemory = remember { ArtworkMemory() }
+    SideEffect { artworkMemory.expectedPath = song.cover }
+    LaunchedEffect(song.id) { lyricMenu = false }
     MaterialTheme(colorScheme = PlayerColors) {
         Surface(Modifier.fillMaxSize().testTag("full-player"), color = Color.Transparent, contentColor = Color.White) {
             PlayerBackdrop(song.cover)
@@ -97,16 +109,22 @@ private val PlayerColors = darkColorScheme(
                         }
                     }
                     val stage: @Composable (Modifier) -> Unit = { modifier ->
-                        AnimatedContent(PlayerStage(song, showLyrics, translation.takeIf { showTranslation }), modifier,
+                        AnimatedContent(PlayerStage(song, showLyrics, translation.takeIf { showTranslation }, preparedLines, lyricsReady), modifier,
                             contentKey = { it.song.id to it.lyrics }, transitionSpec = {
                                 (fadeIn(tween(240, 40)) + scaleIn(tween(320), initialScale = .97f)) togetherWith
                                     (fadeOut(tween(160)) + scaleOut(tween(240), targetScale = 1.02f))
                             }, label = "player-stage") { stage ->
-                            val stageLines = remember(stage.song.lyrics) { Lyrics.parse(stage.song.lyrics) }
-                            if (stage.lyrics && stageLines.isNotEmpty()) LyricsStage(stage.song.id, stageLines, stage.translation, lyricPosition, actions.seek, Modifier.fillMaxSize())
+                            val stageLines = stage.lines ?: remember(stage.song.lyrics) { Lyrics.parse(stage.song.lyrics) }
+                            val lastPosition = remember(stage.song.id) { longArrayOf(0L) }
+                            val stageClock: () -> Long = {
+                                if (stage.song.id == latestSongId) lyricPosition().also { lastPosition[0] = it } else lastPosition[0]
+                            }
+                            if (stage.lyrics && !stage.ready) Box(Modifier.fillMaxSize())
+                            else if (stage.lyrics && stageLines.isNotEmpty()) LyricsStage(stage.song.id, stageLines, stage.translation, stageClock,
+                                { if (stage.song.id == latestSongId) latestActions.seek(it) }, Modifier.fillMaxSize())
                             else if (stage.lyrics) EmptyLyrics()
                             else BoxWithConstraints(Modifier.fillMaxSize().then(dragHandle).padding(28.dp), contentAlignment = Alignment.Center) {
-                                Cover(stage.song.cover, stage.song.album, Modifier.size(minOf(maxWidth, maxHeight)).testTag("player-cover"))
+                                Cover(stage.song.cover, stage.song.album, Modifier.size(minOf(maxWidth, maxHeight)).testTag("player-cover"), artworkMemory)
                             }
                         }
                     }
@@ -137,7 +155,7 @@ private val PlayerColors = darkColorScheme(
     }
 }
 
-private data class PlayerStage(val song: Song, val lyrics: Boolean, val translation: List<String>?)
+private data class PlayerStage(val song: Song, val lyrics: Boolean, val translation: List<String>?, val lines: List<LyricLine>?, val ready: Boolean)
 
 @Composable private fun EmptyLyrics() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -195,24 +213,27 @@ private data class PlayerStage(val song: Song, val lyrics: Boolean, val translat
     }
 }
 
+private data class SeekPreview(val serial: Int, val position: Long)
+
 /** Frame-clock reads stop here: artwork, buttons and the library never observe each tick. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun PlayerTimeline(songId: String, duration: Long, buffering: Boolean, position: () -> Long, onSeek: (Long) -> Unit) {
     var seeking by remember(songId) { mutableStateOf<Float?>(null) }
-    var pendingSeek by remember(songId) { mutableStateOf<Long?>(null) }
+    var pendingSeek by remember(songId) { mutableStateOf<SeekPreview?>(null) }
+    var seekSerial by remember(songId) { mutableIntStateOf(0) }
     val currentPosition by rememberUpdatedState(position)
     LaunchedEffect(pendingSeek) {
-        pendingSeek?.let { target ->
-            withTimeoutOrNull(800) { snapshotFlow { currentPosition() }.first { abs(it - target) < 500 } }
-            pendingSeek = null
+        pendingSeek?.let { request ->
+            withTimeoutOrNull(3000) { snapshotFlow { currentPosition() }.first { abs(it - request.position) < 500 } }
+            if (pendingSeek === request) pendingSeek = null
         }
     }
-    val displayed = (seeking ?: pendingSeek?.toFloat() ?: position().toFloat()).coerceIn(0f, duration.coerceAtLeast(1).toFloat())
+    val displayed = (seeking ?: pendingSeek?.position?.toFloat() ?: position().toFloat()).coerceIn(0f, duration.coerceAtLeast(1).toFloat())
     val colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White.copy(alpha = .8f), inactiveTrackColor = Color.White.copy(alpha = .15f))
     Column {
         Slider(value = displayed,
-            onValueChange = { seeking = it }, onValueChangeFinished = {
-                seeking?.toLong()?.let { pendingSeek = it; onSeek(it) }
+            onValueChange = { pendingSeek = null; seeking = it }, onValueChangeFinished = {
+                seeking?.toLong()?.let { pendingSeek = SeekPreview(++seekSerial, it); onSeek(it) }
                 seeking = null
             },
             valueRange = 0f..duration.coerceAtLeast(1).toFloat(), enabled = duration > 0, colors = colors,

@@ -138,6 +138,7 @@ class InterfaceTest {
             compose.waitUntil(10000) { model.player.state.value.id == songs.first().id }
             compose.onNodeWithTag("mini-player").performClick()
             compose.onNodeWithTag("full-player").assertIsDisplayed()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("lyrics-stage").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("lyrics-stage").assertIsDisplayed()
             val bitmap = compose.onNodeWithTag("full-player").captureToImage().asAndroidBitmap()
             val directory = File(compose.activity.filesDir, "qa").apply { mkdirs() }

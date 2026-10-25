@@ -23,6 +23,7 @@ class LibraryRepository(val context: Context) {
     val prefs = context.getSharedPreferences("ami", Context.MODE_PRIVATE)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val playback = PlaybackStore(db, prefs, scope)
+    val lyrics = LyricStore(db)
     val songs = MutableStateFlow<List<Song>>(emptyList())
     val library = MutableStateFlow(LibrarySnapshot(emptyList()))
     val loading = MutableStateFlow(true)
@@ -38,7 +39,7 @@ class LibraryRepository(val context: Context) {
     @Synchronized fun reload() {
         // A headset, system browser or background import does not need the UI/search snapshot.
         if (!libraryRequested.get()) return
-        val fresh = db.songs()
+        val fresh = db.songSummaries()
         if (fresh != library.value.songs) {
             val snapshot = LibrarySnapshot(fresh)
             library.value = snapshot

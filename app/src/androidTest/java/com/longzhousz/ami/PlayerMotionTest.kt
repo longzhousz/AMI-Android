@@ -141,4 +141,35 @@ class PlayerMotionTest {
         compose.onNodeWithTag("playback-seek").performTouchInput { up() }
         compose.runOnIdle { assertEquals(1, seeks); assertTrue(target > 50000) }
     }
+    @Test fun repeatedCloseRequestsDismissThePanelOnlyOnce() {
+        val visible=mutableStateOf(true)
+        var dismissals=0
+        sheet(visible) { dismissals++ }
+        compose.mainClock.autoAdvance=false
+        compose.onNodeWithText("收起").performClick()
+        compose.onNodeWithText("收起").performClick()
+        compose.mainClock.advanceTimeBy(2000)
+        compose.mainClock.autoAdvance=true
+        compose.waitForIdle()
+        assertEquals(1,dismissals)
+        compose.onNodeWithTag("player-sheet").assertDoesNotExist()
+    }
+    @Test fun anEarlierSeekAcknowledgementCannotMoveTheNewPreviewBack() {
+        val position=mutableLongStateOf(1000)
+        val requests=mutableListOf<Long>()
+        val song=Song("rapid-seek","file:///unused",folder="qa",title="Rapid seek",duration=90000)
+        compose.setContent {
+            AmiTheme("dark") { PlayerContent(song,PlaybackState(duration=90000),null,false,
+                PlayerActions(seek={ requests+=it }),lyricPosition={ position.longValue }) }
+        }
+        compose.onNodeWithTag("playback-seek").performTouchInput { click(Offset(width*.75f,centerY)) }
+        compose.onNodeWithTag("playback-seek").performTouchInput { click(Offset(width*.30f,centerY)) }
+        assertEquals(2,requests.size)
+        compose.runOnIdle { position.longValue=requests[0] }
+        val progress=compose.onNodeWithTag("playback-seek").fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo]
+        assertEquals(requests[1].toFloat(),progress.current,1000f)
+        compose.runOnIdle { position.longValue=requests[1] }
+        assertEquals(requests[1].toFloat(),compose.onNodeWithTag("playback-seek").fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current,1000f)
+    }
+
 }

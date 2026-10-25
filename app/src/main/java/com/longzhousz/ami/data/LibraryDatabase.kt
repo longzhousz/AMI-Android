@@ -7,11 +7,13 @@ import android.database.sqlite.SQLiteOpenHelper
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.core.LocalLyrics
 import com.longzhousz.ami.core.PlaybackSnapshot
+import com.longzhousz.ami.core.SongLyrics
+import com.longzhousz.ami.core.digest
 import org.json.JSONArray
 
 data class ScanRecord(val key: String, val fingerprint: String, val ids: List<String>, val sources: List<String> = emptyList(), val artifacts: List<String> = emptyList())
 
-class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOpenHelper(context, name, null, 3) {
+class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOpenHelper(context, name, null, 4) {
     init { setWriteAheadLoggingEnabled(true) }
     override fun onConfigure(db: SQLiteDatabase) { db.setForeignKeyConstraintsEnabled(true) }
     override fun onCreate(db: SQLiteDatabase) {
@@ -26,6 +28,7 @@ class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOp
         db.execSQL("CREATE TABLE actions (id INTEGER PRIMARY KEY AUTOINCREMENT, time INTEGER NOT NULL, name TEXT NOT NULL, source TEXT NOT NULL, status TEXT NOT NULL)")
         createLyricsTables(db)
         createPerformanceTables(db)
+        createLazyLyricsTables(db)
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
@@ -34,6 +37,7 @@ class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOp
             createLyricsTables(db)
         }
         if (oldVersion < 3) createPerformanceTables(db)
+        if (oldVersion < 4) createLazyLyricsTables(db)
     }
     private fun createPerformanceTables(db: SQLiteDatabase) {
         db.execSQL("CREATE INDEX songs_import_order ON songs(imported_at,id)")
@@ -47,28 +51,84 @@ class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOp
         db.execSQL("CREATE TABLE lyric_overrides (song_id TEXT PRIMARY KEY REFERENCES songs(id) ON DELETE CASCADE, original TEXT NOT NULL, translated TEXT NOT NULL, name TEXT NOT NULL)")
     }
 
-    @Synchronized fun songs(): List<Song> = readableDatabase.rawQuery("""SELECT s.*, o.original AS manual_original,
-        o.translated AS manual_translated, o.name AS manual_name, n.original AS netease_original,
-        n.translated AS netease_translated, n.name AS netease_name FROM songs s
-        LEFT JOIN lyric_overrides o ON s.id=o.song_id LEFT JOIN netease_lyrics n ON s.netease_id=n.music_id
-        ORDER BY s.imported_at,s.id""", null).use { c ->
-        val columns = c.columnNames.withIndex().associate { it.value to it.index }
-        fun s(key: String) = c.getString(columns.getValue(key)) ?: ""
-        fun l(key: String) = c.getLong(columns.getValue(key))
-        fun nullableLong(key: String) = columns.getValue(key).let { if (c.isNull(it)) null else c.getLong(it) }
-        buildList {
-            while (c.moveToNext()) add(Song(
-                id = s("id"), uri = s("uri"), sourceUri = s("source"), folder = s("folder"), title = s("title"),
-                artist = s("artist"), album = s("album"), albumArtist = s("album_artist"), track = l("track").toInt(),
-                disc = l("disc").toInt(), duration = l("duration"), format = s("format"), cover = s("cover").ifBlank { null },
-                lyrics = s("manual_original").ifBlank { s("lyrics").ifBlank { s("netease_original") } },
-                lyricTranslation = if (s("manual_original").isNotBlank()) s("manual_translated") else if (s("lyrics").isBlank()) s("netease_translated") else s("lyric_translated"),
-                lyricsSource = when { s("manual_original").isNotBlank() -> s("manual_name"); s("lyrics").isNotBlank() -> "同名 LRC"; s("netease_original").isNotBlank() -> "网易云 · ${s("netease_name")}"; else -> "" },
-                manualLyrics = s("manual_original").isNotBlank(), neteaseId = s("netease_id").ifBlank { null },
-                start = l("start"), end = nullableLong("end"), order = nullableLong("user_order")?.toInt(),
-                favorite = l("favorite") != 0L, importedAt = l("imported_at"),
-            ))
+    private fun createLazyLyricsTables(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE songs ADD COLUMN has_lyrics INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE songs ADD COLUMN lyric_revision TEXT NOT NULL DEFAULT ''")
+        db.execSQL("CREATE TABLE song_lyrics (song_id TEXT PRIMARY KEY REFERENCES songs(id) ON DELETE CASCADE, original TEXT NOT NULL, translated TEXT NOT NULL)")
+        // Transfer in bounded batches. Reuse freed pages instead of duplicating the entire library.
+        var after: String? = null
+        while (true) {
+            val ids = db.rawQuery("SELECT id FROM songs ${if (after == null) "" else "WHERE id>?"} ORDER BY id LIMIT 128", after?.let { arrayOf(it) }).use { c ->
+                buildList { while (c.moveToNext()) add(c.getString(0)) }
+            }
+            if (ids.isEmpty()) break
+            val placeholders = ids.joinToString { "?" }
+            db.execSQL("INSERT INTO song_lyrics SELECT id,lyrics,lyric_translated FROM songs WHERE id IN ($placeholders) AND (lyrics<>'' OR lyric_translated<>'')", ids.toTypedArray())
+            db.execSQL("UPDATE songs SET has_lyrics=CASE WHEN trim(lyrics)<>'' THEN 1 ELSE 0 END, lyric_revision=CASE WHEN lyrics<>'' THEN 'legacy:'||id ELSE '' END, lyrics='',lyric_translated='' WHERE id IN ($placeholders)", ids.toTypedArray())
+            after = ids.last()
         }
+        for ((table, id) in listOf("netease_lyrics" to "music_id", "lyric_overrides" to "song_id")) {
+            db.execSQL("ALTER TABLE $table ADD COLUMN has_original INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE $table ADD COLUMN revision TEXT NOT NULL DEFAULT ''")
+            db.execSQL("UPDATE $table SET has_original=CASE WHEN trim(original)<>'' THEN 1 ELSE 0 END, revision='legacy:'||$id")
+            // A covering index keeps payload overflow pages out of collection queries.
+            db.execSQL("CREATE INDEX ${table}_summary ON $table($id,has_original,revision,name)")
+        }
+    }
+
+    @Synchronized fun songs(): List<Song> = readSongs(true)
+    @Synchronized fun songSummaries(): List<Song> = readSongs(false)
+
+    private fun readSongs(full: Boolean): List<Song> {
+        val payload = if (full) "CASE WHEN o.has_original=1 THEN o.original WHEN s.has_lyrics=1 THEN l.original ELSE n.original END AS resolved_lyrics, CASE WHEN o.has_original=1 THEN o.translated WHEN s.has_lyrics=1 THEN l.translated ELSE n.translated END AS resolved_translation" else "'' AS resolved_lyrics, '' AS resolved_translation"
+        return readableDatabase.rawQuery("""SELECT s.id,s.uri,s.source,s.folder,s.title,s.artist,s.album,s.album_artist,
+            s.track,s.disc,s.duration,s.format,s.cover,s.start,s.end,s.user_order,s.favorite,s.imported_at,s.netease_id,
+            $payload,
+            CASE WHEN o.has_original=1 OR s.has_lyrics=1 OR n.has_original=1 THEN 1 ELSE 0 END AS available,
+            CASE WHEN o.has_original=1 THEN 'manual:'||o.revision WHEN s.has_lyrics=1 THEN 'sidecar:'||s.lyric_revision WHEN n.has_original=1 THEN 'netease:'||s.netease_id||':'||n.revision ELSE '' END AS revision,
+            CASE WHEN o.has_original=1 THEN o.name WHEN s.has_lyrics=1 THEN '同名 LRC' WHEN n.has_original=1 THEN '网易云 · '||n.name ELSE '' END AS lyric_source,
+            COALESCE(o.has_original,0) AS manual
+            FROM songs s
+            LEFT JOIN lyric_overrides o INDEXED BY lyric_overrides_summary ON s.id=o.song_id
+            LEFT JOIN netease_lyrics n INDEXED BY netease_lyrics_summary ON s.netease_id=n.music_id
+            ${if (full) "LEFT JOIN song_lyrics l ON s.id=l.song_id" else ""}
+            ORDER BY s.imported_at,s.id""", null).use { c ->
+            val columns = c.columnNames.withIndex().associate { it.value to it.index }
+            fun s(key: String) = c.getString(columns.getValue(key)) ?: ""
+            fun l(key: String) = c.getLong(columns.getValue(key))
+            fun nullableLong(key: String) = columns.getValue(key).let { if (c.isNull(it)) null else c.getLong(it) }
+            buildList {
+                while (c.moveToNext()) add(Song(
+                    id=s("id"),uri=s("uri"),sourceUri=s("source"),folder=s("folder"),title=s("title"),artist=s("artist"),
+                    album=s("album"),albumArtist=s("album_artist"),track=l("track").toInt(),disc=l("disc").toInt(),duration=l("duration"),
+                    format=s("format"),cover=s("cover").ifBlank { null },lyrics=s("resolved_lyrics"),lyricTranslation=s("resolved_translation"),
+                    lyricsSource=s("lyric_source"),manualLyrics=l("manual")!=0L,neteaseId=s("netease_id").ifBlank { null },
+                    start=l("start"),end=nullableLong("end"),order=nullableLong("user_order")?.toInt(),favorite=l("favorite")!=0L,importedAt=l("imported_at"),
+                    lyricsAvailable=l("available")!=0L,lyricsVersion=s("revision"),
+                ))
+            }
+        }
+    }
+
+    @Synchronized fun songLyrics(id: String): SongLyrics {
+        val selection = readableDatabase.rawQuery("""SELECT CASE WHEN o.has_original=1 THEN 'manual' WHEN s.has_lyrics=1 THEN 'sidecar' WHEN n.has_original=1 THEN 'netease' ELSE '' END,
+            CASE WHEN o.has_original=1 THEN 'manual:'||o.revision WHEN s.has_lyrics=1 THEN 'sidecar:'||s.lyric_revision WHEN n.has_original=1 THEN 'netease:'||s.netease_id||':'||n.revision ELSE '' END,s.netease_id
+            FROM songs s LEFT JOIN lyric_overrides o INDEXED BY lyric_overrides_summary ON s.id=o.song_id
+            LEFT JOIN netease_lyrics n INDEXED BY netease_lyrics_summary ON s.netease_id=n.music_id WHERE s.id=?""", arrayOf(id)).use { c ->
+            if (!c.moveToFirst()) return SongLyrics()
+            Triple(c.getString(0),c.getString(1),c.getString(2))
+        }
+        val (table, key, value) = when (selection.first) {
+            "manual" -> Triple("lyric_overrides","song_id",id)
+            "sidecar" -> Triple("song_lyrics","song_id",id)
+            "netease" -> Triple("netease_lyrics","music_id",selection.third)
+            else -> return SongLyrics(revision=selection.second)
+        }
+        // executeForString avoids the CursorWindow size limit for long lyric documents.
+        fun text(column: String): String = readableDatabase.compileStatement("SELECT $column FROM $table WHERE $key=?").use {
+            it.bindString(1,value);it.simpleQueryForString().orEmpty()
+        }
+        return SongLyrics(text("original"),text("translated"),selection.second)
     }
 
     @Synchronized fun songIds(): Set<String> = readableDatabase.rawQuery("SELECT id FROM songs", null).use { c -> buildSet { while (c.moveToNext()) add(c.getString(0)) } }
@@ -119,21 +179,26 @@ class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOp
         Unit
     }
 
-    @Synchronized fun upsert(song: Song) {
+    @Synchronized fun upsert(song: Song) = transaction {
         val v = ContentValues().apply {
             put("id", song.id); put("uri", song.uri); put("source", song.sourceUri); put("folder", song.folder)
             put("title", song.title); put("artist", song.artist); put("album", song.album); put("album_artist", song.albumArtist)
             put("track", song.track); put("disc", song.disc); put("duration", song.duration); put("format", song.format)
-            put("cover", song.cover); put("lyrics", song.lyrics); put("start", song.start); put("end", song.end)
+            put("cover", song.cover); put("lyrics", ""); put("has_lyrics", if (song.lyrics.isNotBlank()) 1 else 0); put("lyric_revision", lyricRevision(song.lyrics,song.lyricTranslation)); put("start", song.start); put("end", song.end)
             put("netease_id", song.neteaseId)
-            put("lyric_translated", song.lyricTranslation)
+            put("lyric_translated", "")
         }
         // UPDATE preserves user order, favorites and the original import time on rescans.
         if (writableDatabase.update("songs", v, "id=?", arrayOf(song.id)) == 0) {
             v.put("imported_at", song.importedAt)
             writableDatabase.insertOrThrow("songs", null, v)
         }
+        if (song.lyrics.isNotEmpty() || song.lyricTranslation.isNotEmpty()) writableDatabase.replaceOrThrow("song_lyrics",null,ContentValues().apply {
+            put("song_id",song.id);put("original",song.lyrics);put("translated",song.lyricTranslation)
+        }) else writableDatabase.delete("song_lyrics","song_id=?",arrayOf(song.id))
+        Unit
     }
+    private fun lyricRevision(original: String, translated: String): String = if (original.isBlank()) "" else digest("${original.length}:$original$translated")
 
     @Synchronized fun favorite(id: String, value: Boolean) {
         writableDatabase.update("songs", ContentValues().apply { put("favorite", if (value) 1 else 0) }, "id=?", arrayOf(id))
@@ -150,12 +215,12 @@ class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOp
     @Synchronized fun cacheLyrics(musicId: String, lyrics: LocalLyrics, name: String, source: String) {
         writableDatabase.insertWithOnConflict("netease_lyrics", null, ContentValues().apply {
             put("music_id", musicId); put("original", lyrics.original); put("translated", lyrics.translated)
-            put("name", name); put("source", source)
+            put("name", name); put("source", source); put("has_original", if (lyrics.original.isNotBlank()) 1 else 0); put("revision", lyricRevision(lyrics.original,lyrics.translated))
         }, SQLiteDatabase.CONFLICT_REPLACE)
     }
     @Synchronized fun setLyrics(songId: String, lyrics: LocalLyrics, name: String) {
         writableDatabase.insertWithOnConflict("lyric_overrides", null, ContentValues().apply {
-            put("song_id", songId); put("original", lyrics.original); put("translated", lyrics.translated); put("name", name)
+            put("song_id", songId); put("original", lyrics.original); put("translated", lyrics.translated); put("name", name); put("has_original", if (lyrics.original.isNotBlank()) 1 else 0); put("revision", lyricRevision(lyrics.original,lyrics.translated))
         }, SQLiteDatabase.CONFLICT_REPLACE)
     }
     @Synchronized fun clearLyrics(songId: String) { writableDatabase.delete("lyric_overrides", "song_id=?", arrayOf(songId)) }

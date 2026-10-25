@@ -26,10 +26,9 @@ class TranslationClient internal constructor(
     private fun key(song: Song, lines: List<LyricLine>, model: String, style: String): String =
         digest("${song.id}|${lines.joinToString { "${it.time}:${it.text}" }}|$model|$style|zh-CN|$PROMPT_VERSION")
 
-    suspend fun cached(song: Song, lines: List<LyricLine>): List<String>? = withContext(Dispatchers.IO) {
-        val model = models.state.value.selection
-        val style = repository.prefs.getString("style", DEFAULT_STYLE)!!
-        cachedFor(song, lines, model, style)
+    suspend fun cached(song: Song, lines: List<LyricLine>, selection: String = models.state.value.selection,
+        style: String = repository.prefs.getString("style", DEFAULT_STYLE)!!): List<String>? = withContext(Dispatchers.IO) {
+        cachedFor(song, lines, selection, style)
     }
 
     private fun cachedFor(song: Song, lines: List<LyricLine>, selection: String, style: String): List<String>? {
@@ -47,6 +46,7 @@ class TranslationClient internal constructor(
         require(lines.size <= 3000) { "歌词过长，请先整理歌词文件" }
         if (!force) cached(song, lines)?.let { return@withContext it }
         models.refresh()
+        currentCoroutineContext().ensureActive()
         val selection = models.state.value
         val model = selection.resolved().id
         val apiKey = readKey() ?: error("请先在设置中保存 DeepSeek API Key")

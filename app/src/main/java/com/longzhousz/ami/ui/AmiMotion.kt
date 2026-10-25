@@ -70,11 +70,15 @@ internal fun PlayerSheet(
 ) {
     val density = LocalDensity.current
     val dismissed by rememberUpdatedState(onDismiss)
+    val finishDismiss = remember {
+        var finished = false
+        { if (!finished) { finished = true; dismissed() } }
+    }
     val scope = rememberCoroutineScope()
     BoxWithConstraints(Modifier.fillMaxSize().testTag("player-sheet-host")) {
         val heightPx = with(density) { maxHeight.toPx() }
         val origin = collapsedBounds?.takeIf { it.top > 0f && it.top < heightPx }
-        val travel = origin?.top ?: heightPx
+        val travel = (origin?.top ?: heightPx).coerceAtLeast(1f)
         val anchors = remember(travel) {
             DraggableAnchors {
                 SheetAnchor.Expanded at 0f
@@ -95,7 +99,7 @@ internal fun PlayerSheet(
             {
                 scope.launch {
                     state.animateTo(SheetAnchor.Collapsed, AmiMotion.sheet)
-                    dismissed()
+                    finishDismiss()
                 }
                 Unit
             }
@@ -112,7 +116,7 @@ internal fun PlayerSheet(
                 override suspend fun ScrollScope.performFling(initialVelocity: Float): Float {
                     val remaining = with(defaultFling) { performFling(initialVelocity) }
                     // The modifier updates settledValue after this callback returns.
-                    if (state.requireOffset() >= currentTravel - 1f) dismissed()
+                    if (state.requireOffset() >= currentTravel - 1f) finishDismiss()
                     return remaining
                 }
             }
@@ -127,7 +131,7 @@ internal fun PlayerSheet(
                     events.collect { dragTo(travel * it.progress.coerceIn(0f, 1f)) }
                 }
                 state.animateTo(SheetAnchor.Collapsed, AmiMotion.sheet)
-                dismissed()
+                finishDismiss()
             } catch (cancelled: CancellationException) {
                 scope.launch { state.animateTo(SheetAnchor.Expanded, AmiMotion.sheet) }
                 throw cancelled
