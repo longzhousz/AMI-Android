@@ -2,7 +2,6 @@ package com.longzhousz.ami.playback
 
 import android.app.PendingIntent
 import android.content.Intent
-import android.content.SharedPreferences
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -48,8 +47,6 @@ class PlaybackService : MediaLibraryService() {
     private val restoration = CompletableDeferred<Unit>()
     private var queue: List<String> = emptyList()
     private var positionJob: Job? = null
-    private var sleepJob: Job? = null
-    private val preferences = SharedPreferences.OnSharedPreferenceChangeListener { _, key -> if (key == "sleepAt") scheduleSleep() }
     private val callback = object : MediaLibrarySession.Callback {
         @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
         override fun onPlaybackResumption(session: MediaSession, controller: MediaSession.ControllerInfo, isForPlayback: Boolean): com.google.common.util.concurrent.ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
@@ -87,8 +84,10 @@ class PlaybackService : MediaLibraryService() {
                 else LibraryResult.ofError<Void>(SessionError.ERROR_BAD_VALUE))
     }
 
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
+        if (OriginOsMediaHints.isVivo()) setMediaNotificationProvider(OriginOsMediaNotification(this))
         player = ExoPlayer.Builder(this).build().apply {
             setAudioAttributes(AudioAttributes.Builder().setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).setUsage(C.USAGE_MEDIA).build(), true)
             setHandleAudioBecomingNoisy(true)
@@ -114,8 +113,7 @@ class PlaybackService : MediaLibraryService() {
                 updatePositionJob()
             }
         })
-        repository.prefs.registerOnSharedPreferenceChangeListener(preferences)
-        scheduleSleep()
+        repository.prefs.edit().remove("sleepAt").apply()
         scope.launch {
             val snapshot = repository.playback.load()
             val songs = withContext(Dispatchers.IO) { repository.db.playbackSongs(snapshot.queue) }
@@ -151,21 +149,11 @@ class PlaybackService : MediaLibraryService() {
         val position = if (queue.isEmpty() || player.playbackState == Player.STATE_ENDED) 0 else player.currentPosition.coerceAtLeast(0)
         repository.playback.publish(PlaybackSnapshot(queue, player.currentMediaItemIndex.coerceAtLeast(0), position, player.repeatMode, player.shuffleModeEnabled))
     }
-    private fun scheduleSleep() {
-        sleepJob?.cancel()
-        val deadline = repository.prefs.getLong("sleepAt", 0)
-        sleepJob = if (deadline <= 0) null else scope.launch {
-            delay((deadline - System.currentTimeMillis()).coerceAtLeast(0))
-            player.pause()
-            repository.prefs.edit().remove("sleepAt").apply()
-        }
-    }
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
     override fun onDestroy() {
         checkpoint()
         restored = false
         restoration.cancel()
-        repository.prefs.unregisterOnSharedPreferenceChangeListener(preferences)
         scope.cancel()
         session?.release(); player.release()
         super.onDestroy()

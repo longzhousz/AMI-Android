@@ -34,7 +34,7 @@ class BackgroundPlaybackTest {
         while(!ready && System.currentTimeMillis()<until) { instrumentation.runOnMainSync { ready=predicate() };if(!ready) Thread.sleep(25) }
         assertTrue(message,ready)
     }
-    private fun scenario(block: (MediaBrowser,MediaController,ActivityScenario<ComponentActivity>,Song)->Unit) {
+    private fun scenario(legacySleep:Boolean=false,block: (MediaBrowser,MediaController,ActivityScenario<ComponentActivity>,Song)->Unit) {
         val activity=ActivityScenario.launch(ComponentActivity::class.java)
         val repo=(context.applicationContext as AmiApplication).repository
         val id="qa-background-${System.nanoTime()}"
@@ -42,6 +42,7 @@ class BackgroundPlaybackTest {
         var browser:MediaBrowser?=null;var controller:MediaController?=null
         try {
             stopPreviousPlaybackSession()
+            if (legacySleep) repo.prefs.edit().putLong("sleepAt",System.currentTimeMillis()+1500).apply()
             repo.db.upsert(song);repo.playback.publish(PlaybackSnapshot(listOf(id),0,500,1,false))
             val connected=CountDownLatch(1)
             instrumentation.runOnMainSync {
@@ -75,7 +76,7 @@ class BackgroundPlaybackTest {
         assertTrue(items!!.single().isPlayable)
         assertEquals(song.title,items!!.single().description.title.toString())
     }
-    @Test fun backgroundPlaybackSurvivesScreenOffAndTransientFocusThenHonorsTheSleepTimer()=scenario { _,controller,activity,_ ->
+    @Test fun backgroundPlaybackIgnoresLegacySleepAndSurvivesScreenOffAndFocus()=scenario(legacySleep=true) { _,controller,activity,_ ->
         val repo=(context.applicationContext as AmiApplication).repository
         val audio=context.getSystemService(AudioManager::class.java)
         val focus=AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
@@ -88,16 +89,17 @@ class BackgroundPlaybackTest {
             instrumentation.uiAutomation.executeShellCommand("input keyevent 223").close()
             Thread.sleep(2500)
             await("Playback should continue while screen is off") { controller.playbackState?.state==PlaybackState.STATE_PLAYING }
+            assertFalse(repo.prefs.contains("sleepAt"))
             instrumentation.runOnMainSync { assertEquals(AudioManager.AUDIOFOCUS_REQUEST_GRANTED,audio.requestAudioFocus(focus)) }
             await("Transient audio focus should pause playback") { controller.playbackState?.state==PlaybackState.STATE_PAUSED }
             instrumentation.runOnMainSync { audio.abandonAudioFocusRequest(focus) }
             await("Playback should resume after focus returns") { controller.playbackState?.state==PlaybackState.STATE_PLAYING }
-            repo.prefs.edit().putLong("sleepAt",System.currentTimeMillis()+1500).apply()
-            await("Sleep timer should pause in the background") { controller.playbackState?.state==PlaybackState.STATE_PAUSED }
-            assertEquals(0L,repo.prefs.getLong("sleepAt",0))
+            instrumentation.runOnMainSync { controller.transportControls.pause() }
+            await("Explicit pause should work in background") { controller.playbackState?.state==PlaybackState.STATE_PAUSED }
+            Thread.sleep(1500)
+            await("Paused playback should remain paused") { controller.playbackState?.state==PlaybackState.STATE_PAUSED }
         } finally {
             instrumentation.runOnMainSync { audio.abandonAudioFocusRequest(focus) }
-            repo.prefs.edit().remove("sleepAt").apply()
             instrumentation.uiAutomation.executeShellCommand("input keyevent 224").close()
             instrumentation.uiAutomation.executeShellCommand("wm dismiss-keyguard").close()
         }

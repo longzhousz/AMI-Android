@@ -36,9 +36,19 @@ AMI 使用 Media3，并按 Android 标准提供以下声明和接口：
 
 2026-10-25 再次检索 vivo 开发者公开目录，未找到面向任意音乐应用的原子岛音乐卡片通用注册接口。vivo 的原子通知指导仍要求上架、准入、权限开通与联调；[阿里云的 vivo 原子岛推送接入说明](https://help.aliyun.com/zh/document_detail/3030718.html)也明确依赖 vivo 原子岛权限。该通知路径不能直接视为音乐卡片支持。
 
-同时核对了开源 [MeloX 的 VivoAtomicIslandBridge](https://github.com/lladlam/MeloX-Android/blob/main/android/app/src/main/kotlin/com/lladlam/melox/platform/vivo/VivoAtomicIslandBridge.kt)。它通过独立通知及 `notification.superx.*` 扩展尝试展示，每 10 秒节流；代码中的尝试发布不是取得系统准入或 X300 / OS 7 实测成功的证据。AMI 本次不引入这条额外通知通路；继续使用标准音乐通知与 MediaSession，避免在普通通知栏重复出现音乐卡片。
+同时核对了开源 [MeloX 的 VivoAtomicIslandBridge](https://github.com/lladlam/MeloX-Android/blob/main/android/app/src/main/kotlin/com/lladlam/melox/platform/vivo/VivoAtomicIslandBridge.kt)。它通过独立通知及 `notification.superx.*` 扩展尝试展示，每 10 秒节流；代码中的尝试发布不是取得系统准入或 X300 / OS 7 实测成功的证据。0.1.8 没有引入这条独立通知通路。0.1.9 改为在原有音乐通知上附加模板，具体如下。
 
 下一步真机证据应包含完整系统构建、`com.vivo.musicwidgetmix` 等实际存在的系统音乐组件版本、AMI 媒体会话、音乐通知、原子岛相关系统日志，以及同一首歌曲在系统媒体面板与原子岛的显示差异。未获得对应证据或厂商确认前，不把“已被系统识别为音乐软件”写成原子岛适配完成。
+
+## 0.1.9 的再次尝试
+
+在已有 Media3 通知上附加 vivo 文档中定义的 `baseInfos`、`infos`、`shortInfos`、`capsule` 和 `island` 数据，保留原来的通知 ID、频道、MediaStyle、会话 token、操作按钮与点击行为。封面使用该通知已有的大图标，系统尚未加载封面时使用 AMI 自己的音乐图标；暂停/播放只更新岛的律动状态，不在后台逐帧计算歌词或持续推送进度。
+
+同时参考社区 [OriginOS Toolkit 的场景登记研究](https://github.com/cameleonnbss/originos-toolkit/blob/main/app/src/main/kotlin/dev/cameleonnbss/originostoolkit/service/OriginIslandSender.kt)，探测系统运行时是否提供 `setSuperXInfosSceneList`。只登记 `AMI_MUSIC` 与应用自己的包名；不冒充火车、外卖等场景，不修改其他应用身份。调用失败或方法不存在会被捕获，继续保留标准媒体通知；不绕过 Android 隐藏 API 限制，也不要求 root、模块或通知读取权限。
+
+此接口来自社区实现，不能视为 vivo 官方音乐准入 API。场景登记调用未抛异常也不等于原子岛已经显示。`AmiOriginOS` 开发日志只记录接口可用/不可用及模板已附加，不显示给普通用户，不包含歌曲或歌词内容。真机脚本可按 `--scenario island` 采集这些日志；实际显示、点击与系统控制仍需 X300 / OriginOS 7 验收。
+
+公开协议依据：[原子通知技术规范 896](https://dev.vivo.com.cn/documentCenter/doc/896)。原来的官方准入要求仍然有效；若系统仍拒绝该尝试，不能靠模拟器验证将其标为成功。
 
 ## 真机核对项目
 
@@ -56,4 +66,4 @@ AMI 使用 Media3，并按 Android 标准提供以下声明和接口：
 - [后台媒体会话](https://developer.android.com/media/media3/session/background-playback)
 - [MediaLibraryService](https://developer.android.com/media/media3/session/serve-content)
 
-0.1.8 的自动化场景、证据与真机采集步骤见 [Android 设备验证](ANDROID_DEVICE_QA.md)。
+0.1.8 / 0.1.9 的自动化场景、证据与真机采集步骤见 [Android 设备验证](ANDROID_DEVICE_QA.md)。

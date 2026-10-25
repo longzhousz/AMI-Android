@@ -18,6 +18,7 @@ import java.io.File
 private data class ArtworkColors(val top: Color, val bottom: Color, val glow: Color)
 private val FallbackColors = ArtworkColors(Color(0xFF41465F), Color(0xFF151923), Color(0xFF69617C))
 private val ArtworkColorCache = LruCache<String, ArtworkColors>(32)
+internal fun clearArtworkColorCache() { ArtworkColorCache.evictAll() }
 
 /** Sample cached artwork once off the main thread; no full-resolution texture or perpetual animation. */
 @Composable internal fun PlayerBackdrop(cover: String?) {

@@ -51,11 +51,11 @@ internal class ArtworkMemory(val expectedPath: () -> String?) {
     var key by mutableStateOf<MemoryCache.Key?>(null)
 }
 
-@Composable internal fun Cover(path: String?, title: String, modifier: Modifier = Modifier, memory: ArtworkMemory? = null) {
+@Composable internal fun Cover(path: String?, title: String, modifier: Modifier = Modifier, memory: ArtworkMemory? = null, cornerRadius: androidx.compose.ui.unit.Dp = 18.dp) {
     val context = LocalContext.current
     var previousImage by remember { mutableStateOf<MemoryCache.Key?>(null) }
     val latestPath by rememberUpdatedState(path)
-    Crossfade(path to title, modifier.clip(RoundedCornerShape(18.dp)), animationSpec = tween(260), label = "artwork") { artwork ->
+    Crossfade(path to title, modifier.clip(RoundedCornerShape(cornerRadius)), animationSpec = tween(260), label = "artwork") { artwork ->
         val color = CoverPalette[(artwork.second.hashCode().toLong().let { if (it < 0) -it else it } % CoverPalette.size).toInt()]
         Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(color.copy(alpha = 0.65f), color))), contentAlignment = Alignment.Center) {
         if (artwork.first != null) {

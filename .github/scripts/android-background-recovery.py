@@ -74,6 +74,20 @@ try:
     time.sleep(2)
     shell('input','keyevent','KEYCODE_MEDIA_PAUSE')
     (out/'paused-sessions.txt').write_text(wait_state(2))
+    # A focused paused-background sample, with no Activity or instrumentation process.
+    time.sleep(1)
+    idle_pid=shell('pidof',package).strip()
+    assert idle_pid.isdigit()
+    def cpu_ticks():
+        fields=shell('cat',f'/proc/{idle_pid}/stat').rsplit(')',1)[1].split()
+        return int(fields[11])+int(fields[12])
+    before=cpu_ticks();idle_started=time.monotonic()
+    (out/'paused-memory-before.txt').write_text(shell('dumpsys','meminfo',package))
+    time.sleep(8)
+    after=cpu_ticks()
+    (out/'paused-memory-after.txt').write_text(shell('dumpsys','meminfo',package))
+    (out/'paused-idle.json').write_text(json.dumps({'pid':idle_pid,'elapsedSeconds':time.monotonic()-idle_started,'cpuTicksDelta':after-before,'caveat':'One emulator diagnostic; not a phone battery or leak benchmark'},indent=2))
+    assert session(shell('dumpsys','media_session'))==2,'Background pause did not remain stable'
     crashes=shell('logcat','-b','crash','-d');(out/'crash.txt').write_text(crashes)
     assert f'Process: {package},' not in crashes,'App crashed during system media-key recovery'
     (out/'result.json').write_text(json.dumps({'processReclaimed':True,'coldSystemPlayResumed':True,'systemPlayResumed':True,'systemPauseWorked':True,'foregroundService':True,'mainScreenLaunched':False,'automaticServiceRestartBeforePlay':automatically_restarted,'previousPids':pids,'recoveredPids':shell('pidof',package,check=False).strip().split()},indent=2))

@@ -7,7 +7,7 @@ collect_screenshots() {
   if ! adb exec-out run-as com.longzhousz.ami tar -cf - -C files/qa performance > "$GITHUB_WORKSPACE/device-screenshots/performance.tar"; then
     rm -f "$GITHUB_WORKSPACE/device-screenshots/performance.tar"
   fi
-  for name in empty-library library-songs favorites-songs library-albums album-tracks settings-dark lyrics-immersive lyrics-large-font lyrics-untimed lyrics-player-window translation-models; do
+  for name in empty-library library-songs favorites-songs library-albums album-tracks settings-dark lyrics-immersive lyrics-large-font lyrics-untimed lyrics-player-window translation-models player-lyrics-redesign player-artwork-mid player-artwork-expanded; do
     destination="$GITHUB_WORKSPACE/device-screenshots/$name.png"
     if ! adb exec-out run-as com.longzhousz.ami cat "files/qa/$name.png" > "$destination"; then
       rm -f "$destination"

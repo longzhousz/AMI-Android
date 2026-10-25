@@ -28,5 +28,14 @@ object Lyrics {
         }.sortedBy { it.time ?: Long.MAX_VALUE }.toList()
     }
 
-    fun active(lines: List<LyricLine>, position: Long): Int = lines.indexOfLast { it.time != null && it.time <= position }
+    /** Parser output is time-sorted, with untimed lines last. Called from the frame clock. */
+    fun active(lines: List<LyricLine>, position: Long): Int {
+        var low=0;var high=lines.lastIndex;var active=-1
+        while (low<=high) {
+            val middle=(low+high).ushr(1)
+            val time=lines[middle].time
+            if (time!=null && time<=position) { active=middle;low=middle+1 } else high=middle-1
+        }
+        return active
+    }
 }

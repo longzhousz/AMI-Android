@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import java.io.File
 
@@ -63,7 +64,14 @@ class LibraryRepository(val context: Context) {
         WorkManager.getInstance(context).enqueueUniqueWork("library-import", policy, OneTimeWorkRequestBuilder<ImportWorker>().build())
     }
     fun cancelScan() { WorkManager.getInstance(context).cancelUniqueWork("library-import") }
-    suspend fun favorite(song: Song) { db.favorite(song.id, !song.favorite); reload() }
+    suspend fun favorite(song: Song) = withContext(Dispatchers.IO) { updateFavorite(song.id) }
+    @Synchronized private fun updateFavorite(id: String) {
+        val favorite = db.toggleFavorite(id) ?: return
+        if (!libraryRequested.get()) return
+        val before = library.value
+        val updated = before.withFavorite(id,favorite)
+        if (updated !== before) { library.value=updated;songs.value=updated.songs }
+    }
     suspend fun reorder(ids: List<String>) { db.reorder(ids); reload() }
     suspend fun remove(song: Song) { db.remove(song.id); reload() }
 

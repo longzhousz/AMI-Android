@@ -203,6 +203,13 @@ class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOp
     @Synchronized fun favorite(id: String, value: Boolean) {
         writableDatabase.update("songs", ContentValues().apply { put("favorite", if (value) 1 else 0) }, "id=?", arrayOf(id))
     }
+    @Synchronized fun toggleFavorite(id: String): Boolean? {
+        val before = readableDatabase.rawQuery("SELECT favorite FROM songs WHERE id=?",arrayOf(id)).use { c ->
+            if (!c.moveToFirst()) return null else c.getInt(0)!=0
+        }
+        favorite(id,!before)
+        return !before
+    }
     @Synchronized fun reorder(ids: List<String>) {
         val db = writableDatabase
         db.beginTransaction()

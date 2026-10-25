@@ -37,7 +37,7 @@ class RapidInteractionEvidenceTest {
             shell("dumpsys gfxinfo ${compose.activity.packageName} reset")
             config.parentFile!!.mkdirs()
             config.writeText("""
-                duration_ms: 15000
+                duration_ms: 45000
                 buffers { size_kb: 16384 fill_policy: RING_BUFFER }
                 data_sources { config { name: "linux.ftrace" ftrace_config {
                     ftrace_events: "sched/sched_switch"
@@ -68,6 +68,10 @@ class RapidInteractionEvidenceTest {
                 compose.waitUntil(10000) { model.lyrics.value.songId==songs[n%3].id && model.lyrics.value.document?.original==songs[n%3].lyrics }
                 compose.onNodeWithTag("mini-player").performClick()
                 compose.onNodeWithTag("full-player").assertIsDisplayed()
+                if (n%2==0) {
+                    compose.onNodeWithContentDescription("展开专辑封面").performClick()
+                    compose.onNodeWithText("歌词").performClick()
+                }
                 compose.onNodeWithContentDescription("收起播放页").performClick()
                 compose.onNodeWithTag("full-player").assertDoesNotExist()
             }
@@ -76,11 +80,13 @@ class RapidInteractionEvidenceTest {
             File(output,"rapid-gfxinfo.txt").writeBytes(shell("dumpsys gfxinfo ${compose.activity.packageName} framestats"))
             val windows=shell("dumpsys window windows").toString(Charsets.UTF_8)
             File(output,"rapid-windows.txt").writeText(windows)
-            File(output,"rapid-flow.json").writeText(JSONObject().put("flow","6 track changes, 12 seeks, 6 panel open/close cycles").put("durationMs",(System.nanoTime()-started)/1_000_000.0)
+            val durationMs=(System.nanoTime()-started)/1_000_000.0
+            File(output,"rapid-flow.json").writeText(JSONObject().put("flow","6 track changes, 12 seeks, 6 panel cycles, 3 artwork round trips").put("durationMs",durationMs)
                 .put("finalSongCorrect",true).put("frameSampleUsable",!windows.contains("Application Not Responding")).put("perfettoRequested",traceStarted)
-                .put("caveat","Emulator debug capture; absolute frame times are not vivo phone benchmarks").toString(2))
+                .put("traceWindowMs",45000).put("traceCoversWholeFlow",durationMs<=45000).put("phoneFrameBenchmark",false)
+                .put("caveat","Compose test clock and software-rendered debug emulator; not a phone frame-rate benchmark").toString(2))
             if(traceStarted) {
-                val remaining=15500-(System.nanoTime()-started)/1_000_000
+                val remaining=45500-(System.nanoTime()-started)/1_000_000
                 if (remaining>0) Thread.sleep(remaining)
                 File(output,"rapid.pftrace").writeBytes(shell("cat $trace"))
             }

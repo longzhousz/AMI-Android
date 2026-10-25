@@ -208,10 +208,6 @@ class AmiViewModel internal constructor(app: Application,
                 .onFailure { message.value = it.message?.take(150) ?: "连接失败" }
         }
     }
-    fun sleep(minutes: Int) {
-        repository.prefs.edit().putLong("sleepAt", if (minutes > 0) System.currentTimeMillis() + minutes * 60000L else 0).apply()
-        message.value = if (minutes > 0) "$minutes 分钟后暂停播放" else "已关闭定时停止"
-    }
     suspend fun processBridge() = bridge.process { action, payload ->
         when (action) {
             "player.pause" -> player.pause()
