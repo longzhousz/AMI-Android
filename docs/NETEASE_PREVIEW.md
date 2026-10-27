@@ -51,6 +51,23 @@ APK 位于 `app/build/outputs/apk/cloudPreview/`。连接端只依赖 Node 标�
 
 云端真实账号已验证：登录、8 个自建/收藏歌单汇总、非空歌单分页、歌曲搜索、歌词及官方 CLI 播放交接；对 HTTPS MP3 进行小范围读取，返回 206 与有效 ID3 数据。没有连接手机，这些结果不能证明 vivo X300 上的播放、动效、蓝牙或原子岛效果。自动化 Android 测试使用本地夹具，不访问真实账号；当前 CI 的实际结果见对应 Actions 运行记录。
 
+### 本次交付的验证记录
+
+应用代码为 `e91df955b3fc4f604ba3807e536a873dd5be7415`。本地 54 项 JVM 测试通过，Lint 无 Error / Fatal，优化 `CloudPreview` 构建及 APK 签名、16 KiB 对齐检查通过。
+
+- [最终设备与 Windows 回归](https://github.com/longzhousz/AMI-Android/actions/runs/40466667264)：Android 11 / API 30、Android 17 / API 37 各 70 项设备测试，均无失败、错误或跳过；Windows 的 7 项连接端回归通过，覆盖可执行启动器、中文路径、公开 IPC 协议、鉴权、分页与试听限制。
+- [完整构建与优化包检查](https://github.com/longzhousz/AMI-Android/actions/runs/40465219038)：代码 `352db6e` 的 JVM、Lint、Preview / CloudPreview / Release 构建及两套系统的优化包安装、冷启动、网易云入口和配对对话框检查通过。之后的应用改动仅取消切换来源 / 断开连接时的旧播放准备，已在上一项最终设备回归中复核。
+- 交付 APK 为本地签名的独立试用包，源码版本嵌在 APK 的 `META-INF/version-control-info.textproto` 中。CI 自行签名的 APK 与交付包签名不同；优化包运行检查使用 CI 产物，最终交付包完成构建与签名检查，尚未安装到用户手机。
+
+```text
+文件：AMI-Android-0.1.11-NetEase-preview.apk
+包名：com.longzhousz.ami.cloudpreview
+APK SHA-256：5d4efee98051bdb1ada617e15f8886394bd8cc7be6cb54a713df9fdf97c21f3a
+签名证书 SHA-256：238e0c33d7deebc6dd873ae8f0e844cf626b873f2ddf2ea8900d4916e2dd6f39
+```
+
+真实账号端到端联调运行在云端 Linux；交付连接端按锁文件重新安装并重启后，其实际适配器再次完成授权地址交接与 MP3 范围读取。Windows 验证不包含该电脑上的真实账号授权。首次在自己的 Windows 上仍需按上文完成官方配置和扫码。
+
 ## 官方依据
 
 - [开发者常见问题：个人账号仅支持 ncm-cli、CLI 与 App 版权差异](https://developer.music.163.com/st/developer/document?docId=3b75ab8e475d41ca93d91ebd4dfd383f)
