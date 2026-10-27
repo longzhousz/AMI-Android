@@ -10,8 +10,8 @@ android {
         applicationId = "com.longzhousz.ami"
         minSdk = 26
         targetSdk = 37
-        versionCode = 13
-        versionName = "0.1.12"
+        versionCode = 14
+        versionName = "0.1.13"
         testInstrumentationRunner = "com.longzhousz.ami.RecoverySeedInstrumentation"
     }
     buildFeatures { compose = true; buildConfig = true }
@@ -53,6 +53,13 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             applicationIdSuffix = ".phonepreview"
             versionNameSuffix = "-phone-preview"
+            matchingFallbacks += "release"
+        }
+        create("neteasePreview") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            applicationIdSuffix = ".neteasepreview"
+            versionNameSuffix = "-netease-preview"
             matchingFallbacks += "release"
         }
     }

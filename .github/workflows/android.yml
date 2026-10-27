@@ -66,7 +66,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Check personal NetEase bridge
         run: node --test tools/netease-bridge/bridge.test.mjs tools/netease-bridge/adapter.test.mjs
-      - run: ./gradlew testDebugUnitTest lintDebug assemblePreview assemblePhonePreview assembleRelease
+      - run: ./gradlew testDebugUnitTest lintDebug assemblePreview assemblePhonePreview assembleNeteasePreview assembleRelease
       - uses: actions/upload-artifact@v4
         with:
           name: AMI-Android-preview
@@ -75,6 +75,10 @@ jobs:
         with:
           name: AMI-Android-phone-preview
           path: app/build/outputs/apk/phonePreview/*.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AMI-Android-netease-preview
+          path: app/build/outputs/apk/neteasePreview/*.apk
       - uses: actions/upload-artifact@v4
         if: always()
         with:

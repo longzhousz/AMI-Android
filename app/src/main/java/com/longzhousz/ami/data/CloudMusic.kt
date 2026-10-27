@@ -20,13 +20,14 @@ import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-/** Personal accounts use the official CLI on the paired PC; no platform private key enters Android. */
-class CloudMusic(context: Context) {
+/** Direct phone login by default; cloudPreview retains the older paired-PC experiment. */
+class CloudMusic(context: Context, val direct: Boolean = com.longzhousz.ami.BuildConfig.BUILD_TYPE != "cloudPreview") {
+    private val account = NeteaseAccount(context)
     private val secret = SecretStore(context, "netease-connection")
     private val queueFile = AtomicFile(File(context.noBackupFilesDir, "netease-queue.json"))
     private val queueLock = Mutex()
     private val closer = Dispatchers.IO.limitedParallelism(1)
-    val configured = MutableStateFlow(secret.configured())
+    val configured = MutableStateFlow(if (direct) account.configured() else secret.configured())
     val catalog = MutableStateFlow<Map<String, Song>>(emptyMap())
     private val lyricCache = LinkedHashMap<String, SongLyrics>(8, .75f, true)
     private var lyricBytes = 0
@@ -36,6 +37,7 @@ class CloudMusic(context: Context) {
         return CloudConnection.parse(saved.getString("address"))
     }
     suspend fun connect(address: String): String = withContext(Dispatchers.IO) {
+        check(!direct) { "请使用手机上的网易云登录页面" }
         val parsed = CloudConnection.parse(address)
         require(com.longzhousz.ami.BuildConfig.BUILD_TYPE != "release" || parsed.baseUrl.startsWith("https:")) { "正式版连接端需要 HTTPS" }
         val result = request("status", JSONObject(), parsed)
@@ -43,12 +45,22 @@ class CloudMusic(context: Context) {
         secret.save(JSONObject().put("address", address.trim()).toString()); configured.value = true
         result.optString("nickname", "网易云音乐")
     }
-    suspend fun disconnect() = withContext(Dispatchers.IO) { secret.save(""); configured.value = false; trim() }
+    suspend fun login(cookies: String): String {
+        check(direct)
+        val nickname = account.login(cookies)
+        configured.value = true
+        return nickname
+    }
+    fun refreshCatalog() { if (direct) account.invalidate() }
+    suspend fun disconnect() = withContext(Dispatchers.IO) {
+        if (direct) account.logout() else secret.save("")
+        configured.value = false; trim()
+    }
     suspend fun profile(): String = request("status").optString("nickname", "网易云音乐")
     suspend fun playlists(): List<CloudPlaylist> = request("playlists").getJSONArray("playlists").let { rows ->
         require(rows.length() <= 1000)
         (0 until rows.length()).map { rows.getJSONObject(it) }.map { row ->
-            CloudPlaylist(id(row.getString("id")), row.getString("title").take(200), picture(row), row.optInt("count"))
+            CloudPlaylist(id(row.getString("id")), row.getString("title").take(200), picture(row), row.optInt("count"), row.optString("kind"))
         }
     }
     suspend fun tracks(playlist: String, offset: Int = 0) = page(request("tracks", JSONObject().put("id", id(playlist)).put("offset", offset)))
@@ -57,7 +69,7 @@ class CloudMusic(context: Context) {
         val rows = result.getJSONArray("tracks"); require(rows.length() <= 500)
         return CloudTracks((0 until rows.length()).map { track(rows.getJSONObject(it)) }, result.getInt("nextOffset"), result.optBoolean("more"))
     }
-    private fun id(raw: String): String = raw.uppercase(java.util.Locale.ROOT).also { require(it.matches(Regex("[A-F0-9]{32}"))) { "歌曲或歌单标识无效" } }
+    private fun id(raw: String): String = raw.uppercase(java.util.Locale.ROOT).also { require(it.matches(Regex("[A-F0-9]{32}")) || direct && it.matches(Regex("[1-9][0-9]{0,19}"))) { "歌曲或歌单标识无效" } }
     private fun picture(row: JSONObject) = row.optString("cover").takeIf { it.isNotBlank() && it != "null" }?.let { cloudMediaUrl(it, true) }
     private fun track(row: JSONObject): CloudTrack {
         val original = row.getString("originalId"); require(original.matches(Regex("[0-9]{1,20}")))
@@ -93,7 +105,7 @@ class CloudMusic(context: Context) {
     }
     suspend fun lyrics(song: Song): SongLyrics {
         synchronized(lyricCache) { lyricCache[song.id]?.let { return it } }
-        val body = request("lyrics", JSONObject().put("id", id(song.id.removePrefix("netease:"))))
+        val body = request("lyrics", JSONObject().put("id", if (direct) song.neteaseId ?: id(song.id.removePrefix("netease:")) else id(song.id.removePrefix("netease:"))))
         val document = SongLyrics(body.optString("original"), body.optString("translated"), song.lyricsVersion)
         synchronized(lyricCache) {
             if (document.estimatedBytes <= 2 * 1024 * 1024) {
@@ -110,10 +122,16 @@ class CloudMusic(context: Context) {
     fun resolve(uri: String): String {
         check(android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) { "网络播放需在加载线程准备" }
         val parsed = URI(uri); require(parsed.scheme == "ami-cloud" && parsed.host == "song")
+        if (direct) {
+            val key = id(parsed.path.removePrefix("/"))
+            val song = catalog.value["netease:$key"]
+            return account.stream(song?.neteaseId ?: neteaseId(key), song?.duration ?: 0)
+        }
         val result = read("stream", JSONObject().put("id", id(parsed.path.removePrefix("/"))), connection())
         return cloudMediaUrl(result.getString("url"))
     }
     private suspend fun request(path: String, body: JSONObject = JSONObject(), configured: CloudConnection? = null): JSONObject = withContext(Dispatchers.IO) {
+        if (direct) return@withContext account.request(path, body)
         val target = configured ?: connection()
         val http = URI(target.baseUrl + "/v1/" + path).toURL().openConnection() as HttpURLConnection
         suspendCancellableCoroutine { response ->

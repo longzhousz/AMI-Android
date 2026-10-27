@@ -32,6 +32,7 @@
             </intent-filter>
         </activity>
         <activity android:name=".PhonePlayerActivity" android:exported="false" android:launchMode="singleTop" />
+        <activity android:name=".NeteaseLoginActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <service android:name=".playback.PhoneMediaAccess" android:label="AMI 网易云播放连接" android:exported="true" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
         </service>

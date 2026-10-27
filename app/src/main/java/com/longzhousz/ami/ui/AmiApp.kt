@@ -141,13 +141,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                         when {
                             album != null -> AlbumScreen(album, playback.id, model, { albumKey = null }, { remove = it })
                             destination.page == 2 -> SettingsScreen(model, onImport, onNotifications, onBridgeFolder, onLyricsFolder)
-                            destination.page == 3 -> if (com.longzhousz.ami.BuildConfig.BUILD_TYPE!="cloudPreview") {
-                                val context=androidx.compose.ui.platform.LocalContext.current
-                                Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
-                                    Button({ context.startActivity(android.content.Intent(context,com.longzhousz.ami.PhonePlayerActivity::class.java)
-                                        .addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)) }) { Text("打开随播歌词页") }
-                                }
-                            } else CloudMusicScreen(model)
+                            destination.page == 3 -> CloudMusicScreen(model)
                             else -> pageState.SaveableStateProvider("library-${destination.page}") {
                                 LibraryScreen(library, loading, destination.page == 1, playback.id, { page = 2 },
                                     onAlbum = { albumKey = it.key }, onPlay = { list, index -> model.play(list, index) }, onFavorite = model::favorite, onRemove = { remove = it })

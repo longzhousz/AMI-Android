@@ -1,5 +1,9 @@
 # 云端到本地：当前状态与排查交接
 
+> 应用内网易云播放（2026-10-28）：当前源码 **0.1.13 / versionCode 14 / schema 4**，基于 `dfd4613` 的 0.1.12。用户优先要求「在 AMI 看自己的歌单并直接播放」，已实现手机内官方网页登录、会话加密保存、歌单分类、搜索、按账号权限播放以及原歌曲 ID 歌词。独立包 `com.longzhousz.ami.neteasepreview` 已在 X300 安装，用户完成登录并反馈试用可用，要求直接更新 GitHub。新功能说明和验证范围见 [NETEASE_DIRECT.md](NETEASE_DIRECT.md)。
+
+> 本地验证：63 项 JVM 测试无失败、错误或跳过；Lint 无 Error / Fatal；Debug 和优化 NeteasePreview 构建通过。X300 已验证官方登录、真实歌单、AMI 自有 Media3 会话播放、进度拖动以及《幸福》滚动歌词。此次未在用户日常数据上运行完整仪器套件，也未完成长时间熄屏、蓝牙或原子岛验收。旧随播歌词的繁简体匹配和候选排序研究仍保留为次要后续工作；本次没有声称所有歌词问题均已解决。
+
 > 手机随播（2026-10-27）：当前源码 **0.1.12 / versionCode 13 / schema 4**。用户将「只用手机」设为底线，新增官方网易云 App 后台播放、AMI 歌词与控制的 `phonePreview`。使用和本地 Codex 真机验收见 [PHONE_ONLY_PLAYBACK.md](PHONE_ONLY_PLAYBACK.md)。无需电脑端；此前 0.1.11 的 CLI 试验仍保留，不是当前推荐运行方式。
 
 > 随播交付验证：应用代码 `27cacb6`，57 项 JVM、两套 Android 各 75 项设备回归，以及优化包启动 / 系统授权页检查通过。[CI 记录](https://github.com/longzhousz/AMI-Android/actions/runs/40499169470)。使用合成媒体会话，未连接用户的 X300；不能将其称为真实网易云和 OriginOS 已验收。

@@ -39,7 +39,7 @@ class CloudMusicTest {
     private lateinit var cloud: CloudMusic
     private lateinit var backend: Backend
     @Before fun prepare() {
-        cloud = CloudMusic(context)
+        cloud = CloudMusic(context, direct = false)
         runBlocking { cloud.disconnect() }
         File(context.noBackupFilesDir, "netease-queue.json").delete()
         backend = Backend()
@@ -113,7 +113,7 @@ class CloudMusicTest {
         assertTrue(cloud.lyrics(song).original.contains("晚风"))
         assertEquals("https://iot202.music.126.net/fixture.mp3?token=temporary", cloud.resolve(song.uri))
         val count = backend.requests.size
-        val restored = CloudMusic(context).restore(listOf(song.id))
+        val restored = CloudMusic(context, direct = false).restore(listOf(song.id))
         assertEquals(listOf(song.id), restored.map { it.id })
         assertEquals(song.uri, restored.single().uri)
         assertEquals(count, backend.requests.size)

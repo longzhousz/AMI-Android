@@ -12,7 +12,7 @@ cd AMI-Android
 git branch --show-current
 ```
 
-输出应为 `main`。它包含 0.1.12 及其依赖的全部前序改动，不需要逐个合并 PR。不能使用 Git 时，直接在 GitHub 默认分支选择 Code → Download ZIP。
+输出应为 `main`。它包含 0.1.13 及其依赖的全部前序改动，不需要逐个合并 PR。不能使用 Git 时，直接在 GitHub 默认分支选择 Code → Download ZIP。
 
 已经克隆过且工作区干净时：
 
@@ -80,6 +80,10 @@ Windows PowerShell：
 | Preview | `com.longzhousz.ami.preview` | 压缩版体验、系统媒体接入；不可调试 |
 | Release | `com.longzhousz.ami` | 正式发行；默认产物未签名 |
 | PhonePreview | `com.longzhousz.ami.phonepreview` | 只用手机的网易云随播，`assemblePhonePreview` |
+| NeteasePreview | `com.longzhousz.ami.neteasepreview` | AMI 内登录、歌单、搜索和直接播放，`assembleNeteasePreview` |
+| CloudPreview | `com.longzhousz.ami.cloudpreview` | 旧 Windows 连接端试验，`assembleCloudPreview` |
+
+当前网易云功能使用独立 NeteasePreview 包，输出为 `app/build/outputs/apk/neteasePreview/app-neteasePreview.apk`。无需电脑服务、局域网权限或通知使用权；官方登录操作由用户在手机上完成，不通过 ADB 输入或导出登录凭据。详细流程与边界见 [应用内播放说明](NETEASE_DIRECT.md)。
 
 Preview 使用本机开发签名。不同电脑或云端的开发签名通常不同，`adb install -r` 也不能绕过签名检查。Debug 与现有 Preview 包名不同，通常可以并存；如果手机已经有同包名的正式版，也要先核对签名。
 

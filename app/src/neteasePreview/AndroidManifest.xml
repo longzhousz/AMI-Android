@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" tools:node="remove" />
+    <application android:label="AMI 网易云" tools:replace="android:label">
+        <service android:name=".playback.PhoneMediaAccess" tools:node="remove" />
+    </application>
+</manifest>

@@ -1,10 +1,10 @@
 # AMI Android
 
-本地音乐播放器，新增网易云手机随播试用。源自 [AMI](https://github.com/longzhousz/AMI)，安卓版本在此独立维护。Kotlin、Jetpack Compose、Media3；面向 Android 17（target / compile API 37），最低 Android 8.0（API 26）。
+本地音乐播放器，支持在 AMI 内浏览网易云歌单和播放。源自 [AMI](https://github.com/longzhousz/AMI)，安卓版本在此独立维护。Kotlin、Jetpack Compose、Media3；面向 Android 17（target / compile API 37），最低 Android 8.0（API 26）。
 
 ## 在本地继续开发
 
-默认 **`main` 分支**包含截至 0.1.12 的全部 Android 改动与本地交接说明。克隆后可直接用 Android Studio 打开仓库根目录，无需原桌面仓库。
+默认 **`main` 分支**包含截至 0.1.13 的全部 Android 改动与本地交接说明。克隆后可直接用 Android Studio 打开仓库根目录，无需原桌面仓库。
 
 ```sh
 git clone https://github.com/longzhousz/AMI-Android.git
@@ -21,7 +21,13 @@ cd AMI-Android
 4. 曲库默认显示歌曲，点击歌曲即可播放，也可切换为专辑。底部迷你播放器进入完整播放页。支持锁屏、通知、耳机控制、音频焦点、拔耳机暂停、进度拖动、随机 / 循环和队列。
 5. 歌词页点击某行可跳转。可在设置中配置 DeepSeek API Key、模型及有序翻译风格。仅主动翻译时发送歌词，不上传音频、路径或封面。
 
-### 网易云手机随播（0.1.12）
+### 网易云应用内播放（0.1.13）
+
+在 AMI 内打开网易云官方 HTTPS 登录页，自行登录后点击「完成登录」，即可查看我喜欢、创建和收藏的歌单、搜索歌曲，并直接使用 AMI 播放页收听。手机独立运行，无需电脑连接端或网易云 App 后台播放；歌词按原歌曲 ID 获取，有时间轴时随播放滚动。
+
+独立试用包「AMI 网易云」使用 `assembleNeteasePreview`，包名 `com.longzhousz.ami.neteasepreview`，可与已有安装并存。登录会话使用 Android Keystore 加密；播放受当前账号、会员、购买和地区权限约束，无法播放时在 AMI 内提示。歌单分页加载，播放队列取点击时已载入的歌曲。使用步骤、验证范围和限制见 [应用内播放说明](docs/NETEASE_DIRECT.md)。
+
+### 网易云手机随播（0.1.12，保留）
 
 手机上的网易云 App 负责选歌与后台播放，AMI 提供原有歌词页、封面动效和基本控制。运行无需电脑或 root，也不用开放平台密钥。安装独立「AMI 随播试用」并批准通知使用权，在网易云播放后回 AMI 即可；歌单与搜索保留在网易云。歌词优先复用已导入内容，缺少时匹配 LRCLIB，覆盖不足时显示「暂无歌词」。
 
@@ -121,7 +127,7 @@ Android 11 及以上限制普通应用直接读取其他应用的 `Android/data`
 
 ### 存储与安全
 
-曲库 SQLite、封面、转换音频、翻译缓存在应用私有目录。无账号、广告、云同步或分析上报。NCM 缺图补全仅请求该文件元数据中的网易云图片地址，不搜索歌名、不上传音频、歌词或本地路径；本地图片优先，下载失败仍可导入和播放，后续重新扫描可重试。下载只允许网易云图片域名和 HTTPS，不携带 API Key 或跟随重定向；图片有大小、超时和解码校验，重复地址复用本地缓存。API Key 使用 Android Keystore AES-GCM 加密，密文位于不备份目录；不写入日志或数据库。应用禁用备份；卸载会清除这些数据。
+曲库 SQLite、封面、转换音频、翻译缓存在应用私有目录。无 AMI 账号、广告、云同步或分析上报。网易云登录是可选功能，只保存用户在本应用官方登录页完成并确认的会话，用于向网易云读取歌单、搜索、歌词和有权播放的地址；会话使用 Android Keystore AES-GCM 加密，不读取其他应用的登录数据。NCM 缺图补全仅请求该文件元数据中的网易云图片地址，不搜索歌名、不上传音频、歌词或本地路径；本地图片优先，下载失败仍可导入和播放，后续重新扫描可重试。下载只允许网易云图片域名和 HTTPS，不携带 API Key 或跟随重定向；图片有大小、超时和解码校验，重复地址复用本地缓存。API Key 使用 Android Keystore AES-GCM 加密，密文位于不备份目录；不写入日志或数据库。应用禁用备份；卸载会清除这些数据。
 
 缓存清理先显示可回收大小，只删除未被曲库引用的应用缓存；导入期间禁用清理。曲库引用的 NCM 音频和所有源文件均保留。播放器恢复上次队列和进度，重新启动时保持暂停。
 
@@ -153,13 +159,14 @@ DeepSeek 翻译每批最多 50 行，逐行验证 index、original、非空译�
 ```sh
 sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0' 'platform-tools'
 # 配置 ANDROID_HOME，或 local.properties 中写 sdk.dir=/path/to/android-sdk
-./gradlew testDebugUnitTest lintDebug assemblePreview assembleRelease
+./gradlew testDebugUnitTest lintDebug assemblePreview assembleNeteasePreview assembleRelease
 ```
 
 Windows 使用 `gradlew.bat`。工程锁定 Gradle 9.6.0、AGP 9.4.1；AGP 内置 Kotlin，Compose 编译器为 2.2.21。
 
 - 可安装预览：`app/build/outputs/apk/preview/app-preview.apk`，应用 ID `com.longzhousz.ami.preview`，优化与资源压缩开启、不可调试，使用开发签名。用于测试，不是正式发行签名。
 - 调试包：`./gradlew assembleDebug`，应用 ID `com.longzhousz.ami`。
+- 网易云独立试用包：`./gradlew assembleNeteasePreview`，产物 `app/build/outputs/apk/neteasePreview/app-neteasePreview.apk`，应用 ID `com.longzhousz.ami.neteasepreview`。
 - 正式发行：默认输出未签名 release。设置以下环境变量后可生成正式签名 APK / AAB，**不要提交签名文件和密码**：`AMI_KEYSTORE_PATH`、`AMI_KEYSTORE_PASSWORD`、`AMI_KEY_ALIAS`、`AMI_KEY_PASSWORD`。
 
 ```sh

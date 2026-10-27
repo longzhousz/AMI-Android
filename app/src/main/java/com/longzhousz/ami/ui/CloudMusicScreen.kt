@@ -1,6 +1,7 @@
 package com.longzhousz.ami.ui
 
 import android.content.Intent
+import android.app.Activity
 import android.net.Uri
 import android.Manifest
 import android.content.pm.PackageManager
@@ -9,6 +10,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -33,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.longzhousz.ami.AmiViewModel
+import com.longzhousz.ami.NeteaseLoginActivity
 import com.longzhousz.ami.core.*
 import com.longzhousz.ami.data.CloudMusic
 import kotlinx.coroutines.CancellationException
@@ -60,9 +64,14 @@ import kotlinx.coroutines.launch
     var error by remember { mutableStateOf<String?>(null) }
     var nickname by remember { mutableStateOf("") }
     var pairing by remember { mutableStateOf(false) }
+    var category by rememberSaveable { mutableStateOf("all") }
     val focus = LocalFocusManager.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val login = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) { selected = null; submitted = ""; query = ""; offset = 0; refresh++ }
+    }
+    fun signIn() { onDisconnect(); login.launch(Intent(context, NeteaseLoginActivity::class.java)) }
     val showingTracks = selected != null || submitted.isNotBlank()
     LaunchedEffect(configured, selected?.id, submitted, offset, refresh) {
         if (!configured) { playlists = emptyList(); tracks = emptyList(); return@LaunchedEffect }
@@ -87,18 +96,24 @@ import kotlinx.coroutines.launch
                 Text(selected?.title ?: if (submitted.isNotBlank()) "搜索结果" else "网易云", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (configured && !showingTracks && nickname.isNotEmpty()) Text(nickname, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            ActionIcon(Icons.Rounded.Link, "网易云连接", { pairing = true })
+            if (configured) ActionIcon(Icons.Rounded.Refresh, "刷新网易云", { cloud.refreshCatalog(); refresh++ })
+            ActionIcon(if (cloud.direct) Icons.Rounded.PersonOutline else Icons.Rounded.Link, if (cloud.direct) "网易云账号" else "网易云连接", { if (cloud.direct && !configured) signIn() else pairing = true })
         }
         if (!configured) {
             Box(Modifier.weight(1f).fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Icon(Icons.Rounded.CloudQueue, null, Modifier.size(52.dp), tint = MaterialTheme.colorScheme.primary)
                     Text("连接你的网易云音乐", style = MaterialTheme.typography.titleLarge)
-                    Text("在 Windows 连接端完成登录，再将连接地址粘贴到这里。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Button({ pairing = true }, Modifier.testTag("cloud-connect")) { Text("连接网易云") }
+                    Text(if (cloud.direct) "登录后，在 AMI 浏览你的歌单并直接播放。" else "在 Windows 连接端完成登录，再将连接地址粘贴到这里。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button({ if (cloud.direct) signIn() else pairing = true }, Modifier.testTag("cloud-connect")) { Text(if (cloud.direct) "登录网易云" else "连接网易云") }
                 }
             }
         } else {
+            if (cloud.direct && !showingTracks) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("all" to "全部", "liked" to "我喜欢", "created" to "我创建的", "collected" to "我收藏的").forEach { (key, label) ->
+                    FilterChip(category == key, { category = key }, label = { Text(label) })
+                }
+            }
             OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp).testTag("cloud-search"),
                 placeholder = { Text("搜索网易云歌曲、艺人") }, leadingIcon = { Icon(Icons.Rounded.Search, null) }, singleLine = true, shape = RoundedCornerShape(18.dp),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = {
@@ -112,7 +127,8 @@ import kotlinx.coroutines.launch
             else LazyColumn(Modifier.weight(1f).testTag("cloud-list"), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)) {
                 if (!showingTracks) {
                     item { Text("我的歌单", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 12.dp)) }
-                    items(playlists, key = { it.id }) { playlist ->
+                    val shown = playlists.filter { category == "all" || !cloud.direct || it.kind == category }
+                    items(shown, key = { it.id }) { playlist ->
                         Row(Modifier.fillMaxWidth().clickable { selected = playlist; submitted = ""; offset = 0 }.padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                             Cover(playlist.cover, playlist.title, Modifier.size(62.dp), cornerRadius = 14.dp)
                             Spacer(Modifier.width(14.dp)); Column(Modifier.weight(1f)) {
@@ -122,11 +138,12 @@ import kotlinx.coroutines.launch
                             Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    if (playlists.isEmpty() && error == null) item { Text("还没有歌单", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    if (shown.isEmpty() && error == null) item { Text("还没有歌单", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 } else {
                     items(tracks, key = { it.id }) { track ->
                         Row(Modifier.fillMaxWidth().clickable {
                             if (track.available) onPlay(tracks, tracks.indexOfFirst { it.id == track.id })
+                            else if (cloud.direct) error = "当前账号暂时无法播放这首歌，请检查歌曲权限"
                             else try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("orpheus://song/${track.originalId}?autoplay=1")).setPackage("com.netease.cloudmusic")) }
                             catch (_: android.content.ActivityNotFoundException) { error = "这首歌可在网易云音乐 App 中收听，请先安装该应用" }
                         }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -136,7 +153,7 @@ import kotlinx.coroutines.launch
                                 Text(track.artist.ifBlank { track.album }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             if (track.available) Text(durationLabel(track.duration), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            else Icon(Icons.Rounded.OpenInNew, "在网易云音乐中收听", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                            else Icon(if (cloud.direct) Icons.Rounded.Block else Icons.Rounded.OpenInNew, if (cloud.direct) "暂时无法播放" else "在网易云音乐中收听", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                         }
                     }
                     if (tracks.isEmpty() && error == null) item { Text("没有找到歌曲", color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -145,7 +162,12 @@ import kotlinx.coroutines.launch
             }
         }
     }
-    if (pairing) {
+    if (pairing && cloud.direct) {
+        AlertDialog(onDismissRequest = { pairing = false }, title = { Text("网易云账号") }, text = { Text(nickname.ifBlank { "登录你的网易云账号，在 AMI 内播放。" }) },
+            confirmButton = { TextButton({ pairing = false; signIn() }) { Text("重新登录") } },
+            dismissButton = { TextButton({ scope.launch { onDisconnect(); cloud.disconnect(); pairing = false; nickname = "" } }) { Text("退出登录") } })
+    }
+    if (pairing && !cloud.direct) {
         var address by remember { mutableStateOf("") }
         var busy by remember { mutableStateOf(false) }
         var pairError by remember { mutableStateOf<String?>(null) }

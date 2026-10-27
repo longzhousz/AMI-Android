@@ -130,7 +130,8 @@ class AmiViewModel internal constructor(app: Application,
         act("player.play") { player.play(songs, index) }
     }
     fun playCloud(tracks: List<CloudTrack>, index: Int) {
-        if (tracks.getOrNull(index)?.available != true) { message.value = "这首歌暂不支持在本试用版内播放，可在网易云音乐中收听"; return }
+        if (tracks.getOrNull(index)?.available != true) { message.value = "当前账号暂时无法播放这首歌，请检查歌曲权限"; return }
+        repository.prefs.edit().putBoolean("phoneFollowing",false).apply()
         val chosen = tracks[index].id
         val available = tracks.filter { it.available }
         val start = (available.indexOfFirst { it.id == chosen } - 500).coerceIn(0, (available.size - 1000).coerceAtLeast(0))
