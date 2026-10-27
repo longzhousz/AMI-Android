@@ -49,6 +49,21 @@ USB 只用于开发验证，最终必须拔线并关闭电脑连接端验收。�
 
 取不到歌曲时先区分授权、监听服务绑定、网易云活跃会话及定制版包名。取不到歌词时，在 Debug 记录媒体键名、歌曲 ID 是否有效、歌名/歌手/时长和匹配结果；`dumpsys media_session` 没打印歌词，不证明全部 extras 都没有歌词。只有实际数据证明存在可用附加歌词字段后再适配。时序问题先查播放位置、单调时间和速度，再测拖动与蓝牙延迟；不要改成逐帧跨进程轮询。
 
+## 本次交付验证
+
+应用代码 `27cacb61d0b1ad22d48dba5d264b42163205c1b1` 的 [CI 40499169470](https://github.com/longzhousz/AMI-Android/actions/runs/40499169470) 已通过：57 项 JVM 测试，Lint 无 Error / Fatal；Android 11 / API 30 与 Android 17 / API 37 各 75 项设备回归，无失败、错误或跳过；Preview / PhonePreview / Release 构建；两套系统的优化 PhonePreview 安装、启动、系统通知使用权页面与返回检查。
+
+合成会话测试不使用真实网易云账号或音频。公开歌词服务已进行少量真实搜索可达性检查，但不代表任何具体歌曲或中国境内网络始终可用。本次没有连接 X300，没有完成该机网易云版本、锁屏长时播放、蓝牙延迟或耗电验收。
+
+交付包为本地优化构建，完成签名和 16 KiB 对齐检查。CI 优化包使用 CI 签名，与本地交付包不是同一签名二进制；本地交付包未安装到用户手机。
+
+```text
+文件：AMI-Android-0.1.12-phone-only-preview.apk
+包名：com.longzhousz.ami.phonepreview
+APK SHA-256：80ef3309193335ec8ba7225e52ab23f2b6be7e1fcc6729d33de6b5fea20b2558
+签名证书 SHA-256：238e0c33d7deebc6dd873ae8f0e844cf626b873f2ddf2ea8900d4916e2dd6f39
+```
+
 ## 官方参考
 
 - [Android 媒体会话授权与访问](https://developer.android.com/reference/android/media/session/MediaSessionManager)
