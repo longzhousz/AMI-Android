@@ -1,10 +1,10 @@
 # AMI Android
 
-本地音乐播放器，新增网易云个人账号连接试用。源自 [AMI](https://github.com/longzhousz/AMI)，安卓版本在此独立维护。Kotlin、Jetpack Compose、Media3；面向 Android 17（target / compile API 37），最低 Android 8.0（API 26）。
+本地音乐播放器，新增网易云手机随播试用。源自 [AMI](https://github.com/longzhousz/AMI)，安卓版本在此独立维护。Kotlin、Jetpack Compose、Media3；面向 Android 17（target / compile API 37），最低 Android 8.0（API 26）。
 
 ## 在本地继续开发
 
-默认 **`main` 分支**包含截至 0.1.11 的全部 Android 改动与本地交接说明。克隆后可直接用 Android Studio 打开仓库根目录，无需原桌面仓库。
+默认 **`main` 分支**包含截至 0.1.12 的全部 Android 改动与本地交接说明。克隆后可直接用 Android Studio 打开仓库根目录，无需原桌面仓库。
 
 ```sh
 git clone https://github.com/longzhousz/AMI-Android.git
@@ -20,6 +20,12 @@ cd AMI-Android
 3. 专辑、曲目、同名 LRC、内嵌 / 同目录封面会自动整理。NCM 缺少有效本地封面时，会通过 HTTPS 获取其元数据中的网易云图片并缓存；已入库的缺图歌曲可通过「重新扫描」补全。长任务通过 WorkManager 前台任务继续执行。
 4. 曲库默认显示歌曲，点击歌曲即可播放，也可切换为专辑。底部迷你播放器进入完整播放页。支持锁屏、通知、耳机控制、音频焦点、拔耳机暂停、进度拖动、随机 / 循环和队列。
 5. 歌词页点击某行可跳转。可在设置中配置 DeepSeek API Key、模型及有序翻译风格。仅主动翻译时发送歌词，不上传音频、路径或封面。
+
+### 网易云手机随播（0.1.12）
+
+手机上的网易云 App 负责选歌与后台播放，AMI 提供原有歌词页、封面动效和基本控制。运行无需电脑或 root，也不用开放平台密钥。安装独立「AMI 随播试用」并批准通知使用权，在网易云播放后回 AMI 即可；歌单与搜索保留在网易云。歌词优先复用已导入内容，缺少时匹配 LRCLIB，覆盖不足时显示「暂无歌词」。
+
+构建使用 `assemblePhonePreview`，包名 `com.longzhousz.ami.phonepreview`，与旧版并存。步骤、研究依据、兼容性边界和本地 Codex 验收提示见 [只用手机的随播说明](docs/PHONE_ONLY_PLAYBACK.md)。
 
 ### 网易云连接试用（0.1.11）
 

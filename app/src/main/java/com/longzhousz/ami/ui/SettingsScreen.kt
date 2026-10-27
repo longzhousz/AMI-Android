@@ -134,7 +134,7 @@ import kotlinx.coroutines.withContext
             confirmButton = { TextButton({ scope.launch { runCatching { withContext(Dispatchers.IO) { repo.cleanup() } }.onSuccess { model.message.value = "已清理 ${megabytes(it)}" }.onFailure { model.message.value = it.message }; dialog = null } }, enabled = !importState.running && cache.reclaimable > 0) { Text("清理未引用缓存") } }, dismissButton = { TextButton({ dialog = null }) { Text("关闭") } })
         "logs" -> InfoDialog("操作记录", logs.joinToString("\n\n").ifBlank { "还没有操作记录" }, { dialog = null })
         "agent" -> AgentDialog(model, onBridgeFolder, { dialog = null })
-        "privacy" -> InfoDialog("隐私说明", "AMI 只读取你授权的音乐文件夹，不改写原始音频或标签。\n\n音频、路径和曲库不会上传。导入或重新扫描时，NCM 缺少有效本地封面会通过 HTTPS 获取其元数据指定的网易云图片并缓存，不发送音频、歌词或本地路径，也不按歌名搜索。已有本地封面优先，下载失败不影响音乐导入。\n\n保存 API Key 后，应用会在前台每天检查官方模型列表；可在翻译模型中关闭自动更新。获取列表只发送鉴权信息，不发送歌词，也不发起翻译。\n\n你主动翻译时只发送歌词文本、目标语言、模型和风格要求；测试连接会发送一条简短消息。更新预设不会自动重译已有歌词。\n\n连接网易云后，搜索词、歌曲与歌单标识、播放请求会通过你选择的电脑连接端发送到网易云。开放平台凭证只保存在电脑，AMI 的连接码使用 Android Keystore 加密。在线播放不保存整首音频，封面只使用内存缓存；个人接入的可播放范围由网易云决定。\n\nAPI Key 由 Android Keystore 加密保护，排除在备份之外，不进入操作日志。\n\n卸载应用会删除曲库记录、翻译和应用缓存，请保留原始音乐文件。", { dialog = null })
+        "privacy" -> InfoDialog("隐私说明", "AMI 只读取你授权的音乐与歌词文件夹，不改写原始文件。NCM 缺图时可获取其元数据指定的 HTTPS 封面。\n\n手机随播由网易云 App 播放。经你批准的通知使用权，AMI 只读取网易云的媒体会话信息、封面和播放进度，并发送你点击的播放控制；不读取或保存聊天等普通通知正文。\n\n随播歌词优先使用已导入的本地内容，缺少时向 LRCLIB 发送歌名、歌手、专辑和时长以匹配歌词，不发送音频或网易云登录凭据。AMI 不缓存随播音频；网易云自己的缓存由其设置管理。未找到歌词不影响播放。\n\n主动翻译时只向 DeepSeek 发送歌词与翻译要求；模型预设更新只获取模型列表，不自动重译。API Key 使用 Android Keystore 加密，排除在备份之外，不进入操作记录。\n\n卸载会删除本包的曲库记录、译文、授权与缓存，请保留原始文件。" + if (com.longzhousz.ami.BuildConfig.BUILD_TYPE=="cloudPreview") "\n\n电脑连接试验包的搜索、歌单和播放请求经你选择的电脑连接端发送到网易云，开放平台凭证只在电脑保存，连接码在 Android 加密保存。" else "", { dialog = null })
     }
 }
 

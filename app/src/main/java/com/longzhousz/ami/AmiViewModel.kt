@@ -125,6 +125,7 @@ class AmiViewModel internal constructor(app: Application,
     }
     fun cancelCloudPreparation() { cloudPlayJob?.cancel() }
     fun play(songs: List<Song>, index: Int = 0) {
+        repository.prefs.edit().putBoolean("phoneFollowing",false).apply()
         cancelCloudPreparation()
         act("player.play") { player.play(songs, index) }
     }

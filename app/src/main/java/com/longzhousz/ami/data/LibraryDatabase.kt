@@ -131,6 +131,28 @@ class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOp
         return SongLyrics(text("original"),text("translated"),selection.second)
     }
 
+    /** Follow mode needs one lyric document, never a full library snapshot. */
+    @Synchronized fun phoneLyrics(song: Song): SongLyrics? {
+        val db = readableDatabase
+        val exact = song.neteaseId?.let { musicId ->
+            db.rawQuery("SELECT id FROM songs WHERE netease_id=? LIMIT 4", arrayOf(musicId)).use { c -> buildList { while (c.moveToNext()) add(c.getString(0)) } }
+                .firstNotNullOfOrNull { songLyrics(it).takeIf { doc -> doc.original.isNotBlank() } }
+        }
+        if (exact != null) return exact
+        if (song.neteaseId != null) {
+            val exists = db.rawQuery("SELECT 1 FROM netease_lyrics WHERE music_id=? AND has_original=1", arrayOf(song.neteaseId)).use { it.moveToFirst() }
+            if (exists) {
+                fun text(column: String) = db.compileStatement("SELECT $column FROM netease_lyrics WHERE music_id=?").use { it.bindString(1,song.neteaseId); it.simpleQueryForString() }
+                return SongLyrics(text("original"),text("translated"),"phone:${song.id}")
+            }
+        }
+        if (song.duration <= 0 || song.title.isBlank() || song.artist.isBlank()) return null
+        // ponytail: this fallback scans metadata only on a track change; add a matching index if measured necessary.
+        val ids = db.rawQuery("SELECT id FROM songs WHERE title=? COLLATE NOCASE AND artist=? COLLATE NOCASE AND start=0 AND end IS NULL AND duration BETWEEN ? AND ? LIMIT 4",
+            arrayOf(song.title,song.artist,(song.duration-2000).toString(),(song.duration+2000).toString())).use { c -> buildList { while (c.moveToNext()) add(c.getString(0)) } }
+        return ids.firstNotNullOfOrNull { songLyrics(it).takeIf { doc -> doc.original.isNotBlank() } }
+    }
+
     @Synchronized fun songIds(): Set<String> = readableDatabase.rawQuery("SELECT id FROM songs", null).use { c -> buildSet { while (c.moveToNext()) add(c.getString(0)) } }
     @Synchronized fun songsWithoutCover(): Set<String> = readableDatabase.rawQuery("SELECT id FROM songs WHERE cover IS NULL OR cover=''", null).use { c ->
         buildSet { while (c.moveToNext()) add(c.getString(0)) }

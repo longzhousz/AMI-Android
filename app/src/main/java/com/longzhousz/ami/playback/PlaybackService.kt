@@ -134,7 +134,7 @@ class PlaybackService : MediaLibraryService() {
                 player.shuffleModeEnabled = snapshot.shuffle
                 if (items.isNotEmpty()) {
                     player.setMediaItems(items.map { it.mediaItem() }, location.first, location.second)
-                    if (!items[location.first].isCloudSong()) player.prepare()
+                    if (!items[location.first].isCloudSong() && !repository.prefs.getBoolean("phoneFollowing",false)) player.prepare()
                 }
             }
             restored = true

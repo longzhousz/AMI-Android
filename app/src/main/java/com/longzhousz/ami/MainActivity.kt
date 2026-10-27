@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
         lyricSongId = savedInstanceState?.getString("lyricSongId")
         enableEdgeToEdge()
         setContent {
-            AmiApp(model, onImport = { folderPicker.launch(null) }, onBridgeFolder = { bridgePicker.launch(null) },
+            AmiApp(model, initialPage=intent.getIntExtra("page",0), onImport = { folderPicker.launch(null) }, onBridgeFolder = { bridgePicker.launch(null) },
                 onLyricsFolder = { lyricFolderPicker.launch(null) },
                 onLyricFile = { song -> lyricSongId = song.id; lyricFilePicker.launch(arrayOf("*/*")) }, onNotifications = {
                 if (Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)

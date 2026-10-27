@@ -48,6 +48,7 @@ import kotlin.math.abs
     position: () -> Long,
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    seekEnabled: Boolean = true,
 ) {
     val list = rememberLazyListState()
     val clock by rememberUpdatedState(position)
@@ -109,7 +110,7 @@ import kotlin.math.abs
                     Modifier.fillMaxWidth().testTag("lyric-$index")
                         .semantics { selected = current; if (current) stateDescription = "当前歌词" }
                         .clip(RoundedCornerShape(12.dp))
-                        .clickable(enabled = line.time != null, onClickLabel = "跳转到这句歌词") {
+                        .clickable(enabled = line.time != null && seekEnabled, onClickLabel = "跳转到这句歌词") {
                             line.time?.let { following = true; onSeek(it) }
                         }
                         .padding(vertical = 15.dp)

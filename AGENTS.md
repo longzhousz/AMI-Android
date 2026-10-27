@@ -3,7 +3,7 @@
 ## 开始工作
 
 - 本仓库是独立 Android 工程，根目录直接包含 `app/` 和 Gradle Wrapper；不需要进入 `android/`，也不需要桌面 AMI 仓库。
-- 云端交接分支为 `main`，应用版本 0.1.11 / versionCode 12。先检查当前分支和用户未提交的改动。
+- 云端交接分支为 `main`，应用版本 0.1.12 / versionCode 13。先检查当前分支和用户未提交的改动。
 - 先读 `README.md`、`docs/LOCAL_DEVELOPMENT.md` 和 `docs/LOCAL_HANDOFF.md`。交接文档中的验证结果仅适用于其标注的代码版本。
 - 与用户使用中文交流。直接完成已授权的任务，保留用户已有改动。
 
@@ -29,6 +29,8 @@
 - 排查现有预览包时先读取状态。自行生成的签名通常不能覆盖云端预览包，不要用卸载或清除数据解决签名冲突。
 - 保留音乐源文件、文件夹授权、收藏、曲序及已有译文。卸载会丢失应用私有数据；本项目禁用系统备份。
 - `local.properties`、API Key、签名文件、密码和私人媒体不提交到 Git；日志、截图及采样放入已忽略的 `artifacts/`。
-- 网易云个人账号目前只支持官方 `ncm-cli`。首版由 Windows 连接端提供歌单、搜索、歌词和授权播放交接；不接入第三方逆向 API，不冒用厂商参数，不将 App Private Key 放进 Android。接续前读 `docs/NETEASE_PREVIEW.md`。
+- 当前网易云方向以**只用手机**为底线：`phonePreview` 使用官方 App 后台播放，AMI 用标准媒体会话显示歌词与控制，歌单/搜索可留在网易云；先读 `docs/PHONE_ONLY_PLAYBACK.md`。不需要电脑、root、第三方网易云逆向 API 或开放平台私钥。通知使用权仅用于音乐会话，不读取普通通知正文。
+- `cloudPreview` 保留 0.1.11 的 Windows / 官方 CLI 连接试验，资料见 `docs/NETEASE_PREVIEW.md`，它不满足当前手机独立运行目标。
 - `cloudPreview` 包名独立为 `com.longzhousz.ami.cloudpreview`，用于与用户本地 0.1.10 并存。仅试用构建允许可信局域网 HTTP；正式 Release 仍要求 HTTPS。连接地址含配对令牌，不放进截图、日志和 Git。
+- `phonePreview` 包名独立为 `com.longzhousz.ami.phonepreview`，启动随播页，保持 HTTPS、不申请局域网权限。标准媒体会话不保证有完整歌词；优先本地内容，再匹配公开库，不能套用错误版本。
 - 原子岛仍为实验兼容尝试。区分普通媒体通知与厂商原子岛结果，不能把模板附加成功当成系统接纳。

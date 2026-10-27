@@ -1,5 +1,7 @@
 # 云端到本地：当前状态与排查交接
 
+> 手机随播（2026-10-27）：当前源码 **0.1.12 / versionCode 13 / schema 4**。用户将「只用手机」设为底线，新增官方网易云 App 后台播放、AMI 歌词与控制的 `phonePreview`。使用和本地 Codex 真机验收见 [PHONE_ONLY_PLAYBACK.md](PHONE_ONLY_PLAYBACK.md)。无需电脑端；此前 0.1.11 的 CLI 试验仍保留，不是当前推荐运行方式。
+
 > 网易云试用（2026-10-27）：当前源码 **0.1.11 / versionCode 12 / SQLite schema 4**，基于本地 0.1.10（`d8b06a3`）接入官方个人 CLI。新增独立「AMI 网易云试用」安装包、Windows 连接端、歌单、搜索、歌词与 Media3 流式播放。使用步骤、官方能力限制、账号联调范围及后续验证见 [NETEASE_PREVIEW.md](NETEASE_PREVIEW.md)。本次没有连接手机；下文 0.1.10 的真机结果不代表新在线功能已通过真机验收。
 
 > 交付验证：应用代码 `e91df95` 已通过本地 54 项 JVM 测试、Lint、优化构建，以及 Android 11 / 17 各 70 项设备回归和 Windows 连接端检查。最终 APK 的摘要、签名、两次 CI 的各自范围及 Windows 首次授权步骤均记录在 [网易云试用说明](NETEASE_PREVIEW.md#本次交付的验证记录)。

@@ -82,36 +82,37 @@ if adb logcat -b crash -d | grep -F "Process: $package,"; then
   echo 'The optimized app crashed' >&2
   exit 1
 fi
-if [ -d cloud-preview-apk ]; then
-  cloud_package=com.longzhousz.ami.cloudpreview
-  cloud_apk=$(find cloud-preview-apk -name '*.apk' -print -quit)
-  test -n "$cloud_apk"
-  sha256sum "$cloud_apk" > preview-smoke-results/cloud-apk-sha256.txt
-  adb install -r "$cloud_apk"
-  adb shell am start -W -n "$cloud_package/com.longzhousz.ami.MainActivity"
-  python3 .github/scripts/android-wait-for-window.py preview-smoke-results/cloud-launch.xml "$cloud_package" '前往设置'
-  python3 - <<'PY'
+if [ -d phone-preview-apk ]; then
+  phone_package=com.longzhousz.ami.phonepreview
+  phone_apk=$(find phone-preview-apk -name '*.apk' -print -quit)
+  test -n "$phone_apk"
+  sha256sum "$phone_apk" > preview-smoke-results/phone-apk-sha256.txt
+  adb install -r "$phone_apk"
+  adb shell am start -W -n "$phone_package/com.longzhousz.ami.PhonePlayerActivity"
+  python3 .github/scripts/android-wait-for-window.py preview-smoke-results/phone-launch.xml "$phone_package" '让 AMI 跟随网易云'
+  adb exec-out screencap -p > preview-smoke-results/phone-connect.png
+  python3 - <<'PYTHON'
 import re
 import subprocess
 import xml.etree.ElementTree as ET
-node = next(n for n in ET.parse('preview-smoke-results/cloud-launch.xml').iter('node') if n.get('text') == '网易云')
+node = next(n for n in ET.parse('preview-smoke-results/phone-launch.xml').iter('node') if n.get('text') == '连接手机上的网易云')
 x1, y1, x2, y2 = map(int, re.findall(r'\d+', node.get('bounds')))
 subprocess.run(['adb', 'shell', 'input', 'tap', str((x1+x2)//2), str((y1+y2)//2)], check=True)
-PY
-  python3 .github/scripts/android-wait-for-window.py preview-smoke-results/cloud-connect.xml "$cloud_package" '连接你的网易云音乐'
-  adb exec-out screencap -p > preview-smoke-results/cloud-connect.png
-  python3 - <<'PY'
-import re
-import subprocess
+PYTHON
+  # The app opens the system permission page; the user grants access there.
+  adb shell uiautomator dump /sdcard/ami-phone-permission.xml
+  adb pull /sdcard/ami-phone-permission.xml preview-smoke-results/phone-permission.xml
+  python3 - <<'PYTHON'
 import xml.etree.ElementTree as ET
-node = next(n for n in ET.parse('preview-smoke-results/cloud-connect.xml').iter('node') if n.get('text') == '连接网易云')
-x1, y1, x2, y2 = map(int, re.findall(r'\d+', node.get('bounds')))
-subprocess.run(['adb', 'shell', 'input', 'tap', str((x1+x2)//2), str((y1+y2)//2)], check=True)
-PY
-  python3 .github/scripts/android-wait-for-window.py preview-smoke-results/cloud-pair.xml "$cloud_package" '电脑端连接地址'
-  adb exec-out screencap -p > preview-smoke-results/cloud-pair.png
-  if adb logcat -b crash -d | grep -F "Process: $cloud_package,"; then
-    echo 'The optimized cloud preview crashed' >&2
+nodes = list(ET.parse('preview-smoke-results/phone-permission.xml').iter('node'))
+assert any(n.get('package') == 'com.android.settings' for n in nodes), 'Notification access settings did not open'
+assert any('AMI' in (n.get('text', '') + n.get('content-desc', '')) for n in nodes), 'AMI listener is missing from the system permission page'
+PYTHON
+  adb exec-out screencap -p > preview-smoke-results/phone-permission.png
+  adb shell input keyevent KEYCODE_BACK
+  python3 .github/scripts/android-wait-for-window.py preview-smoke-results/phone-return.xml "$phone_package" '让 AMI 跟随网易云'
+  if adb logcat -b crash -d | grep -F "Process: $phone_package,"; then
+    echo 'The optimized phone preview crashed' >&2
     exit 1
   fi
 fi
