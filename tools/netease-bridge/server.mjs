@@ -125,7 +125,8 @@ async function adapter(folder) {
   if (!fs.existsSync(executable)) {
     if (process.platform === 'win32') {
       await new Promise((resolve, reject) => {
-        const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'RemoteSigned', '-File', path.join(HERE, 'build-adapter.ps1'), '-Output', executable], { stdio: 'inherit' });
+        // Scope policy to this build process, so an unmodified script from the downloaded ZIP can run.
+        const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(HERE, 'build-adapter.ps1'), '-Output', executable], { stdio: 'inherit' });
         child.once('error', reject); child.once('exit', code => code === 0 ? resolve() : reject(new Error('无法准备 Windows 播放适配器')));
       });
     } else {

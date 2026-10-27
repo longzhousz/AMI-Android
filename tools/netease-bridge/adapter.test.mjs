@@ -17,7 +17,7 @@ test('Windows launcher and mpv IPC handoff preserve arguments without playing or
   let binary = process.execPath, prefix = [env.AMI_BRIDGE_ADAPTER];
   if (process.platform === 'win32') {
     binary = path.join(folder, 'mpv.exe'); prefix = [];
-    const compiled = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'RemoteSigned', '-File', path.join(root, 'build-adapter.ps1'), '-Output', binary], { encoding: 'utf8' });
+    const compiled = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(root, 'build-adapter.ps1'), '-Output', binary], { encoding: 'utf8' });
     assert.equal(compiled.status, 0, compiled.stderr);
   }
   const version = spawnSync(binary, [...prefix, '--version'], { env, encoding: 'utf8' });
