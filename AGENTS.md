@@ -3,7 +3,7 @@
 ## 开始工作
 
 - 本仓库是独立 Android 工程，根目录直接包含 `app/` 和 Gradle Wrapper；不需要进入 `android/`，也不需要桌面 AMI 仓库。
-- 云端交接分支为 `main`，应用版本 0.1.9 / versionCode 10。先检查当前分支和用户未提交的改动。
+- 云端交接分支为 `main`，应用版本 0.1.10 / versionCode 11。先检查当前分支和用户未提交的改动。
 - 先读 `README.md`、`docs/LOCAL_DEVELOPMENT.md` 和 `docs/LOCAL_HANDOFF.md`。交接文档中的验证结果仅适用于其标注的代码版本。
 - 与用户使用中文交流。直接完成已授权的任务，保留用户已有改动。
 
