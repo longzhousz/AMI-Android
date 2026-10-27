@@ -64,6 +64,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
     AmiTheme(theme, immersive = fullPlayer) {
         val focus = LocalFocusManager.current
         val library by model.repository.library.collectAsStateWithLifecycle()
+        val onlineSongs by model.cloud.catalog.collectAsStateWithLifecycle()
         val songs = library.songs
         val loading by model.repository.loading.collectAsStateWithLifecycle()
         val playback by model.player.state.collectAsStateWithLifecycle()
@@ -77,7 +78,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         var remove by remember { mutableStateOf<Song?>(null) }
         var miniBounds by remember { mutableStateOf<Rect?>(null) }
         val pageState = rememberSaveableStateHolder()
-        val current = songsById[playback.id]
+        val current = songsById[playback.id] ?: onlineSongs[playback.id]
         val selectedAlbum = albumsByKey[albumKey]
         val bridgeAlbum by model.bridgeAlbum.collectAsStateWithLifecycle()
         val bridgeEnabled by model.bridgeEnabled.collectAsStateWithLifecycle()
@@ -115,7 +116,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                             onBounds = { miniBounds = it }, onOpen = { focus.clearFocus(); fullPlayer = true },
                             onToggle = { model.act("player.toggle") { model.player.toggle() } }, onNext = { model.act("player.next") { model.player.next() } })
                         NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 0.dp) {
-                            listOf(Triple("曲库", Icons.Rounded.Album, 0), Triple("我喜欢", Icons.Rounded.FavoriteBorder, 1), Triple("设置", Icons.Rounded.Tune, 2)).forEach { (label, icon, index) ->
+                            listOf(Triple("曲库", Icons.Rounded.Album, 0), Triple("我喜欢", Icons.Rounded.FavoriteBorder, 1), Triple("网易云", Icons.Rounded.CloudQueue, 3), Triple("设置", Icons.Rounded.Tune, 2)).forEach { (label, icon, index) ->
                                 NavigationBarItem(page == index, { page = index; albumKey = null }, { Icon(icon, label) }, label = { Text(label) })
                             }
                         }
@@ -140,6 +141,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                         when {
                             album != null -> AlbumScreen(album, playback.id, model, { albumKey = null }, { remove = it })
                             destination.page == 2 -> SettingsScreen(model, onImport, onNotifications, onBridgeFolder, onLyricsFolder)
+                            destination.page == 3 -> CloudMusicScreen(model)
                             else -> pageState.SaveableStateProvider("library-${destination.page}") {
                                 LibraryScreen(library, loading, destination.page == 1, playback.id, { page = 2 },
                                     onAlbum = { albumKey = it.key }, onPlay = { list, index -> model.play(list, index) }, onFavorite = model::favorite, onRemove = { remove = it })
@@ -161,7 +163,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                 Text("播放队列 · ${playback.queue.size}", Modifier.padding(horizontal = 24.dp, vertical = 16.dp), style = MaterialTheme.typography.titleLarge)
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 560.dp).padding(horizontal = 20.dp).navigationBarsPadding()) {
                     itemsIndexed(playback.queue, key = { index, id -> "$index:$id" }) { index, id ->
-                        songsById[id]?.let { song -> SongRow(song, playback.id == id, {
+                        (songsById[id] ?: onlineSongs[id])?.let { song -> SongRow(song, playback.id == id, {
                             model.act("player.jump") { model.player.jump(index) }
                             scope.launch { queueSheet.hide(); queue = false }
                         }, { model.favorite(song) }, number = index + 1, modifier = Modifier.animateItem()) }

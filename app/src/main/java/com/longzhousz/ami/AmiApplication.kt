@@ -20,7 +20,7 @@ class AmiApplication : Application(), ImageLoaderFactory {
     }
     override fun onLowMemory() { super.onLowMemory();clearOptionalCaches() }
     private fun clearOptionalCaches() {
-        if (repositoryHolder.isInitialized()) repository.lyrics.trim()
+        if (repositoryHolder.isInitialized()) { repository.lyrics.trim(); repository.trimCloud() }
         activeImageLoader?.memoryCache?.clear()
         com.longzhousz.ami.ui.clearArtworkColorCache()
     }

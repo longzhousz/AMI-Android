@@ -1,0 +1,9 @@
+{
+  "name": "ami-netease-bridge",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": { "start": "node server.mjs --setup", "test": "node --test bridge.test.mjs adapter.test.mjs" },
+  "dependencies": { "@music163/ncm-cli": "0.1.7" }
+}

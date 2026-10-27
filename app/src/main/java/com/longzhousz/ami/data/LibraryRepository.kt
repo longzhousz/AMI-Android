@@ -19,6 +19,9 @@ import java.io.File
 data class ImportState(val running: Boolean = false, val done: Int = 0, val total: Int = 0, val message: String = "", val errors: List<String> = emptyList())
 
 class LibraryRepository(val context: Context) {
+    private val cloudHolder = lazy { CloudMusic(context) }
+    val cloud by cloudHolder
+    fun trimCloud() { if (cloudHolder.isInitialized()) cloud.trim() }
     val db = LibraryDatabase(context)
     val secrets = SecretStore(context)
     val prefs = context.getSharedPreferences("ami", Context.MODE_PRIVATE)

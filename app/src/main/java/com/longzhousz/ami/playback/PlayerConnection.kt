@@ -44,7 +44,8 @@ class PlayerConnection(context: Context) {
         state.value = PlaybackState(true, c.currentMediaItem?.mediaId, playRequested, c.currentPosition.coerceAtLeast(0),
             c.duration.coerceAtLeast(0), c.playbackState == Player.STATE_BUFFERING, c.shuffleModeEnabled, c.repeatMode,
             queue,
-            c.playerError?.let { "无法播放此音频（${it.errorCodeName}），请检查文件授权或格式" }, advancing = c.isPlaying,
+            c.playerError?.let { if (c.currentMediaItem?.mediaId?.startsWith("netease:") == true)
+                "网易云播放暂不可用，请检查电脑连接和曲目权限" else "无法播放此音频（${it.errorCodeName}），请检查文件授权或格式" }, advancing = c.isPlaying,
             nextId = c.nextMediaItemIndex.takeIf { it >= 0 }?.let { c.getMediaItemAt(it).mediaId })
     }
     fun play(songs: List<Song>, index: Int = 0) {

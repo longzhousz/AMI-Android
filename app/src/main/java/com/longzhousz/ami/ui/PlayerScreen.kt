@@ -31,6 +31,7 @@ import com.longzhousz.ami.AmiViewModel
 import com.longzhousz.ami.core.LyricLine
 import com.longzhousz.ami.core.Lyrics
 import com.longzhousz.ami.core.Song
+import com.longzhousz.ami.core.isCloudSong
 import com.longzhousz.ami.core.durationLabel
 import com.longzhousz.ami.playback.PlaybackState
 import kotlinx.coroutines.flow.first
@@ -94,10 +95,10 @@ private val PlayerColors = darkColorScheme(
                     .padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     ActionIcon(Icons.Rounded.KeyboardArrowDown, "收起播放页", actions.close)
                     Spacer(Modifier.weight(1f))
-                    Box {
+                    if (!song.isCloudSong() || !translation.isNullOrEmpty()) Box {
                         ActionIcon(Icons.Rounded.MoreHoriz, "歌词选项", { lyricMenu = true }, tint = Color.White.copy(alpha = .7f))
                         DropdownMenu(lyricMenu, { lyricMenu = false }) {
-                            DropdownMenuItem(text = { Text("为这首歌导入歌词") }, onClick = { lyricMenu = false; actions.lyricFile() })
+                            if (!song.isCloudSong()) DropdownMenuItem(text = { Text("为这首歌导入歌词") }, onClick = { lyricMenu = false; actions.lyricFile() })
                             if (song.manualLyrics) DropdownMenuItem(text = { Text("恢复自动匹配") }, onClick = { lyricMenu = false; actions.restoreLyrics() })
                             if (!translation.isNullOrEmpty()) DropdownMenuItem(text = { Text("重新翻译") }, onClick = { lyricMenu = false; actions.retranslate() }, enabled = !translating)
                         }
@@ -160,7 +161,7 @@ private data class PlayerStage(val song: Song, val translation: List<String>?, v
                             color = Color.White.copy(alpha = .56f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                ActionIcon(if (song.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                if (!song.isCloudSong()) ActionIcon(if (song.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     if (song.favorite) "取消喜欢" else "加入喜欢", actions.favorite,
                     tint = Color.White.copy(alpha = if (song.favorite) 1f else .55f))
             }

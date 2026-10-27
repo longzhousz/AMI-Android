@@ -2,9 +2,9 @@ name: Android
 on:
   push:
     branches: [main]
-    paths: ['app/**', 'gradle/**', '*.gradle.kts', 'gradle.properties', 'gradlew*', '.github/**']
+    paths: ['app/**', 'tools/netease-bridge/**', 'gradle/**', '*.gradle.kts', 'gradle.properties', 'gradlew*', '.github/**']
   pull_request:
-    paths: ['app/**', 'gradle/**', '*.gradle.kts', 'gradle.properties', 'gradlew*', '.github/**']
+    paths: ['app/**', 'tools/netease-bridge/**', 'gradle/**', '*.gradle.kts', 'gradle.properties', 'gradlew*', '.github/**']
   workflow_dispatch:
     inputs:
       device_tests_only:
@@ -38,6 +38,14 @@ concurrency:
   group: android-${{ github.head_ref || github.ref_name }}-${{ github.event_name }}
   cancel-in-progress: true
 jobs:
+  windows-bridge:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tools/netease-bridge/bridge.test.mjs tools/netease-bridge/adapter.test.mjs
   build:
     if: ${{ github.event.inputs.device_tests_only != 'true' && github.event.inputs.smoke_run_id == '' && github.event.inputs.smoke_release_tag == '' && github.event.inputs.upload_apk_commit == '' }}
     runs-on: ubuntu-latest
@@ -56,11 +64,17 @@ jobs:
           echo "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
       - run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0'
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew testDebugUnitTest lintDebug assemblePreview assembleRelease
+      - name: Check personal NetEase bridge
+        run: node --test tools/netease-bridge/bridge.test.mjs tools/netease-bridge/adapter.test.mjs
+      - run: ./gradlew testDebugUnitTest lintDebug assemblePreview assembleCloudPreview assembleRelease
       - uses: actions/upload-artifact@v4
         with:
           name: AMI-Android-preview
           path: app/build/outputs/apk/preview/*.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AMI-Android-cloud-preview
+          path: app/build/outputs/apk/cloudPreview/*.apk
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -172,6 +186,11 @@ jobs:
           path: preview-apk
           run-id: ${{ github.event.inputs.smoke_run_id || github.run_id }}
           github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        if: ${{ needs.build.result == 'success' && github.event.inputs.smoke_release_tag == '' && github.event.inputs.smoke_run_id == '' }}
+        with:
+          name: AMI-Android-cloud-preview
+          path: cloud-preview-apk
       - name: Download the exact distribution APK
         if: ${{ github.event.inputs.smoke_release_tag != '' }}
         env:

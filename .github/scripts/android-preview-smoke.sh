@@ -82,3 +82,36 @@ if adb logcat -b crash -d | grep -F "Process: $package,"; then
   echo 'The optimized app crashed' >&2
   exit 1
 fi
+if [ -d cloud-preview-apk ]; then
+  cloud_package=com.longzhousz.ami.cloudpreview
+  cloud_apk=$(find cloud-preview-apk -name '*.apk' -print -quit)
+  test -n "$cloud_apk"
+  sha256sum "$cloud_apk" > preview-smoke-results/cloud-apk-sha256.txt
+  adb install -r "$cloud_apk"
+  adb shell am start -W -n "$cloud_package/com.longzhousz.ami.MainActivity"
+  python3 .github/scripts/android-wait-for-window.py preview-smoke-results/cloud-launch.xml "$cloud_package" '前往设置'
+  python3 - <<'PY'
+import re
+import subprocess
+import xml.etree.ElementTree as ET
+node = next(n for n in ET.parse('preview-smoke-results/cloud-launch.xml').iter('node') if n.get('text') == '网易云')
+x1, y1, x2, y2 = map(int, re.findall(r'\d+', node.get('bounds')))
+subprocess.run(['adb', 'shell', 'input', 'tap', str((x1+x2)//2), str((y1+y2)//2)], check=True)
+PY
+  python3 .github/scripts/android-wait-for-window.py preview-smoke-results/cloud-connect.xml "$cloud_package" '连接你的网易云音乐'
+  adb exec-out screencap -p > preview-smoke-results/cloud-connect.png
+  python3 - <<'PY'
+import re
+import subprocess
+import xml.etree.ElementTree as ET
+node = next(n for n in ET.parse('preview-smoke-results/cloud-connect.xml').iter('node') if n.get('text') == '连接网易云')
+x1, y1, x2, y2 = map(int, re.findall(r'\d+', node.get('bounds')))
+subprocess.run(['adb', 'shell', 'input', 'tap', str((x1+x2)//2), str((y1+y2)//2)], check=True)
+PY
+  python3 .github/scripts/android-wait-for-window.py preview-smoke-results/cloud-pair.xml "$cloud_package" '电脑端连接地址'
+  adb exec-out screencap -p > preview-smoke-results/cloud-pair.png
+  if adb logcat -b crash -d | grep -F "Process: $cloud_package,"; then
+    echo 'The optimized cloud preview crashed' >&2
+    exit 1
+  fi
+fi

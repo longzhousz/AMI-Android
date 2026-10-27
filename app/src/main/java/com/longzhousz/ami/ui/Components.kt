@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.memory.MemoryCache
 import coil.request.ImageRequest
+import coil.request.CachePolicy
+import com.longzhousz.ami.core.isCloudSong
 import androidx.compose.ui.platform.LocalContext
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.core.durationLabel
@@ -59,7 +61,8 @@ internal class ArtworkMemory(val expectedPath: () -> String?) {
         val color = CoverPalette[(artwork.second.hashCode().toLong().let { if (it < 0) -it else it } % CoverPalette.size).toInt()]
         Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(color.copy(alpha = 0.65f), color))), contentAlignment = Alignment.Center) {
         if (artwork.first != null) {
-            val request = remember(artwork.first, context) { ImageRequest.Builder(context).data(File(artwork.first!!))
+            val request = remember(artwork.first, context) { ImageRequest.Builder(context).data(if (artwork.first!!.startsWith("https://")) artwork.first else File(artwork.first!!))
+                .diskCachePolicy(if (artwork.first!!.startsWith("https://")) CachePolicy.DISABLED else CachePolicy.ENABLED)
                 .placeholderMemoryCacheKey(memory?.key ?: previousImage).crossfade(150).build() }
             AsyncImage(request, "《${artwork.second}》封面", Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
                 onSuccess = { if (artwork.first == latestPath && (memory == null || memory.expectedPath() == artwork.first)) {
@@ -105,7 +108,7 @@ internal class ArtworkMemory(val expectedPath: () -> String?) {
             Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Text(durationLabel(song.duration), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Box {
+        if (!song.isCloudSong()) Box {
             ActionIcon(Icons.Rounded.MoreVert, "${song.title}的更多操作", { menu = true })
             DropdownMenu(menu, { menu = false }) {
                 DropdownMenuItem(if (song.favorite) { { Text("取消喜欢") } } else { { Text("加入喜欢") } }, { menu = false; onFavorite() }, leadingIcon = { Icon(if (song.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null) })

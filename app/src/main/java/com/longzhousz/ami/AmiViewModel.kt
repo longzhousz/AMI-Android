@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.core.CurrentLyrics
+import com.longzhousz.ami.core.CloudTrack
+import com.longzhousz.ami.core.isCloudSong
 import com.longzhousz.ami.data.TranslationClient
 import com.longzhousz.ami.data.TranslationModelCatalog
 import com.longzhousz.ami.data.AgentBridge
@@ -23,6 +25,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -32,6 +36,12 @@ class AmiViewModel internal constructor(app: Application,
 ) : AndroidViewModel(app) {
     constructor(app: Application) : this(app, { repository, models -> TranslationClient(repository, models) })
     val repository = (app as AmiApplication).repository
+    val cloud = repository.cloud
+    private val songSources = combine(repository.library, cloud.catalog) { library, online -> library to online }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, repository.library.value to cloud.catalog.value)
+    fun findSong(id: String?) = repository.library.value.songsById[id] ?: cloud.catalog.value[id]
+    private suspend fun loadLyrics(song: Song) = if (song.isCloudSong()) cloud.lyrics(song) else repository.lyrics.load(song)
+    private var cloudPlayJob: kotlinx.coroutines.Job? = null
     val player = PlayerConnection(app)
     val theme = MutableStateFlow(repository.prefs.getString("theme", "system")!!)
     val message = MutableStateFlow<String?>(null)
@@ -53,7 +63,7 @@ class AmiViewModel internal constructor(app: Application,
     private var translationKey: LyricsKey? = null
     private data class LyricsRequest(val song: Song?, val next: Song?, val key: LyricsKey, val active: Boolean)
     private fun currentKey(): LyricsKey {
-        val song = repository.library.value.songsById[player.state.value.id]
+        val song = findSong(player.state.value.id)
         return LyricsKey(song?.id,song?.lyricsVersion.orEmpty(),translationModels.state.value.selection,translationStyle.value)
     }
     private fun publish(value: CurrentLyrics) {
@@ -63,17 +73,19 @@ class AmiViewModel internal constructor(app: Application,
         uiActive.value=active
         if (!active) {
             repository.lyrics.trim()
-            if (lyrics.value.document?.original?.isEmpty()==true && repository.library.value.songsById[player.state.value.id]?.hasLyrics==true)
+            repository.trimCloud()
+            if (lyrics.value.document?.original?.isEmpty()==true && findSong(player.state.value.id)?.hasLyrics==true)
                 publish(lyrics.value.copy(document=null))
         }
     }
     init {
         repository.load()
         viewModelScope.launch {
-            combine(player.state.map { it.id to it.nextId }.distinctUntilChanged(), repository.library,
+            combine(player.state.map { it.id to it.nextId }.distinctUntilChanged(), songSources,
                 translationModels.state.map { it.selection }.distinctUntilChanged(), translationStyle, uiActive) { playback, library, selection, style, active ->
-                val song=library.songsById[playback.first]
-                LyricsRequest(song,library.songsById[playback.second],LyricsKey(song?.id,song?.lyricsVersion.orEmpty(),selection,style),active)
+                val song=library.first.songsById[playback.first] ?: library.second[playback.first]
+                val next=library.first.songsById[playback.second] ?: library.second[playback.second]
+                LyricsRequest(song,next,LyricsKey(song?.id,song?.lyricsVersion.orEmpty(),selection,style),active)
             }.distinctUntilChanged().collectLatest { request ->
                 val key=request.key
                 if (stateKey!=key) {
@@ -85,7 +97,7 @@ class AmiViewModel internal constructor(app: Application,
                 try {
                     if (lyrics.value.document==null) {
                         val epoch=translationEpoch
-                        val document=repository.lyrics.load(song)
+                        val document=loadLyrics(song)
                         if (!uiActive.value || currentKey()!=key || document.revision!=key.revision) return@collectLatest
                         val cached=if (epoch==translationEpoch && document.lines.isNotEmpty()) client.cached(song,document.lines,key.model,key.style) else null
                         if (!uiActive.value || currentKey()!=key) return@collectLatest
@@ -101,7 +113,7 @@ class AmiViewModel internal constructor(app: Application,
                     return@collectLatest
                 }
                 // Only one neighbor, within a byte budget, and cancelled as soon as the UI stops or the track changes.
-                try { if (uiActive.value) request.next?.takeIf { it.id!=song.id }?.let { repository.lyrics.load(it) } }
+                try { if (uiActive.value) request.next?.takeIf { it.id!=song.id && !it.isCloudSong() }?.let { repository.lyrics.load(it) } }
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) { /* A failed prefetch must not interrupt the current song. */ }
             }
@@ -112,6 +124,19 @@ class AmiViewModel internal constructor(app: Application,
         catch (_: Exception) { message.value = "操作未完成，播放服务可能正在连接，请稍后重试" }
     }
     fun play(songs: List<Song>, index: Int = 0) = act("player.play") { player.play(songs, index) }
+    fun playCloud(tracks: List<CloudTrack>, index: Int) {
+        if (tracks.getOrNull(index)?.available != true) { message.value = "这首歌暂不支持在本试用版内播放，可在网易云音乐中收听"; return }
+        val chosen = tracks[index].id
+        val available = tracks.filter { it.available }
+        val start = (available.indexOfFirst { it.id == chosen } - 500).coerceIn(0, (available.size - 1000).coerceAtLeast(0))
+        val queue = available.drop(start).take(1000)
+        cloudPlayJob?.cancel()
+        cloudPlayJob = viewModelScope.launch {
+            try { cloud.rememberQueue(queue); ensureActive(); play(queue.map { it.song() }, queue.indexOfFirst { it.id == chosen }) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { message.value = "在线队列暂时无法保存，请稍后重试" }
+        }
+    }
     private fun persistAction(name: String, block: suspend () -> Unit) {
         viewModelScope.launch {
             try { withContext(Dispatchers.IO) { block(); repository.db.log(name, "user", "success") } }
@@ -147,8 +172,8 @@ class AmiViewModel internal constructor(app: Application,
         publish(current.copy(translating=true))
         val task=viewModelScope.async(start=CoroutineStart.LAZY) {
             try {
-                val summary=repository.library.value.songsById[song.id] ?: throw CancellationException("Song removed")
-                val document=repository.lyrics.load(summary)
+                val summary=findSong(song.id) ?: throw CancellationException("Song removed")
+                val document=loadLyrics(summary)
                 ensureActive()
                 if (currentKey()!=key || document.revision!=key.revision) throw CancellationException("Lyrics changed")
                 val result=client.translate(summary.copy(lyrics=document.original,lyricTranslation=document.translated),document.lines,force)

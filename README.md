@@ -1,10 +1,10 @@
 # AMI Android
 
-本地音乐播放器。源自 [AMI](https://github.com/longzhousz/AMI)，安卓版本在此独立维护。Kotlin、Jetpack Compose、Media3；面向 Android 17（target / compile API 37），最低 Android 8.0（API 26）。
+本地音乐播放器，新增网易云个人账号连接试用。源自 [AMI](https://github.com/longzhousz/AMI)，安卓版本在此独立维护。Kotlin、Jetpack Compose、Media3；面向 Android 17（target / compile API 37），最低 Android 8.0（API 26）。
 
 ## 在本地继续开发
 
-默认 **`main` 分支**包含截至 0.1.10 的全部 Android 改动与本地交接说明。克隆后可直接用 Android Studio 打开仓库根目录，无需原桌面仓库。
+默认 **`main` 分支**包含截至 0.1.11 的全部 Android 改动与本地交接说明。克隆后可直接用 Android Studio 打开仓库根目录，无需原桌面仓库。
 
 ```sh
 git clone https://github.com/longzhousz/AMI-Android.git
@@ -20,6 +20,12 @@ cd AMI-Android
 3. 专辑、曲目、同名 LRC、内嵌 / 同目录封面会自动整理。NCM 缺少有效本地封面时，会通过 HTTPS 获取其元数据中的网易云图片并缓存；已入库的缺图歌曲可通过「重新扫描」补全。长任务通过 WorkManager 前台任务继续执行。
 4. 曲库默认显示歌曲，点击歌曲即可播放，也可切换为专辑。底部迷你播放器进入完整播放页。支持锁屏、通知、耳机控制、音频焦点、拔耳机暂停、进度拖动、随机 / 循环和队列。
 5. 歌词页点击某行可跳转。可在设置中配置 DeepSeek API Key、模型及有序翻译风格。仅主动翻译时发送歌词，不上传音频、路径或封面。
+
+### 网易云连接试用（0.1.11）
+
+新增「网易云」入口，支持读取自己的歌单、搜索歌曲、歌词及在现有播放页收听。个人开放平台账号目前只支持官方 CLI，因此这版需要 Windows 连接端保持运行；音频由手机直接通过 HTTPS 流式读取，不自动下载整首歌曲。试用范围内无法完整播放的歌曲可跳转网易云 App。
+
+安装独立的 `cloudPreview` 包「AMI 网易云试用」，与已有 0.1.10 并存。Windows 安装 Node.js 22 或更新的 LTS，运行 `tools/netease-bridge/Start.cmd`，按官方 CLI 向导配置并登录，然后在手机粘贴电脑显示的连接地址。详细步骤、权限范围与验证限制见 [网易云试用说明](docs/NETEASE_PREVIEW.md)。
 
 ### NCM 缺封面补全（0.1.10）
 

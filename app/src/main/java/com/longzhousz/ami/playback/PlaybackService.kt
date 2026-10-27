@@ -9,6 +9,10 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.ResolvingDataSource
+import com.longzhousz.ami.core.isCloudSong
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
@@ -33,7 +37,7 @@ fun Song.mediaItem(): MediaItem = MediaItem.Builder().setMediaId(id).setUri(uri)
     .setMediaMetadata(MediaMetadata.Builder().setTitle(title).setArtist(artist).setAlbumTitle(album)
         .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC).setIsPlayable(true).setIsBrowsable(false)
         .setDurationMs(duration.takeIf { it > 0 })
-        .setArtworkUri(cover?.let { android.net.Uri.fromFile(java.io.File(it)) }).build())
+        .setArtworkUri(cover?.let { if (it.startsWith("https://")) android.net.Uri.parse(it) else android.net.Uri.fromFile(java.io.File(it)) }).build())
     .setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setStartPositionMs(start)
         .apply { end?.let { setEndPositionMs(it) } }.build()).build()
 
@@ -88,7 +92,10 @@ class PlaybackService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
         if (OriginOsMediaHints.isVivo()) setMediaNotificationProvider(OriginOsMediaNotification(this))
-        player = ExoPlayer.Builder(this).build().apply {
+        val source = ResolvingDataSource.Factory(DefaultDataSource.Factory(this)) { spec ->
+            if (spec.uri.scheme == "ami-cloud") spec.withUri(android.net.Uri.parse(repository.cloud.resolve(spec.uri.toString()))) else spec
+        }
+        player = ExoPlayer.Builder(this).setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(source)).build().apply {
             setAudioAttributes(AudioAttributes.Builder().setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).setUsage(C.USAGE_MEDIA).build(), true)
             setHandleAudioBecomingNoisy(true)
             setWakeMode(C.WAKE_MODE_LOCAL)
@@ -98,6 +105,9 @@ class PlaybackService : MediaLibraryService() {
         session = MediaLibrarySession.Builder(this, player, callback)
             .setSessionActivity(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)).build()
         player.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                player.setWakeMode(if (mediaItem?.mediaId?.startsWith("netease:") == true) C.WAKE_MODE_NETWORK else C.WAKE_MODE_LOCAL)
+            }
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
                 if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
                     val ids = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }
@@ -116,7 +126,7 @@ class PlaybackService : MediaLibraryService() {
         repository.prefs.edit().remove("sleepAt").apply()
         scope.launch {
             val snapshot = repository.playback.load()
-            val songs = withContext(Dispatchers.IO) { repository.db.playbackSongs(snapshot.queue) }
+            val songs = withContext(Dispatchers.IO) { repository.db.playbackSongs(snapshot.queue) + repository.cloud.restore(snapshot.queue) }
             // Commands received while disk restoration ran take precedence over the old queue.
             if (player.mediaItemCount == 0) {
                 val (items, location) = snapshot.restore(songs)
@@ -124,7 +134,7 @@ class PlaybackService : MediaLibraryService() {
                 player.shuffleModeEnabled = snapshot.shuffle
                 if (items.isNotEmpty()) {
                     player.setMediaItems(items.map { it.mediaItem() }, location.first, location.second)
-                    player.prepare()
+                    if (!items[location.first].isCloudSong()) player.prepare()
                 }
             }
             restored = true
