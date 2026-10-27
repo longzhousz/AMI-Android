@@ -132,6 +132,9 @@ class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOp
     }
 
     @Synchronized fun songIds(): Set<String> = readableDatabase.rawQuery("SELECT id FROM songs", null).use { c -> buildSet { while (c.moveToNext()) add(c.getString(0)) } }
+    @Synchronized fun songsWithoutCover(): Set<String> = readableDatabase.rawQuery("SELECT id FROM songs WHERE cover IS NULL OR cover=''", null).use { c ->
+        buildSet { while (c.moveToNext()) add(c.getString(0)) }
+    }
     @Synchronized fun cachedFileReferences(): Set<String> = readableDatabase.rawQuery("SELECT uri,cover FROM songs", null).use { c ->
         buildSet { while (c.moveToNext()) {
             c.getString(0)?.takeIf { it.startsWith("file:") }?.let { android.net.Uri.parse(it).path }?.let { add(it) }

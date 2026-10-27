@@ -75,7 +75,7 @@ import kotlinx.coroutines.withContext
                 SettingRow(Icons.Rounded.Storage, "缓存管理", "${megabytes(cache.bytes)} · ${cache.files} 个文件", { scope.launch { cache = withContext(Dispatchers.IO) { repo.cacheInfo() }; dialog = "cache" } })
                 SettingRow(Icons.Rounded.SmartToy, "Agent 与自动化", "默认关闭 · 仅处理授权文件夹中的请求", { dialog = "agent" })
                 SettingRow(Icons.Rounded.History, "操作记录", "最近 50 条 · 仅保存在本机", { scope.launch { logs = withContext(Dispatchers.IO) { repo.db.actionLog() }; dialog = "logs" } })
-                SettingRow(Icons.Rounded.Security, "隐私说明", "音频与封面始终留在本机", { dialog = "privacy" })
+                SettingRow(Icons.Rounded.Security, "隐私说明", "本地曲库 · 缺图时获取 NCM 指定封面", { dialog = "privacy" })
             }
             Text("AMI ${com.longzhousz.ami.BuildConfig.VERSION_NAME}", Modifier.padding(top = 24.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -134,7 +134,7 @@ import kotlinx.coroutines.withContext
             confirmButton = { TextButton({ scope.launch { runCatching { withContext(Dispatchers.IO) { repo.cleanup() } }.onSuccess { model.message.value = "已清理 ${megabytes(it)}" }.onFailure { model.message.value = it.message }; dialog = null } }, enabled = !importState.running && cache.reclaimable > 0) { Text("清理未引用缓存") } }, dismissButton = { TextButton({ dialog = null }) { Text("关闭") } })
         "logs" -> InfoDialog("操作记录", logs.joinToString("\n\n").ifBlank { "还没有操作记录" }, { dialog = null })
         "agent" -> AgentDialog(model, onBridgeFolder, { dialog = null })
-        "privacy" -> InfoDialog("隐私说明", "AMI 只读取你授权的音乐文件夹，不改写原始音频或标签。\n\n音频、封面、路径和曲库不会上传。保存 API Key 后，应用会在前台每天检查官方模型列表；可在翻译模型中关闭自动更新。获取列表只发送鉴权信息，不发送歌词，也不发起翻译。\n\n你主动翻译时只发送歌词文本、目标语言、模型和风格要求；测试连接会发送一条简短消息。更新预设不会自动重译已有歌词。\n\nAPI Key 由 Android Keystore 加密保护，排除在备份之外，不进入操作日志。\n\n卸载应用会删除曲库记录、翻译和应用缓存，请保留原始音乐文件。", { dialog = null })
+        "privacy" -> InfoDialog("隐私说明", "AMI 只读取你授权的音乐文件夹，不改写原始音频或标签。\n\n音频、路径和曲库不会上传。导入或重新扫描时，NCM 缺少有效本地封面会通过 HTTPS 获取其元数据指定的网易云图片并缓存，不发送音频、歌词或本地路径，也不按歌名搜索。已有本地封面优先，下载失败不影响音乐导入。\n\n保存 API Key 后，应用会在前台每天检查官方模型列表；可在翻译模型中关闭自动更新。获取列表只发送鉴权信息，不发送歌词，也不发起翻译。\n\n你主动翻译时只发送歌词文本、目标语言、模型和风格要求；测试连接会发送一条简短消息。更新预设不会自动重译已有歌词。\n\nAPI Key 由 Android Keystore 加密保护，排除在备份之外，不进入操作日志。\n\n卸载应用会删除曲库记录、翻译和应用缓存，请保留原始音乐文件。", { dialog = null })
     }
 }
 

@@ -50,8 +50,8 @@ Windows 对应命令为 `sdkmanager.bat`。让 `JAVA_HOME` 指向 JDK 21，并�
 以下仅为本机配置示例，不提交到 Git：
 
 ```properties
-# Windows 使用正斜杠；替换为实际用户名与路径
-sdk.dir=C:/Users/YOUR_NAME/AppData/Local/Android/Sdk
+# Windows 使用正斜杠，盘符冒号转义以通过 Lint；替换为实际用户名与路径
+sdk.dir=C\:/Users/YOUR_NAME/AppData/Local/Android/Sdk
 ```
 
 macOS 常见路径为 `/Users/YOUR_NAME/Library/Android/sdk`，Linux 常见路径为 `/home/YOUR_NAME/Android/Sdk`，以实际安装位置为准。不要复制云端的 `/workspace` 路径或代理参数。
