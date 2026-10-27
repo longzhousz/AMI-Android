@@ -22,8 +22,14 @@ public class AmiMpvTransport {
     if (String.IsNullOrEmpty(node) || String.IsNullOrEmpty(adapter)) return 2;
     var values = new StringBuilder(Quote(adapter));
     foreach (string arg in args) values.Append(" ").Append(Quote(arg));
-    var info = new ProcessStartInfo(node, values.ToString()) { UseShellExecute = false, CreateNoWindow = true };
-    using (var child = Process.Start(info)) { child.WaitForExit(); return child.ExitCode; }
+    var info = new ProcessStartInfo(node, values.ToString()) { UseShellExecute = false, CreateNoWindow = true,
+      RedirectStandardOutput = true, RedirectStandardError = true };
+    using (var child = new Process { StartInfo = info }) {
+      child.OutputDataReceived += (sender, line) => { if (line.Data != null) Console.Out.WriteLine(line.Data); };
+      child.ErrorDataReceived += (sender, line) => { if (line.Data != null) Console.Error.WriteLine(line.Data); };
+      child.Start(); child.BeginOutputReadLine(); child.BeginErrorReadLine();
+      child.WaitForExit(); return child.ExitCode;
+    }
   }
 }
 '@
