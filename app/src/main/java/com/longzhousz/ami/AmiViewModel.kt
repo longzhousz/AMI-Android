@@ -123,7 +123,11 @@ class AmiViewModel internal constructor(app: Application,
         try { block(); repository.scope.launch { repository.db.log(name, "user", "success") } }
         catch (_: Exception) { message.value = "操作未完成，播放服务可能正在连接，请稍后重试" }
     }
-    fun play(songs: List<Song>, index: Int = 0) = act("player.play") { player.play(songs, index) }
+    fun cancelCloudPreparation() { cloudPlayJob?.cancel() }
+    fun play(songs: List<Song>, index: Int = 0) {
+        cancelCloudPreparation()
+        act("player.play") { player.play(songs, index) }
+    }
     fun playCloud(tracks: List<CloudTrack>, index: Int) {
         if (tracks.getOrNull(index)?.available != true) { message.value = "这首歌暂不支持在本试用版内播放，可在网易云音乐中收听"; return }
         val chosen = tracks[index].id
@@ -132,7 +136,7 @@ class AmiViewModel internal constructor(app: Application,
         val queue = available.drop(start).take(1000)
         cloudPlayJob?.cancel()
         cloudPlayJob = viewModelScope.launch {
-            try { cloud.rememberQueue(queue); ensureActive(); play(queue.map { it.song() }, queue.indexOfFirst { it.id == chosen }) }
+            try { cloud.rememberQueue(queue); ensureActive(); act("player.play") { player.play(queue.map { it.song() }, queue.indexOfFirst { it.id == chosen }) } }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { message.value = "在线队列暂时无法保存，请稍后重试" }
         }
