@@ -48,6 +48,46 @@ class InterfaceTest {
         compose.onNodeWithText("浏览本地音乐").performScrollTo().performClick()
     }
 
+    @Test fun songSelectionStartsOnArtworkAndReopeningRemembersEitherPage() {
+        val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
+        val songs = (0..1).map { n -> Song("qa-player-page-$n", "content://com.longzhousz.ami.test.fixtures/document/album.wav",
+            folder = "qa-player-page", title = "播放页记忆 $n", duration = 6000, lyrics = "[00:00]当前歌曲 $n\n[00:03]继续听歌") }
+        fun open() { compose.onNodeWithTag("mini-player").performClick() }
+        fun close() { compose.onNodeWithContentDescription("收起播放页").performClick() }
+        try {
+            songs.forEach(model.repository.db::upsert); model.repository.load(); model.repository.reload()
+            compose.waitUntil(30000) { model.player.state.value.connected }
+            compose.runOnIdle { model.play(songs); model.player.pause() }
+            compose.waitUntil(10000) { model.player.state.value.id == songs[0].id }
+            open()
+            compose.onNodeWithContentDescription("切换到歌词").assertIsDisplayed()
+            compose.onNodeWithTag("lyrics-stage").assertDoesNotExist()
+            compose.onNodeWithContentDescription("切换到歌词").performClick()
+            compose.onNodeWithTag("lyrics-stage").assertIsDisplayed()
+            close(); open()
+            compose.onNodeWithContentDescription("切换到封面").assertIsDisplayed()
+            compose.onNodeWithTag("lyrics-stage").assertIsDisplayed()
+            compose.onNodeWithContentDescription("切换到封面").performClick()
+            close(); open()
+            compose.onNodeWithContentDescription("切换到歌词").assertIsDisplayed()
+            compose.onNodeWithContentDescription("切换到歌词").performClick()
+            close()
+            // Explicitly choosing even the same song is a new selection, unlike reopening its bar.
+            compose.runOnIdle { model.play(songs); model.player.pause() }
+            open()
+            compose.onNodeWithContentDescription("切换到歌词").assertIsDisplayed()
+            compose.onNodeWithContentDescription("切换到歌词").performClick()
+            close()
+            compose.runOnIdle { model.player.next() }
+            compose.waitUntil(10000) { model.player.state.value.id == songs[1].id }
+            open()
+            compose.onNodeWithContentDescription("切换到歌词").assertIsDisplayed()
+        } finally {
+            compose.runOnIdle { model.player.pause(); songs.forEach { model.player.remove(it.id) } }
+            songs.forEach { model.repository.db.remove(it.id) }; model.repository.reload()
+        }
+    }
+
     @Test fun frequentSongCacheLimitIsAdjustableAndPersisted() {
         val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
         val previous = model.repository.audioCacheLimit.value
@@ -189,6 +229,7 @@ class InterfaceTest {
             assertEquals(0f, compose.onNodeWithTag("player-sheet").fetchSemanticsNode().boundsInRoot.top, 1f)
             File(perf, "player-collapse-reverse-gfxinfo.txt").writeText(shell("dumpsys gfxinfo ${compose.activity.packageName} framestats"))
             compose.onNodeWithTag("full-player").assertIsDisplayed()
+            compose.onNodeWithContentDescription("切换到歌词").assertIsDisplayed().performClick()
             compose.waitUntil(10000) { compose.onAllNodesWithTag("lyrics-stage").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("lyrics-stage").assertIsDisplayed()
             val bitmap = compose.onNodeWithTag("full-player").captureToImage().asAndroidBitmap()

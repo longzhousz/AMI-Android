@@ -34,6 +34,7 @@ class RapidInteractionEvidenceTest {
             compose.waitUntil(30000) { model.player.state.value.connected && model.repository.library.value.songsById.containsKey(songs[0].id) }
             compose.runOnIdle { model.play(songs,0);model.player.pause() }
             compose.waitUntil(10000) { model.lyrics.value.document!=null && model.lyrics.value.songId==songs[0].id }
+            File(output,"rapid-memory-before.txt").writeBytes(shell("dumpsys meminfo ${compose.activity.packageName}"))
             shell("dumpsys gfxinfo ${compose.activity.packageName} reset")
             config.parentFile!!.mkdirs()
             config.writeText("""
@@ -69,14 +70,15 @@ class RapidInteractionEvidenceTest {
                 compose.onNodeWithTag("mini-player").performClick()
                 compose.onNodeWithTag("full-player").assertIsDisplayed()
                 if (n%2==0) {
-                    compose.onNodeWithContentDescription("展开专辑封面").performClick()
                     compose.onNodeWithContentDescription("切换到歌词").performClick()
+                    compose.onNodeWithContentDescription("展开专辑封面").performClick()
                 }
                 compose.onNodeWithContentDescription("收起播放页").performClick()
                 compose.onNodeWithTag("full-player").assertDoesNotExist()
             }
             assertEquals(songs[2].id,model.player.state.value.id)
             assertEquals(songs[2].lyrics,model.lyrics.value.document?.original)
+            File(output,"rapid-memory-after.txt").writeBytes(shell("dumpsys meminfo ${compose.activity.packageName}"))
             File(output,"rapid-gfxinfo.txt").writeBytes(shell("dumpsys gfxinfo ${compose.activity.packageName} framestats"))
             val windows=shell("dumpsys window windows").toString(Charsets.UTF_8)
             File(output,"rapid-windows.txt").writeText(windows)

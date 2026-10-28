@@ -47,7 +47,8 @@ internal data class PlayerActions(
     val canSeek: Boolean = true, val canPrevious: Boolean = true, val canNext: Boolean = true, val canToggle: Boolean = true,
 )
 
-@Composable fun PlayerScreen(song: Song, model: AmiViewModel, onClose: () -> Unit, onQueue: () -> Unit, onLyricFile: () -> Unit, dragHandle: Modifier = Modifier) {
+@Composable fun PlayerScreen(song: Song, model: AmiViewModel, onClose: () -> Unit, onQueue: () -> Unit, onLyricFile: () -> Unit,
+    dragHandle: Modifier = Modifier, lyricsPage: MutableState<Boolean> = rememberSaveable(song.id) { mutableStateOf(false) }) {
     val playback by model.player.state.collectAsStateWithLifecycle()
     val lyrics by model.lyrics.collectAsStateWithLifecycle()
     val qualities by model.cloud.audioQuality.collectAsStateWithLifecycle()
@@ -68,7 +69,7 @@ internal data class PlayerActions(
         translate = { model.translate(song) }, retranslate = { model.translate(song, force = true) },
         restoreLyrics = { model.clearLyrics(song) },
     ), lyricPosition = { clock.value }, dragHandle = dragHandle, preparedLines = document?.lines, lyricsReady = document != null,
-        audioQuality = if (song.isCloudSong()) qualities[song.id]?.label ?: "待确认" else song.format.ifBlank { "待确认" })
+        audioQuality = if (song.isCloudSong()) qualities[song.id]?.label ?: "待确认" else song.format.ifBlank { "待确认" }, lyricsPage = lyricsPage)
 }
 
 private val PlayerColors = darkColorScheme(
@@ -84,18 +85,28 @@ private val PlayerColors = darkColorScheme(
     preparedLines: List<LyricLine>? = null,
     lyricsReady: Boolean = true,
     audioQuality: String = "暂不可知",
+    lyricsPage: MutableState<Boolean> = rememberSaveable(song.id) { mutableStateOf(false) },
 ) {
     val latestSongId by rememberUpdatedState(song.id)
     val latestActions by rememberUpdatedState(actions)
     var showTranslation by rememberSaveable { mutableStateOf(true) }
     var lyricMenu by remember { mutableStateOf(false) }
-    val latestCover by rememberUpdatedState(song.cover)
-    val artworkMemory = remember { ArtworkMemory { latestCover } }
+    var pendingSeek by remember(song.id) { mutableStateOf<SeekPreview?>(null) }
+    var seekSerial by remember(song.id) { mutableIntStateOf(0) }
+    val currentPosition by rememberUpdatedState(lyricPosition)
+    LaunchedEffect(pendingSeek) {
+        pendingSeek?.let { request ->
+            withTimeoutOrNull(3000) { snapshotFlow { currentPosition() }.first { abs(it - request.position) < 500 } }
+            if (pendingSeek === request) pendingSeek = null
+        }
+    }
+    val displayedPosition: () -> Long = { pendingSeek?.position ?: lyricPosition() }
+    val seek: (Long) -> Unit = { target -> pendingSeek = SeekPreview(++seekSerial, target); actions.seek(target) }
     LaunchedEffect(song.id) { lyricMenu = false }
     MaterialTheme(colorScheme = PlayerColors) {
         Surface(Modifier.fillMaxSize().testTag("full-player"), color = Color.Transparent, contentColor = Color.White) {
             PlayerBackdrop(song.cover)
-            PlayerArtworkScene(song, artworkMemory, header = {
+            PlayerArtworkScene(song, lyricsPage, header = {
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("player-header").then(dragHandle)
                     .padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     ActionIcon(Icons.Rounded.KeyboardArrowDown, "收起播放页", actions.close)
@@ -117,22 +128,23 @@ private val PlayerColors = darkColorScheme(
             }, lyrics = {
                 AnimatedContent(PlayerStage(song, translation.takeIf { showTranslation }, preparedLines, lyricsReady),
                     Modifier.fillMaxSize(), contentKey = { it.song.id }, transitionSpec = {
-                        (fadeIn(tween(260, 40)) + scaleIn(tween(340), initialScale = .985f)) togetherWith fadeOut(tween(160))
+                        AmiMotion.track()
                     }, label = "player-lyrics") { stage ->
                     val stageLines = stage.lines ?: remember(stage.song.lyrics) { Lyrics.parse(stage.song.lyrics) }
                     val lastPosition = remember(stage.song.id) { longArrayOf(0L) }
                     val stageClock: () -> Long = {
-                        if (stage.song.id == latestSongId) lyricPosition().also { lastPosition[0] = it } else lastPosition[0]
+                        if (stage.song.id == latestSongId) displayedPosition().also { lastPosition[0] = it } else lastPosition[0]
                     }
                     if (!stage.ready) Box(Modifier.fillMaxSize())
                     else if (stageLines.isNotEmpty()) LyricsStage(stage.song.id, stageLines, stage.translation, stageClock,
-                        { if (stage.song.id == latestSongId && latestActions.canSeek) latestActions.seek(it) }, Modifier.fillMaxSize(), seekEnabled=actions.canSeek)
+                        { if (stage.song.id == latestSongId && latestActions.canSeek) seek(it) }, Modifier.fillMaxSize(), seekEnabled=actions.canSeek,
+                        seekSerial = if (stage.song.id == latestSongId) seekSerial else 0)
                     else EmptyLyrics()
                 }
             }, controls = { lyricsMode, progress, thumbnail, toggle ->
-                PlayerControls(song, playback, actions, lyricsMode, progress, thumbnail, translating, translation != null,
+                PlayerControls(song, playback, actions.copy(seek = seek), lyricsMode, progress, thumbnail, translating, translation != null,
                     showTranslation, onTranslation = { if (translation != null) showTranslation = !showTranslation else actions.translate() },
-                    onLyrics = toggle, position = lyricPosition, modifier = Modifier.fillMaxWidth())
+                    onLyrics = toggle, position = displayedPosition, modifier = Modifier.fillMaxWidth())
             })
         }
     }
@@ -163,7 +175,7 @@ private data class PlayerStage(val song: Song, val translation: List<String>?, v
                 Spacer(Modifier.width(12.dp))
                 AnimatedContent(song.title to song.artist, Modifier.weight(1f).graphicsLayer {
                     translationX = -60.dp.toPx() * (1f - artworkProgress.value)
-                }, transitionSpec = { AmiMotion.page(true) }, label = "player-track") { track ->
+                }, transitionSpec = { AmiMotion.track() }, label = "player-track") { track ->
                     Column {
                         Text(track.first, fontSize = 22.sp, lineHeight = 28.sp,
                             fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -216,21 +228,12 @@ private data class SeekPreview(val serial: Int, val position: Long)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun PlayerTimeline(songId: String, duration: Long, buffering: Boolean, position: () -> Long, onSeek: (Long) -> Unit, seekEnabled: Boolean = true) {
     var seeking by remember(songId) { mutableStateOf<Float?>(null) }
-    var pendingSeek by remember(songId) { mutableStateOf<SeekPreview?>(null) }
-    var seekSerial by remember(songId) { mutableIntStateOf(0) }
-    val currentPosition by rememberUpdatedState(position)
-    LaunchedEffect(pendingSeek) {
-        pendingSeek?.let { request ->
-            withTimeoutOrNull(3000) { snapshotFlow { currentPosition() }.first { abs(it - request.position) < 500 } }
-            if (pendingSeek === request) pendingSeek = null
-        }
-    }
-    val displayed = (seeking ?: pendingSeek?.position?.toFloat() ?: position().toFloat()).coerceIn(0f, duration.coerceAtLeast(1).toFloat())
+    val displayed = (seeking ?: position().toFloat()).coerceIn(0f, duration.coerceAtLeast(1).toFloat())
     val colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White.copy(alpha = .8f), inactiveTrackColor = Color.White.copy(alpha = .15f))
     Column {
         Slider(value = displayed,
-            onValueChange = { pendingSeek = null; seeking = it }, onValueChangeFinished = {
-                seeking?.toLong()?.let { pendingSeek = SeekPreview(++seekSerial, it); onSeek(it) }
+            onValueChange = { seeking = it }, onValueChangeFinished = {
+                seeking?.toLong()?.let(onSeek)
                 seeking = null
             },
             valueRange = 0f..duration.coerceAtLeast(1).toFloat(), enabled = duration > 0 && seekEnabled, colors = colors,

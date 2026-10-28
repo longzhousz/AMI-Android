@@ -43,7 +43,6 @@ internal class OnlineArtworkCache(
     }
     internal suspend fun load(raw: String): SourceResult = withContext(Dispatchers.IO) {
         val url = requireNotNull(ArtworkDownloader.url(raw))
-        cleanup()
         val hash = key(url)
         lock(hash).withLock {
             val file = File(dir, "$hash.img")
@@ -80,11 +79,13 @@ internal class OnlineArtworkCache(
             if (clock() - file.lastModified() > HOUR) file.setLastModified(clock())
         }
     }
-    /** Caller uses IO. Busy files are skipped; no timer or eager image prefetch. */
-    fun cleanup(now: Long = clock(), force: Boolean = false) {
+    /** Caller uses IO. Yield when the UI/playback returns; no timer or eager image prefetch. */
+    fun cleanup(now: Long = clock(), force: Boolean = false, active: () -> Boolean = { true }) {
+        if (!active()) return
         val previous = sweptAt.get()
         if (!force && now - previous < HOUR || !sweptAt.compareAndSet(previous, now)) return
         dir.listFiles()?.forEach { file ->
+            if (!active()) { sweptAt.compareAndSet(now, 0); return }
             val hash = file.name.substringBefore('.')
             if (hash.matches(Regex("[a-f0-9]{64}")) && lock(hash).tryLock()) {
                 try { if (file.extension != "img" || file.lastModified() < now - WEEK) file.delete() }

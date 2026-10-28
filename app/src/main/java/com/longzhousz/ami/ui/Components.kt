@@ -1,7 +1,6 @@
 package com.longzhousz.ami.ui
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -30,6 +29,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
@@ -48,27 +48,17 @@ import com.longzhousz.ami.core.durationLabel
 import java.io.File
 
 private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0xFFB58C82), Color(0xFF8D86A6), Color(0xFF789D9E))
-internal class ArtworkMemory(val expectedPath: () -> String?) {
-    var key by mutableStateOf<MemoryCache.Key?>(null)
-}
-
-@Composable internal fun Cover(path: String?, title: String, modifier: Modifier = Modifier, memory: ArtworkMemory? = null) {
+@Composable internal fun Cover(path: String?, title: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var previousImage by remember { mutableStateOf<MemoryCache.Key?>(null) }
+    var previousPainter by remember { mutableStateOf<Painter?>(null) }
+    var failed by remember(path) { mutableStateOf(false) }
     val latestPath by rememberUpdatedState(path)
-    Crossfade(path to title, modifier, animationSpec = tween(260), label = "artwork") { artwork ->
-        val color = CoverPalette[(artwork.second.hashCode().toLong().let { if (it < 0) -it else it } % CoverPalette.size).toInt()]
-        val placeholder = if (artwork.first == null) Modifier.background(Brush.linearGradient(listOf(color.copy(alpha = 0.65f), color))) else Modifier
-        Box(Modifier.fillMaxSize().then(placeholder), contentAlignment = Alignment.Center) {
-        if (artwork.first != null) {
-            val request = remember(artwork.first, context) { ImageRequest.Builder(context).data(if (artwork.first!!.startsWith("https://")) artwork.first else File(artwork.first!!))
-                .placeholderMemoryCacheKey(memory?.key ?: previousImage).build() }
-            AsyncImage(request, "《${artwork.second}》封面", Modifier.fillMaxSize(), contentScale = ContentScale.Fit,
-                onSuccess = { if (artwork.first == latestPath && (memory == null || memory.expectedPath() == artwork.first)) {
-                    if (memory == null) previousImage = it.result.memoryCacheKey else memory.key = it.result.memoryCacheKey
-                } })
-        }
-        else Canvas(Modifier.fillMaxSize().padding(18.dp).semantics { contentDescription = "《${artwork.second}》占位封面" }) {
+    val color = CoverPalette[(title.hashCode().toLong().let { if (it < 0) -it else it } % CoverPalette.size).toInt()]
+    val fallback = path == null || failed
+    val placeholder = if (fallback) Modifier.background(Brush.linearGradient(listOf(color.copy(alpha = 0.65f), color))) else Modifier
+    Box(modifier.then(placeholder), contentAlignment = Alignment.Center) {
+        if (fallback) Canvas(Modifier.fillMaxSize().padding(18.dp).semantics { contentDescription = "《${title}》占位封面" }) {
             val radius = size.minDimension * .43f
             drawCircle(Color.White.copy(alpha = .17f), radius)
             drawCircle(Color.White.copy(alpha = .13f), radius * .72f, style = androidx.compose.ui.graphics.drawscope.Stroke(radius * .02f))
@@ -77,6 +67,15 @@ internal class ArtworkMemory(val expectedPath: () -> String?) {
             drawCircle(color, radius * .055f)
             drawLine(Color.White.copy(alpha = .2f), Offset(size.width * .2f, size.height * .8f), Offset(size.width * .8f, size.height * .2f), radius * .025f)
         }
+        if (path != null) {
+            // One request and one retained painter. Fade only after decoding succeeds, so a slow
+            // request cannot fade the old image into an empty frame; memory hits remain immediate.
+            val request = remember(path, context) { ImageRequest.Builder(context).data(if (path.startsWith("https://")) path else File(path))
+                .placeholderMemoryCacheKey(previousImage).crossfade(AmiMotion.TRACK_MILLIS).build() }
+            AsyncImage(request, "《${title}》封面", Modifier.fillMaxSize(), contentScale = ContentScale.Fit,
+                placeholder = previousPainter,
+                onSuccess = { if (path == latestPath) { previousImage = it.result.memoryCacheKey; previousPainter = it.painter; failed = false } },
+                onError = { if (path == latestPath) failed = true })
         }
     }
 }

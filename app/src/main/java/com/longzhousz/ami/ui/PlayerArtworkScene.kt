@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,15 +34,15 @@ private val ArtworkSpring = spring<Float>(dampingRatio = .88f, stiffness = 230f)
 /** One image moves between two measured anchors. Frame updates only move/draw layers. */
 @Composable internal fun PlayerArtworkScene(
     song: Song,
-    memory: ArtworkMemory,
+    savedLyrics: MutableState<Boolean>,
     header: @Composable () -> Unit,
     lyrics: @Composable () -> Unit,
     controls: @Composable (lyricsMode: Boolean, progress: State<Float>, thumbnail: Modifier, toggle: () -> Unit) -> Unit,
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
-    val savedLyrics = rememberSaveable { mutableStateOf(song.hasLyrics) }
-    val lyricState = rememberSaveableStateHolder()
+    val latestSavedLyrics by rememberUpdatedState(savedLyrics)
+    val lyricState = key(song.id) { rememberSaveableStateHolder() }
     var rootBounds by remember { mutableStateOf(Rect.Zero) }
     var thumbnailBounds by remember { mutableStateOf(Rect.Zero) }
     var artworkBounds by remember { mutableStateOf(Rect.Zero) }
@@ -61,9 +60,13 @@ private val ArtworkSpring = spring<Float>(dampingRatio = .88f, stiffness = 230f)
             enabled = state.settledValue==ArtworkPage.Artwork || state.isAnimationRunning, startDragImmediately = false)
         val toggle: () -> Unit = {
             val next = if (state.targetValue == ArtworkPage.Lyrics) ArtworkPage.Artwork else ArtworkPage.Lyrics
+            savedLyrics.value = next == ArtworkPage.Lyrics
             scope.launch { state.animateTo(next, ArtworkSpring) }
         }
-        LaunchedEffect(state) { snapshotFlow { state.settledValue }.collect { savedLyrics.value = it == ArtworkPage.Lyrics } }
+        LaunchedEffect(song.id, savedLyrics) {
+            state.animateTo(if (savedLyrics.value) ArtworkPage.Lyrics else ArtworkPage.Artwork, ArtworkSpring)
+        }
+        LaunchedEffect(state) { snapshotFlow { state.targetValue }.collect { latestSavedLyrics.value = it == ArtworkPage.Lyrics } }
         val thumbnail = Modifier.size(48.dp).testTag("artwork-thumbnail-anchor")
             .onGloballyPositioned { thumbnailBounds = it.boundsInRoot() }
         val stage: @Composable (Modifier) -> Unit = { modifier ->
@@ -75,7 +78,7 @@ private val ArtworkSpring = spring<Float>(dampingRatio = .88f, stiffness = 230f)
                     val fraction = progress.value
                     alpha = fraction * fraction
                     translationY = (1f - fraction) * -20.dp.toPx()
-                }) { lyricState.SaveableStateProvider("current-lyrics") { lyrics() } }
+                }) { lyricState.SaveableStateProvider(song.id) { lyrics() } }
             }
         }
         // The gesture owner stays still while its image moves/scales under the finger.
@@ -111,7 +114,7 @@ private val ArtworkSpring = spring<Float>(dampingRatio = .88f, stiffness = 230f)
             }.clickable(onClickLabel = if (lyricsMode) "展开专辑封面" else "收起封面，查看歌词", onClick = toggle)
                 .semantics { contentDescription = if (lyricsMode) "展开专辑封面" else "收起封面，查看歌词" }
                 .testTag("player-cover")) {
-                Cover(song.cover, song.album, Modifier.fillMaxSize(), memory)
+                Cover(song.cover, song.album, Modifier.fillMaxSize())
             }
         }
         }

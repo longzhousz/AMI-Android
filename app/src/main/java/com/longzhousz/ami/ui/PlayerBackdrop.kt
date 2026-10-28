@@ -65,9 +65,9 @@ internal fun clearArtworkColorCache() { ArtworkColorCache.evictAll() }
             }.getOrDefault(FallbackColors)
         }
     }
-    val top = animateColorAsState(colors.top, tween(600), label = "artwork-top")
-    val bottom = animateColorAsState(colors.bottom, tween(600), label = "artwork-bottom")
-    val glow = animateColorAsState(colors.glow, tween(600), label = "artwork-glow")
+    val top = animateColorAsState(colors.top, tween(AmiMotion.TRACK_MILLIS), label = "artwork-top")
+    val bottom = animateColorAsState(colors.bottom, tween(AmiMotion.TRACK_MILLIS), label = "artwork-bottom")
+    val glow = animateColorAsState(colors.glow, tween(AmiMotion.TRACK_MILLIS), label = "artwork-glow")
     Canvas(Modifier.fillMaxSize()) {
         drawRect(Brush.verticalGradient(listOf(top.value, bottom.value)))
         drawRect(Brush.radialGradient(listOf(glow.value.copy(alpha = .6f), Color.Transparent), center = Offset(size.width * .9f, size.height * .18f), radius = size.maxDimension * .7f))

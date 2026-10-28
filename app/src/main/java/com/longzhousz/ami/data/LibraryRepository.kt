@@ -36,6 +36,21 @@ class LibraryRepository(val context: Context) {
     val loading = MutableStateFlow(true)
     val importState = MutableStateFlow(ImportState())
     val importLock = Mutex()
+    @Volatile private var uiActive = false
+    @Volatile private var playbackBusy = false
+    internal val canMaintainCaches get() = !uiActive && !playbackBusy && !importState.value.running
+    fun setUiActive(active: Boolean) {
+        uiActive = active
+        if (!active) scheduleCacheMaintenance()
+    }
+    internal fun setPlaybackBusy(busy: Boolean) {
+        val wasBusy = playbackBusy
+        playbackBusy = busy
+        if (wasBusy && !busy) scheduleCacheMaintenance()
+    }
+    private fun scheduleCacheMaintenance() {
+        scope.launch { if (canMaintainCaches) cloud.maintainAudioCache() }
+    }
     val audioDir = File(context.filesDir, "AudioCache").apply { mkdirs() }
     val coverDir = File(context.filesDir, "Covers").apply { mkdirs() }
     private val libraryRequested = java.util.concurrent.atomic.AtomicBoolean(false)

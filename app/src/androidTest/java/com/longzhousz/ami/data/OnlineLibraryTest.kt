@@ -200,6 +200,35 @@ class OnlineLibraryTest {
         assertEquals("ami-cloud://song/${track.id}", cloud.catalog.value[logical.id]!!.uri)
     }
 
+    @Test fun yieldingCacheWorkKeepsCandidatesReadyForTheNextIdleWindow() = runBlocking(Dispatchers.IO) {
+        val account = cache.scope()!!
+        val now = System.currentTimeMillis()
+        repeat(3) { cache.record(account, "201", 6000, now + it) }
+        requests.clear()
+        cloud.fillAudioCache(account) { false }
+        assertTrue("Busy UI/playback must not request background audio", requests.isEmpty())
+        assertEquals(listOf("201"), cache.candidates(account, now + 10).map { it.id })
+        var idle = true
+        cloud.fillAudioCache(account) { idle.also { idle = false } }
+        assertTrue(requests.isEmpty())
+        assertEquals("Deferral must not cause a one-day failure backoff", "201", cache.candidates(account, now + 10).single().id)
+        cloud.fillAudioCache(account)
+        assertNotNull(cache.get(account, "201", System.currentTimeMillis()))
+        assertEquals(1, requests.count { it.first == "client-audio" })
+    }
+
+    @Test fun onlineNeighborLyricsAreReusedWithoutFetchingArtworkOrGeneratingTranslation() = runBlocking(Dispatchers.IO) {
+        val tracks = cloud.tracks(cloud.library().liked!!).tracks
+        requests.clear()
+        val neighbor = tracks[1].song()
+        assertTrue(cloud.lyrics(neighbor).original.contains("202"))
+        assertEquals(cloud.lyrics(neighbor), cloud.lyrics(neighbor))
+        assertEquals(listOf("song/lyric"), requests.map { it.first })
+        cloud.trim()
+        cloud.lyrics(neighbor)
+        assertEquals(2, requests.size)
+    }
+
     private inner class Fixture(address: String) : HttpURLConnection(URL(address)) {
         private val output = ByteArrayOutputStream()
         private val response by lazy {
@@ -228,7 +257,8 @@ class OnlineLibraryTest {
                 }))
                 "cloudsearch/pc" -> JSONObject().put("result", JSONObject().put("songs", JSONArray().put(song(301))).put("songCount", 1))
                 "client-audio" -> JSONObject().put("data", JSONArray().put(JSONObject().put("id", 201).put("code", 200).put("time", 180000)
-                    .put("url", "https://m7.music.126.net/qa-audio.flac").put("level", "jyeffect").put("type", "flac").put("br", 1800000)))
+                    .put("url", "https://m7.music.126.net/qa-audio.flac").put("level", "jyeffect").put("type", "flac").put("br", 1800000).put("size", tone.size)))
+                "song/lyric" -> JSONObject().put("lrc", JSONObject().put("lyric", "[00:00]歌词 ${body.getString("id")}"))
                 else -> error("Unexpected fixture endpoint: $path")
             }
             result.put("code", 200).toString().toByteArray()

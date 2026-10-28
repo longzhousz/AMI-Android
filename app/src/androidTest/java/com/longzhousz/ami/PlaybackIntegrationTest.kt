@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackIntegrationTest {
-    @Test fun highResolutionFlacDecodesAndSeeksThroughTheProductionPlayer() {
+    @Test fun highResolutionFlacDecodesSeeksAndAdvancesThroughTheProductionPlayer() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val activity = ActivityScenario.launch(MainActivity::class.java)
@@ -43,7 +43,8 @@ class PlaybackIntegrationTest {
         try {
             instrumentation.runOnMainSync {
                 controller.repeatMode = Player.REPEAT_MODE_OFF
-                controller.setMediaItem(Song("qa-hires", Uri.fromFile(source).toString(), folder = "qa", title = "96kHz / 24-bit QA", duration = 6000).mediaItem())
+                val song = Song("qa-hires", Uri.fromFile(source).toString(), folder = "qa", title = "96kHz / 24-bit QA", duration = 6000)
+                controller.setMediaItems(listOf(song.mediaItem(), song.copy(id = "qa-hires-next").mediaItem()))
                 controller.prepare(); controller.play()
             }
             assertTrue("The production float-enabled player must decode 24-bit FLAC", await { controller.isPlaying && controller.currentPosition > 100 })
@@ -54,6 +55,10 @@ class PlaybackIntegrationTest {
                 controller.pause(); controller.seekTo(2000); controller.play()
             }
             assertTrue("High-resolution seeking should resume", await { controller.isPlaying && controller.currentPosition in 2100..5000 })
+            instrumentation.runOnMainSync { controller.seekTo(5500); controller.play() }
+            assertTrue("The prepared neighbor must play through the same native session", await {
+                controller.currentMediaItem?.mediaId == "qa-hires-next" && controller.isPlaying && controller.playerError == null
+            })
         } finally {
             instrumentation.runOnMainSync { controller.stop(); controller.clearMediaItems(); MediaController.releaseFuture(future!!) }
             source.delete(); activity.close()

@@ -100,6 +100,8 @@ class PhoneFollowTest {
         val vm=PhoneMusicViewModel(app,session) { song -> SongLyrics("[00:00]第一句${song.title.last()}\n[00:10]第二句${song.title.last()}\n[00:25]让晚风继续唱",revision=song.lyricsVersion) }.also { model=it }
         compose.runOnIdle { vm.start() }
         compose.setContent { PhonePlayerBody(vm,true,{},{},{},{}) }
+        compose.waitUntil(15000) { compose.onAllNodesWithContentDescription("切换到歌词").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("切换到歌词").performClick()
         compose.waitUntil(15000) { compose.onAllNodesWithText("第二句甲").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("随播歌曲甲").assertIsDisplayed()
         compose.onNodeWithContentDescription("播放队列").assertDoesNotExist()

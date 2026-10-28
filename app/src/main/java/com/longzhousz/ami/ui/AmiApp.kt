@@ -76,6 +76,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         val onlineSongs by model.cloud.catalog.collectAsStateWithLifecycle()
         val loading by model.repository.loading.collectAsStateWithLifecycle()
         val playback by model.player.state.collectAsStateWithLifecycle()
+        val selection by model.playerSelection.collectAsStateWithLifecycle()
         val importing by model.repository.importState.collectAsStateWithLifecycle()
         val message by model.message.collectAsStateWithLifecycle()
         val songsById = library.songsById
@@ -87,6 +88,8 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         var miniBounds by remember { mutableStateOf<Rect?>(null) }
         val pageState = rememberSaveableStateHolder()
         val current = songsById[playback.id] ?: onlineSongs[playback.id]
+        // Survives sheet disposal, but every new track starts on its original artwork.
+        val lyricsPage = rememberSaveable(playback.id, selection) { mutableStateOf(false) }
         val floatingInset = if (current != null) 156.dp else 88.dp
         var lastNavPage by remember { mutableIntStateOf(-1) }
         var lastNavTap by remember { mutableLongStateOf(0L) }
@@ -198,7 +201,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                     onOpen = {}, onToggle = {}, onNext = {})
             }) { close, dragHandle ->
                 Box(Modifier.fillMaxSize()) {
-                    PlayerScreen(current, model, close, { queue = true }, { onLyricFile(current) }, dragHandle)
+                    PlayerScreen(current, model, close, { queue = true }, { onLyricFile(current) }, dragHandle, lyricsPage)
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 64.dp))
                 }
             }

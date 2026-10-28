@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -56,6 +57,10 @@ import kotlinx.coroutines.flow.collect
 internal object AmiMotion {
     val sheet = spring<Float>(dampingRatio = .92f, stiffness = 380f)
     val lyric = spring<Float>(dampingRatio = 1f, stiffness = 170f)
+    const val TRACK_MILLIS = 360
+
+    fun track(): ContentTransform = (fadeIn(tween(280, 40)) +
+        slideInVertically(tween(TRACK_MILLIS, easing = FastOutSlowInEasing)) { it / 18 }) togetherWith fadeOut(tween(180))
 
     fun page(forward: Boolean): ContentTransform {
         val direction = if (forward) 1 else -1

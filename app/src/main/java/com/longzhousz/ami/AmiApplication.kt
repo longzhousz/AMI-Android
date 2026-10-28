@@ -18,6 +18,7 @@ class AmiApplication : Application(), ImageLoaderFactory {
     val repository by repositoryHolder
     private var activeImageLoader: ImageLoader? = null
     internal val artwork by lazy { OnlineArtworkCache(this) }
+    internal fun maintainArtworkCache() { artwork.cleanup(active = { repository.canMaintainCaches }) }
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .memoryCache { MemoryCache.Builder(this).maxSizePercent(.12).build() }
         .diskCache(null)
@@ -29,7 +30,6 @@ class AmiApplication : Application(), ImageLoaderFactory {
             }
         }).build().also {
             activeImageLoader=it
-            repository.scope.launch { artwork.cleanup() }
         }
 
     override fun onTrimMemory(level: Int) {

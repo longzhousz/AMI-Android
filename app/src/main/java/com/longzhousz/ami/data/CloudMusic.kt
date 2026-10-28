@@ -146,6 +146,7 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
         val body = request("lyrics", JSONObject().put("id", if (direct) song.neteaseId ?: id(song.id.removePrefix("netease:")) else id(song.id.removePrefix("netease:"))))
         val document = SongLyrics(body.optString("original"), body.optString("translated"), song.lyricsVersion)
         document.lines // Parse on the loader thread; lyric animation never parses a new document.
+        ensureActive()
         synchronized(lyricCache) {
             if (document.estimatedBytes <= 2 * 1024 * 1024) {
                 lyricCache.remove(song.id)?.let { lyricBytes -= it.estimatedBytes }
@@ -158,12 +159,20 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
     fun trim() = synchronized(lyricCache) { lyricCache.clear(); lyricBytes = 0 }
 
     suspend fun maintainAudioCache() = withContext(Dispatchers.IO) {
-        if (!direct || !configured.value) return@withContext
-        runCatching {
-            val key = cacheAccount(); val now = System.currentTimeMillis()
-            audioCache.cleanup(now)
-            if (audioCache.candidates(key, now).isNotEmpty()) OnlineCacheWorker.enqueue(context, key)
-        }
+        val app = context.applicationContext as com.longzhousz.ami.AmiApplication
+        val idle = { app.repository.canMaintainCaches }
+        if (!idle()) return@withContext
+        android.os.Trace.beginSection("ami:cache-maintenance")
+        try {
+            runCatching {
+                app.maintainArtworkCache()
+                if (direct && configured.value && idle()) {
+                    val key = cacheAccount(); val now = System.currentTimeMillis()
+                    audioCache.cleanup(now, active = idle)
+                    if (idle() && audioCache.candidates(key, now).isNotEmpty()) OnlineCacheWorker.enqueue(context, key)
+                }
+            }
+        } finally { android.os.Trace.endSection() }
     }
     suspend fun recordListen(songId: String) = withContext(Dispatchers.IO) {
         if (!direct || !configured.value || !songId.startsWith("netease:")) return@withContext
@@ -171,7 +180,6 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
             val key = cacheAccount(); val id = neteaseId(songId.removePrefix("netease:"))
             val now = System.currentTimeMillis()
             if (audioCache.record(key, id, catalog.value[songId]?.duration ?: 0, now)) {
-                audioCache.cleanup(now)
                 if (audioCache.candidates(key, now).isNotEmpty()) OnlineCacheWorker.enqueue(context, key)
             }
         }
@@ -182,7 +190,7 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
         val changed = audioCache.playingId != next
         audioCache.playingId = next
         if (changed && audioCache.trimPending) (context.applicationContext as com.longzhousz.ami.AmiApplication).repository.scope.launch {
-            audioCache.cleanup(System.currentTimeMillis())
+            maintainAudioCache()
         }
     }
     suspend fun discardCachedAudio(songId: String) = withContext(Dispatchers.IO) {
@@ -190,19 +198,25 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
         if (direct && configured.value) runCatching { audioCache.invalidate(cacheAccount(), songId.removePrefix("netease:")) }
         synchronized(this@CloudMusic) { audioQuality.value = audioQuality.value - songId }
     }
-    internal suspend fun fillAudioCache(expectedAccount: String) = withContext(Dispatchers.IO) {
+    internal suspend fun fillAudioCache(expectedAccount: String, idle: () -> Boolean = { true }) = withContext(Dispatchers.IO) {
         if (!direct || !configured.value || runCatching { account.accountKey() }.getOrNull() != expectedAccount || audioCache.scope() != expectedAccount) return@withContext
+        if (!idle()) return@withContext
+        audioCache.cleanup(System.currentTimeMillis(), active = idle)
         val coroutine = currentCoroutineContext()
         for (candidate in audioCache.candidates(expectedAccount, System.currentTimeMillis())) {
             ensureActive()
-            if (audioCache.scope() != expectedAccount) break
+            if (audioCache.scope() != expectedAccount || !idle()) break
             try {
                 val audio = account.stream(candidate.id, candidate.duration)
                 audioCache.download(expectedAccount, candidate, audio, System.currentTimeMillis()) {
-                    coroutine.isActive && audioCache.scope() == expectedAccount
+                    coroutine.isActive && idle() && audioCache.scope() == expectedAccount
                 }
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { audioCache.failed(expectedAccount, candidate.id, System.currentTimeMillis()) }
+            } catch (cancelled: CancellationException) { ensureActive(); break }
+            catch (_: Exception) {
+                ensureActive()
+                if (!idle()) break // Yielding to the UI or playback is not a network failure.
+                audioCache.failed(expectedAccount, candidate.id, System.currentTimeMillis())
+            }
         }
     }
 

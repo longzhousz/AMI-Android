@@ -159,6 +159,8 @@ class PlaybackService : MediaLibraryService() {
                 }
             }
             override fun onEvents(player: Player, events: Player.Events) {
+                updatePreloading()
+                repository.setPlaybackBusy(player.playbackState == Player.STATE_BUFFERING || player.isLoading)
                 updateListening()
                 if (restored && events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION))
                     session?.notifyChildrenChanged(recentRoot, if (player.currentMediaItem == null) 0 else 1, null)
@@ -190,6 +192,14 @@ class PlaybackService : MediaLibraryService() {
             session?.notifyChildrenChanged(recentRoot, if (player.currentMediaItem == null) 0 else 1, null)
         }
     }
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun updatePreloading() {
+        // Media3 preloads one neighboring item only after current loading has priority. Keep
+        // just a small in-memory head start; paused players release the extra preload pool.
+        val target = if (player.isPlaying && player.mediaItemCount > 1 && player.repeatMode != Player.REPEAT_MODE_ONE) 2_000_000L else C.TIME_UNSET
+        if (player.preloadConfiguration.targetPreloadDurationUs != target)
+            player.preloadConfiguration = ExoPlayer.PreloadConfiguration(target)
+    }
     private fun updatePositionJob() {
         if (!restored || !player.isPlaying) { positionJob?.cancel(); positionJob = null; return }
         if (positionJob?.isActive == true) return
@@ -217,6 +227,7 @@ class PlaybackService : MediaLibraryService() {
         listening.update(null, 0, false, android.os.SystemClock.elapsedRealtime())?.let { id -> repository.scope.launch { repository.cloud.recordListen(id) } }
         repository.cloud.protectAudio(null)
         repository.cloud.recoveringAudio = null
+        repository.setPlaybackBusy(false)
         checkpoint()
         restored = false
         restoration.cancel()

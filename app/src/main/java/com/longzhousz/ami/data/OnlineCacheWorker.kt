@@ -16,17 +16,20 @@ import kotlinx.coroutines.withContext
 /** One short batch when useful; no periodic wakeups, foreground service or cache UI. */
 class OnlineCacheWorker(context: Context, parameters: WorkerParameters) : CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        val account = inputData.getString("account") ?: return@withContext Result.success()
-        (applicationContext as AmiApplication).repository.cloud.fillAudioCache(account)
+        val app = applicationContext as AmiApplication
+        val repository = app.repository
+        if (!repository.canMaintainCaches) return@withContext Result.success()
+        inputData.getString("account")?.let { repository.cloud.fillAudioCache(it) { repository.canMaintainCaches } }
         Result.success()
     }
     companion object {
         private const val NAME = "online-audio-cache"
         internal fun enqueue(context: Context, account: String) {
+            if (!(context.applicationContext as AmiApplication).repository.canMaintainCaches) return
             WorkManager.getInstance(context).enqueueUniqueWork(NAME, ExistingWorkPolicy.KEEP,
                 OneTimeWorkRequestBuilder<OnlineCacheWorker>()
                     .setInputData(workDataOf("account" to account))
-                    .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresStorageNotLow(true).build())
+                    .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresStorageNotLow(true).setRequiresBatteryNotLow(true).build())
                     .build())
         }
         internal fun cancel(context: Context) { WorkManager.getInstance(context).cancelUniqueWork(NAME) }

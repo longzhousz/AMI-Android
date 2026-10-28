@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import android.media.MediaMetadataRetriever
 import com.longzhousz.ami.core.AudioQuality
 import com.longzhousz.ami.core.cloudMediaUrl
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
@@ -92,7 +93,8 @@ internal class OnlineAudioCache(
     @Synchronized fun failed(account: String, id: String, now: Long) {
         if (scope() == account) writableDatabase.execSQL("UPDATE audio SET retry=? WHERE id=?", arrayOf<Any>(now + DAY, id))
     }
-    @Synchronized fun cleanup(now: Long, incoming: Long = 0, diskIncoming: Long = incoming): Boolean {
+    @Synchronized fun cleanup(now: Long, incoming: Long = 0, diskIncoming: Long = incoming, active: () -> Boolean = { true }): Boolean {
+        if (!active()) return false
         val limit = budget()
         data class Stored(val id: String, val file: File?, val bytes: Long, val heard: Long)
         val files = readableDatabase.rawQuery("SELECT id,file,bytes,t1 FROM audio WHERE file IS NOT NULL ORDER BY t1", null).use { rows ->
@@ -101,9 +103,10 @@ internal class OnlineAudioCache(
         val referenced = files.mapNotNull { it.file?.name }.toSet()
         // Process death can leave a partial or a renamed-but-uncommitted file. Reclaim it on the
         // next visit, while preserving the one download currently owned by this process.
-        dir.listFiles()?.filter { it.name !in referenced && it != downloading }?.forEach { it.delete() }
+        dir.listFiles()?.forEach { if (!active()) return false; if (it.name !in referenced && it != downloading) it.delete() }
         var total = files.sumOf { it.bytes }
         files.forEach {
+            if (!active()) return false
             if (it.id != playingId && (it.heard < now - WEEK || it.file?.isFile != true || total + incoming > limit || dir.usableSpace < reserve + diskIncoming)) {
                 if (it.file == null || !it.file.exists() || it.file.delete()) {
                     total -= it.bytes
@@ -118,9 +121,13 @@ internal class OnlineAudioCache(
     /** Download outside the DB lock; publish one verified file atomically, or leave no playable entry. */
     fun download(account: String, candidate: Candidate, audio: NeteaseAudio, now: Long, active: () -> Boolean) {
         require(audio.bytes in 1..minOf(budget(), MAX_FILE)) { "Unbounded audio" }
-        require(scope() == account && active())
+        fun checkActive() { if (!active()) throw CancellationException("Cache work deferred") }
+        require(scope() == account)
+        checkActive()
         dir.mkdirs()
-        check(cleanup(now, audio.bytes)) { "Cache budget" }
+        val room = cleanup(now, audio.bytes, active = active)
+        checkActive()
+        check(room) { "Cache budget" }
         val part = File(dir, UUID.randomUUID().toString() + ".part")
         synchronized(this) { downloading = part }
         var connection: HttpURLConnection? = null
@@ -136,7 +143,8 @@ internal class OnlineAudioCache(
             http.inputStream.use { input -> part.outputStream().use { output ->
                 val buffer = ByteArray(64 * 1024)
                 while (true) {
-                    check(active() && android.os.SystemClock.elapsedRealtime() - started < 180_000)
+                    checkActive()
+                    check(android.os.SystemClock.elapsedRealtime() - started < 180_000)
                     val count = input.read(buffer); if (count < 0) break
                     size += count; require(size <= audio.bytes)
                     output.write(buffer, 0, count); digest.update(buffer, 0, count)
@@ -152,7 +160,9 @@ internal class OnlineAudioCache(
                 require(duration > 0 && (candidate.duration <= 0 || kotlin.math.abs(duration - candidate.duration) <= 3000))
             } finally { media.release() }
             synchronized(this) {
-                check(scope() == account && active() && cleanup(now, size, diskIncoming = 0))
+                checkActive()
+                check(scope() == account && cleanup(now, size, diskIncoming = 0, active = active))
+                checkActive()
                 val name = UUID.randomUUID().toString() + ".audio"
                 check(part.renameTo(File(dir, name)))
                 val values = ContentValues().apply {

@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -49,6 +50,7 @@ import kotlin.math.abs
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
     seekEnabled: Boolean = true,
+    seekSerial: Int = 0,
 ) {
     val list = rememberLazyListState()
     val clock by rememberUpdatedState(position)
@@ -57,6 +59,8 @@ import kotlin.math.abs
     var following by rememberSaveable(songId, lines) { mutableStateOf(true) }
     var initiallyPositioned by remember(songId, lines) { mutableStateOf(false) }
     val dragging by list.interactionSource.collectIsDraggedAsState()
+    val relocation = remember(songId) { Animatable(1f) }
+    LaunchedEffect(seekSerial) { if (seekSerial > 0) following = true }
     // Programmatic scrolling must never look like a user gesture or resume following by itself.
     LaunchedEffect(dragging) { if (dragging && synced) following = false }
 
@@ -66,10 +70,11 @@ import kotlin.math.abs
         val viewport = with(density) { maxHeight.toPx() }
         val fontSize = when { maxWidth < 360.dp -> 28.sp; maxWidth > 600.dp -> 36.sp; else -> 32.sp }
         LaunchedEffect(songId, lines, active, following, viewport, translation, dragging) {
-            if (!following || dragging || !synced) return@LaunchedEffect
+            if (!following || dragging || !synced) { relocation.snapTo(1f); return@LaunchedEffect }
             val target = active.coerceAtLeast(0)
             val visible = list.layoutInfo.visibleItemsInfo.any { it.index == target }
             val jump = !initiallyPositioned || !visible
+            if (initiallyPositioned && !visible) relocation.animateTo(.25f, tween(80))
             if (jump) {
                 // A seek across verses should not fly through every intervening paragraph.
                 list.scrollToItem(target)
@@ -87,11 +92,12 @@ import kotlin.math.abs
                     else list.animateScrollBy(distance, AmiMotion.lyric)
                 }
             }
+            relocation.animateTo(1f, tween(180))
         }
         LazyColumn(
             state = list,
             modifier = Modifier.fillMaxSize().testTag("lyrics-list")
-                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .graphicsLayer { alpha = relocation.value; compositingStrategy = CompositingStrategy.Offscreen }
                 .drawWithContent {
                     drawContent()
                     drawRect(Brush.verticalGradient(0f to Color.Transparent, .10f to Color.Black, .86f to Color.Black, 1f to Color.Transparent), blendMode = BlendMode.DstIn)

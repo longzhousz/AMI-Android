@@ -22,6 +22,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
@@ -50,6 +51,7 @@ class AmiViewModel internal constructor(app: Application,
     fun requestOnlineRefresh(page: Int) { if (page in 0..1) onlineRefresh.value = page }
     fun consumeOnlineRefresh(page: Int) = onlineRefresh.compareAndSet(page, null)
     val player = PlayerConnection(app)
+    val playerSelection = MutableStateFlow(0)
     val theme = MutableStateFlow(repository.prefs.getString("theme", "system")!!)
     val message = MutableStateFlow<String?>(null)
     val translations = MutableStateFlow<List<String>?>(null)
@@ -68,7 +70,7 @@ class AmiViewModel internal constructor(app: Application,
     private data class LyricsKey(val id: String?, val revision: String, val model: String, val style: String)
     private var stateKey: LyricsKey? = null
     private var translationKey: LyricsKey? = null
-    private data class LyricsRequest(val song: Song?, val next: Song?, val key: LyricsKey, val active: Boolean)
+    private data class LyricsRequest(val song: Song?, val next: Song?, val key: LyricsKey, val active: Boolean, val prefetch: Boolean)
     private fun currentKey(): LyricsKey {
         val song = findSong(player.state.value.id)
         return LyricsKey(song?.id,song?.lyricsVersion.orEmpty(),translationModels.state.value.selection,translationStyle.value)
@@ -78,6 +80,7 @@ class AmiViewModel internal constructor(app: Application,
     }
     fun setUiActive(active: Boolean) {
         uiActive.value=active
+        repository.setUiActive(active)
         if (!active) {
             repository.lyrics.trim()
             repository.trimCloud()
@@ -93,11 +96,11 @@ class AmiViewModel internal constructor(app: Application,
             }
         }
         viewModelScope.launch {
-            combine(player.state.map { it.id to it.nextId }.distinctUntilChanged(), songSources,
+            combine(player.state.map { Triple(it.id, it.nextId, it.advancing) }.distinctUntilChanged(), songSources,
                 translationModels.state.map { it.selection }.distinctUntilChanged(), translationStyle, uiActive) { playback, library, selection, style, active ->
                 val song=library.first.songsById[playback.first] ?: library.second[playback.first]
                 val next=library.first.songsById[playback.second] ?: library.second[playback.second]
-                LyricsRequest(song,next,LyricsKey(song?.id,song?.lyricsVersion.orEmpty(),selection,style),active)
+                LyricsRequest(song,next,LyricsKey(song?.id,song?.lyricsVersion.orEmpty(),selection,style),active,playback.third)
             }.distinctUntilChanged().collectLatest { request ->
                 val key=request.key
                 if (stateKey!=key) {
@@ -125,14 +128,23 @@ class AmiViewModel internal constructor(app: Application,
                     return@collectLatest
                 }
                 // Only one neighbor, within a byte budget, and cancelled as soon as the UI stops or the track changes.
-                try { if (uiActive.value) request.next?.takeIf { it.id!=song.id && !it.isCloudSong() }?.let { repository.lyrics.load(it) } }
+                try {
+                    if (request.prefetch) {
+                        delay(700) // Let the current song and opening animation settle first.
+                        request.next?.takeIf { it.id != song.id }?.let { loadLyrics(it) }
+                    }
+                }
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) { /* A failed prefetch must not interrupt the current song. */ }
             }
         }
     }
     fun act(name: String, block: () -> Unit) {
-        try { block(); repository.scope.launch { repository.db.log(name, "user", "success") } }
+        try {
+            block()
+            if (name == "player.play" || name == "player.jump") playerSelection.value++
+            repository.scope.launch { repository.db.log(name, "user", "success") }
+        }
         catch (_: Exception) { message.value = "操作未完成，播放服务可能正在连接，请稍后重试" }
     }
     fun cancelCloudPreparation() { cloudPlayJob?.cancel() }

@@ -50,7 +50,7 @@ class LyricsPresentationTest {
         compose.setContent {
             AmiTheme("light") {
                 PlayerContent(song, PlaybackState(position = position.longValue, duration = 90000), translations, false,
-                    PlayerActions(seek = { sought = it; position.longValue = it }))
+                    PlayerActions(seek = { sought = it; position.longValue = it }), lyricsPage = remember { mutableStateOf(true) })
             }
         }
         compose.onNodeWithTag("lyric-2").assertIsSelected().assertIsDisplayed()
@@ -86,7 +86,7 @@ class LyricsPresentationTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, 1.5f)) {
                 AmiTheme("dark") {
                     Box(Modifier.width(320.dp).fillMaxHeight()) {
-                        PlayerContent(largeSong, PlaybackState(position = 1000, duration = 90000), listOf("Let all the ordinary moments become a gentle song.", ""), false, PlayerActions())
+                        PlayerContent(largeSong, PlaybackState(position = 1000, duration = 90000), listOf("Let all the ordinary moments become a gentle song.", ""), false, PlayerActions(), lyricsPage = remember { mutableStateOf(true) })
                     }
                 }
             }
@@ -102,10 +102,34 @@ class LyricsPresentationTest {
         screenshot("lyrics-large-font")
     }
 
+    @Test fun seekingWhileBrowsingFollowsTheNewLineBeforeThePlayerAcknowledgesIt() {
+        val position = mutableLongStateOf(13000)
+        var requested = -1L
+        compose.setContent { AmiTheme("dark") {
+            PlayerContent(song, PlaybackState(duration = 90000), null, false, PlayerActions(seek = { requested = it }),
+                lyricPosition = { position.longValue }, lyricsPage = remember { mutableStateOf(true) })
+        } }
+        compose.onNodeWithTag("lyrics-list").performTouchInput { swipeUp() }
+        compose.onNodeWithText("回到当前句").assertIsDisplayed()
+        compose.mainClock.autoAdvance = false
+        compose.onNodeWithTag("playback-seek").performSemanticsAction(SemanticsActions.SetProgress) { it(42000f) }
+        compose.mainClock.advanceTimeBy(600)
+        assertEquals(42000L, requested)
+        compose.onNodeWithTag("lyric-7").assertIsSelected().assertIsDisplayed()
+        compose.onNodeWithText("回到当前句").assertDoesNotExist()
+        // A late, unrelated position must not pull the viewport back to the old verse.
+        compose.runOnIdle { position.longValue = 18000 }
+        compose.mainClock.advanceTimeBy(300)
+        compose.onNodeWithTag("lyric-7").assertIsSelected()
+        compose.runOnIdle { position.longValue = 42000 }
+        compose.mainClock.autoAdvance = true
+        compose.onNodeWithTag("lyric-7").assertIsSelected().assertIsDisplayed()
+    }
+
     @Test fun untimedLyricsStayReadableWithoutFalseHighlightOrSeek() {
         val plain = song.copy(lyrics = "这是一段没有时间轴的歌词\n可以从容地阅读\n也可以随意向下翻阅")
         compose.setContent {
-            AmiTheme("light") { PlayerContent(plain, PlaybackState(), null, false, PlayerActions()) }
+            AmiTheme("light") { PlayerContent(plain, PlaybackState(), null, false, PlayerActions(), lyricsPage = remember { mutableStateOf(true) }) }
         }
         compose.onNodeWithTag("lyric-0").assertIsNotSelected().assertIsNotEnabled()
         compose.onNodeWithText("暂无时间轴 · 可自由滚动阅读").assertIsDisplayed()
@@ -114,7 +138,7 @@ class LyricsPresentationTest {
 
     @Test fun cloudPlayerUsesIconsAndShowsTheCurrentSourceQualityInItsMenu() {
         compose.setContent {
-            AmiTheme("dark") { PlayerContent(song.copy(id = "netease:123", uri = "ami-cloud://song/123"), PlaybackState(), null, false, PlayerActions(), audioQuality = "无损") }
+            AmiTheme("dark") { PlayerContent(song.copy(id = "netease:123", uri = "ami-cloud://song/123"), PlaybackState(), null, false, PlayerActions(), audioQuality = "无损", lyricsPage = remember { mutableStateOf(true) }) }
         }
         compose.onNodeWithText("封面").assertDoesNotExist()
         compose.onNodeWithText("翻译").assertDoesNotExist()

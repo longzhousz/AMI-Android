@@ -83,4 +83,17 @@ class OnlineArtworkCacheTest {
             assertTrue(dir.listFiles()!!.isEmpty())
         } finally { loader.shutdown() }
     }
+    @Test fun visibleImageRequestsNeverSweepTheDirectoryAndMaintenanceCanYield() = runBlocking(Dispatchers.IO) {
+        val cache = OnlineArtworkCache(context, dir, download = { png }, clock = { now }, reserve = 0)
+        cache.load(url).source.close()
+        val stale = dir.listFiles()!!.single()
+        now += OnlineArtworkCache.WEEK + 1000
+        cache.load("https://p1.music.126.net/qa-new.png").source.close()
+        assertTrue("A visible image load must not sweep other covers", stale.exists())
+        cache.cleanup(force = true, active = { false })
+        assertTrue(stale.exists())
+        cache.cleanup(force = true)
+        assertFalse(stale.exists())
+        assertEquals(1, dir.listFiles()!!.size)
+    }
 }
