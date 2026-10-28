@@ -107,6 +107,7 @@ class PlaybackContinuityTest {
     @Test fun embeddedNeteaseTranslationDoesNotBecomeTheDefaultAmiTranslation() = scenario { model,songs,api ->
         val song = songs.first().copy(lyricTranslation = "[00:00]网易云自带译文")
         model.repository.db.upsert(song)
+        model.repository.reload()
         instrumentation.runOnMainSync { model.play(listOf(song), 0); model.player.pause() }
         await("Lyrics should load") { model.lyrics.value.songId == song.id && model.lyrics.value.document != null }
         assertEquals("[00:00]网易云自带译文", model.lyrics.value.document?.translated)

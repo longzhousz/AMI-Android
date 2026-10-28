@@ -131,7 +131,7 @@ class PlaybackService : MediaLibraryService() {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 cacheRetry?.cancel(); cacheRetryId = null
                 repository.cloud.recoveringAudio = null
-                updateListening(restart = reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)
+                updateListening(restart = true)
                 repository.cloud.protectAudio(mediaItem?.mediaId)
                 player.setWakeMode(if (mediaItem?.mediaId?.startsWith("netease:") == true) C.WAKE_MODE_NETWORK else C.WAKE_MODE_LOCAL)
             }

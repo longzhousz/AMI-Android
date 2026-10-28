@@ -179,24 +179,25 @@ class OnlineLibraryTest {
     @Test fun cachedAudioUsesNoStreamApiAndMissingAudioFallsBackWithTheSameLogicalSong() = runBlocking(Dispatchers.IO) {
         val track = cloud.tracks(cloud.library().liked!!).tracks.first().copy(duration = 6000)
         cloud.rememberQueue(listOf(track))
+        val logical = cloud.catalog.value["netease:${track.id}"]!!
         val account = cache.scope()!!; val now = System.currentTimeMillis()
         repeat(3) { cache.record(account, track.id, 6000, now + it) }
         cache.download(account, OnlineAudioCache.Candidate(track.id, 6000),
             NeteaseAudio("https://m7.music.126.net/qa.flac", "hires", "flac", 2400000, tone.size.toLong()), now) { true }
         requests.clear()
-        val local = cloud.resolve(track.song().uri)
+        val local = cloud.resolve(logical.uri)
         assertTrue(local.startsWith("file:"))
         assertTrue(requests.isEmpty())
-        assertEquals("Hi-Res", cloud.audioQuality.value[track.song().id]?.label)
-        assertEquals(track.song(), cloud.catalog.value[track.song().id])
+        assertEquals("Hi-Res", cloud.audioQuality.value[logical.id]?.label)
+        assertEquals(logical, cloud.catalog.value[logical.id])
         // An already-open online source must stay online when this cache appears during playback.
-        assertEquals("https://m7.music.126.net/qa-audio.flac", cloud.resolve(track.song().uri, allowCache = false))
-        assertEquals(local, cloud.resolve(track.song().uri))
+        assertEquals("https://m7.music.126.net/qa-audio.flac", cloud.resolve(logical.uri, allowCache = false))
+        assertEquals(local, cloud.resolve(logical.uri))
         File(android.net.Uri.parse(local).path!!).delete()
-        assertEquals("https://m7.music.126.net/qa-audio.flac", cloud.resolve(track.song().uri))
+        assertEquals("https://m7.music.126.net/qa-audio.flac", cloud.resolve(logical.uri))
         assertEquals(2, requests.count { it.first == "client-audio" })
-        assertFalse(cloud.audioQuality.value[track.song().id]!!.cached)
-        assertEquals("ami-cloud://song/${track.id}", cloud.catalog.value[track.song().id]!!.uri)
+        assertFalse(cloud.audioQuality.value[logical.id]!!.cached)
+        assertEquals("ami-cloud://song/${track.id}", cloud.catalog.value[logical.id]!!.uri)
     }
 
     private inner class Fixture(address: String) : HttpURLConnection(URL(address)) {
