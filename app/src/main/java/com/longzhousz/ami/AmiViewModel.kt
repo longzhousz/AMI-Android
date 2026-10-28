@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.core.CurrentLyrics
 import com.longzhousz.ami.core.CloudTrack
+import com.longzhousz.ami.core.CloudLibraryState
+import com.longzhousz.ami.core.shuffledShelf
 import com.longzhousz.ami.core.isCloudSong
 import com.longzhousz.ami.data.TranslationClient
 import com.longzhousz.ami.data.TranslationModelCatalog
@@ -42,6 +44,8 @@ class AmiViewModel internal constructor(app: Application,
     fun findSong(id: String?) = repository.library.value.songsById[id] ?: cloud.catalog.value[id]
     private suspend fun loadLyrics(song: Song) = if (song.isCloudSong()) cloud.lyrics(song) else repository.lyrics.load(song)
     private var cloudPlayJob: kotlinx.coroutines.Job? = null
+    private var libraryJob: kotlinx.coroutines.Job? = null
+    val onlineLibrary = MutableStateFlow(CloudLibraryState())
     val player = PlayerConnection(app)
     val theme = MutableStateFlow(repository.prefs.getString("theme", "system")!!)
     val message = MutableStateFlow<String?>(null)
@@ -79,7 +83,12 @@ class AmiViewModel internal constructor(app: Application,
         }
     }
     init {
-        repository.load()
+        // The online home does not need to load a large local collection into memory.
+        viewModelScope.launch {
+            player.state.map { it.id }.distinctUntilChanged().collect { id ->
+                if (id != null && !id.startsWith("netease:")) repository.load()
+            }
+        }
         viewModelScope.launch {
             combine(player.state.map { it.id to it.nextId }.distinctUntilChanged(), songSources,
                 translationModels.state.map { it.selection }.distinctUntilChanged(), translationStyle, uiActive) { playback, library, selection, style, active ->
@@ -124,6 +133,22 @@ class AmiViewModel internal constructor(app: Application,
         catch (_: Exception) { message.value = "操作未完成，播放服务可能正在连接，请稍后重试" }
     }
     fun cancelCloudPreparation() { cloudPlayJob?.cancel() }
+    fun resetOnlineLibrary() { libraryJob?.cancel(); onlineLibrary.value = CloudLibraryState() }
+    fun refreshOnlineLibrary() {
+        if (!cloud.configured.value || libraryJob?.isActive == true) return
+        libraryJob = viewModelScope.launch {
+            onlineLibrary.value = onlineLibrary.value.copy(refreshing = true, error = null)
+            try {
+                cloud.refreshCatalog()
+                val fresh = cloud.library()
+                ensureActive()
+                onlineLibrary.value = CloudLibraryState(fresh.copy(collections = shuffledShelf(fresh.collections, onlineLibrary.value.library.collections)), loaded = true)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                onlineLibrary.value = onlineLibrary.value.copy(refreshing = false, error = failure.message?.take(150) ?: "曲库暂时无法刷新")
+            }
+        }
+    }
     fun play(songs: List<Song>, index: Int = 0) {
         repository.prefs.edit().putBoolean("phoneFollowing",false).apply()
         cancelCloudPreparation()

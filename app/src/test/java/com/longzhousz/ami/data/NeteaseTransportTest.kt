@@ -36,6 +36,16 @@ class NeteaseTransportTest {
         }
         assertFalse(responses.first().opened)
     }
+    @Test fun clientAudioStaysOnTheFixedHttpsEndpointAndUsesTheExistingSession() {
+        val connection = Response("{\"code\":200}")
+        var address = ""
+        NeteaseTransport { address = it; connection }.blockingAudio(JSONObject().put("level", "jyeffect").put("encodeType", "flac"), "MUSIC_U=test")
+        assertEquals("https://interface.music.163.com/eapi/song/enhance/player/url/v1", address)
+        assertEquals("MUSIC_U=test", connection.getRequestProperty("Cookie"))
+        assertFalse(connection.instanceFollowRedirects)
+        assertTrue(connection.closed)
+        assertTrue(connection.body.toString("UTF-8").matches(Regex("params=[0-9A-F]+")))
+    }
     @Test fun cancellationDisconnectsAwayFromTheCancellingThread() = runBlocking {
         val entered = CountDownLatch(1); val closed = CountDownLatch(1)
         val caller = Thread.currentThread(); val wrongThread = AtomicBoolean(false)

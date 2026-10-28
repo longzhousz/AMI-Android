@@ -54,23 +54,46 @@ internal class NeteaseAccount(context: Context, private val web: NeteaseTranspor
                 require(all.length() <= 1000) { "歌单数量过多，请稍后分批读取" }
                 JSONObject().put("playlists", all)
             }
-            "tracks" -> {
+            "albums" -> {
+                val all = JSONArray(); var offset = 0
+                do {
+                    val root = web.post("album/sublist", JSONObject().put("limit", 100).put("offset", offset).put("total", true), cookie)
+                    val rows = root.optJSONArray("data") ?: JSONArray()
+                    require(rows.length() <= 100)
+                    for (i in 0 until rows.length()) {
+                        val row = rows.getJSONObject(i)
+                        val artists = row.optJSONArray("artists") ?: JSONArray()
+                        val artist = (0 until artists.length()).map { artists.getJSONObject(it).optString("name") }.filter { it.isNotBlank() }.joinToString(" / ")
+                        all.put(JSONObject().put("id", neteaseId(row.optString("id"))).put("title", row.optString("name").take(200))
+                            .put("cover", picture(row.optString("picUrl"))).put("count", row.optInt("size").coerceAtLeast(0))
+                            .put("kind", "album").put("artist", artist.take(200)))
+                    }
+                    offset += rows.length()
+                } while (rows.length() == 100 && root.optBoolean("hasMore") && offset < 1000)
+                JSONObject().put("albums", all)
+            }
+            "tracks", "albumTracks" -> {
                 val id = neteaseId(data.getString("id")); val offset = data.optInt("offset")
                 require(offset in 0..20000)
-                val ids = synchronized(lists) { lists[id]?.takeIf { System.nanoTime() - it.at < 120_000_000_000L }?.ids } ?: run {
-                    val detail = web.post("v6/playlist/detail", JSONObject().put("id", id).put("n", 0).put("s", 0), cookie)
-                        .optJSONObject("playlist") ?: error("暂时无法读取这张歌单")
-                    val rows = detail.optJSONArray("trackIds") ?: JSONArray()
+                val album = path == "albumTracks"
+                val key = "$path:$id"
+                var albumDetail: JSONObject? = null
+                val ids = synchronized(lists) { lists[key]?.takeIf { System.nanoTime() - it.at < 120_000_000_000L }?.ids } ?: run {
+                    val rows = if (album) {
+                        albumDetail = web.post("v1/album/$id", JSONObject(), cookie)
+                        albumDetail?.optJSONArray("songs") ?: JSONArray()
+                    } else web.post("v6/playlist/detail", JSONObject().put("id", id).put("n", 0).put("s", 0), cookie)
+                        .optJSONObject("playlist")?.optJSONArray("trackIds") ?: error("暂时无法读取这张歌单")
                     require(rows.length() <= 20000) { "这张歌单过大，暂时无法载入" }
                     val loaded = (0 until rows.length()).map { neteaseId(rows.getJSONObject(it).optString("id")) }
                     synchronized(lists) {
-                        lists[id] = PlaylistIds(System.nanoTime(), loaded)
+                        lists[key] = PlaylistIds(System.nanoTime(), loaded)
                         while (lists.size > 4) lists.remove(lists.keys.first())
                     }
                     loaded
                 }
                 val page = ids.drop(offset).take(30)
-                val result = if (page.isEmpty()) JSONObject().put("songs", JSONArray()) else
+                val result = if (page.isEmpty()) JSONObject().put("songs", JSONArray()) else albumDetail ?:
                     web.post("v3/song/detail", JSONObject().put("c", JSONArray().apply { page.forEach { put(JSONObject().put("id", it)) } }.toString()), cookie)
                 val songs = result.optJSONArray("songs") ?: JSONArray()
                 val privileges = privileges(result)
@@ -101,13 +124,20 @@ internal class NeteaseAccount(context: Context, private val web: NeteaseTranspor
     /** Media3 loader thread resolves short-lived URLs only when audio is requested. */
     fun stream(id: String, duration: Long): String {
         val auth = credentials(); val cookie = neteaseCookies(auth.getString("cookie")); neteaseId(id)
-        val data = JSONObject().put("ids", JSONArray().put(id).toString()).put("level", "exhigh").put("encodeType", "aac")
-        var root = web.blockingPost("song/enhance/player/url/v1", data, cookie)
-        val first = root.optJSONArray("data")?.optJSONObject(0)
-        if (first != null && !hasTrial(first) && first.optString("url").let { it.isBlank() || it == "null" }) {
-            root = web.blockingPost("song/enhance/player/url", JSONObject().put("ids", data.getString("ids")).put("br", 320000), cookie)
+        var clientAvailable = true
+        val audio = try { bestNeteaseAudio(id, duration) { level ->
+            val data = JSONObject().put("ids", JSONArray().put(id).toString()).put("level", level).put("encodeType", "flac")
+            if (clientAvailable) try { web.blockingAudio(data, cookie) }
+            catch (expired: NeteaseLoginExpired) { throw expired }
+            catch (_: Exception) { clientAvailable = false; web.blockingPost("song/enhance/player/url/v1", data, cookie) }
+            else web.blockingPost("song/enhance/player/url/v1", data, cookie)
+        } } catch (expired: NeteaseLoginExpired) { throw expired }
+        catch (unavailable: IllegalStateException) {
+            // Older v1 servers can omit a usable URL; retain the original authorized HQ fallback.
+            neteaseAudio(web.blockingPost("song/enhance/player/url", JSONObject().put("ids", JSONArray().put(id).toString()).put("br", 320000), cookie), id, duration)
         }
-        return streamUrl(root, id, duration)
+        android.util.Log.i("AmiAudio", "source=netease level=${audio.level ?: "unknown"} codec=${audio.codec} bitrate=${audio.bitrate ?: 0}")
+        return audio.url
     }
     companion object {
         private fun profile(root: JSONObject): Pair<String, String> {

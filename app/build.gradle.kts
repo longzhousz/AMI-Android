@@ -10,8 +10,8 @@ android {
         applicationId = "com.longzhousz.ami"
         minSdk = 26
         targetSdk = 37
-        versionCode = 14
-        versionName = "0.1.13"
+        versionCode = 15
+        versionName = "0.1.14"
         testInstrumentationRunner = "com.longzhousz.ami.RecoverySeedInstrumentation"
     }
     buildFeatures { compose = true; buildConfig = true }
@@ -60,6 +60,13 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             applicationIdSuffix = ".neteasepreview"
             versionNameSuffix = "-netease-preview"
+            matchingFallbacks += "release"
+        }
+        create("musicPreview") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            applicationIdSuffix = ".musicpreview"
+            versionNameSuffix = "-music-preview"
             matchingFallbacks += "release"
         }
     }

@@ -23,7 +23,18 @@ data class CloudConnection(val baseUrl: String, val token: String) {
     }
 }
 
-data class CloudPlaylist(val id: String, val title: String, val cover: String?, val count: Int, val kind: String = "")
+data class CloudPlaylist(val id: String, val title: String, val cover: String?, val count: Int, val kind: String = "", val artist: String = "") {
+    val key get() = "$kind:$id"
+}
+data class CloudLibrary(val collections: List<CloudPlaylist> = emptyList(), val liked: CloudPlaylist? = null)
+data class CloudLibraryState(val library: CloudLibrary = CloudLibrary(), val loaded: Boolean = false,
+    val refreshing: Boolean = false, val error: String? = null)
+
+/** Reorder the shelf only; collection tracks and the playback queue are separate. */
+internal fun shuffledShelf(cards: List<CloudPlaylist>, previous: List<CloudPlaylist>): List<CloudPlaylist> {
+    val fresh = cards.distinctBy { it.key }.shuffled()
+    return if (fresh.size > 1 && fresh.map { it.key } == previous.map { it.key }) fresh.drop(1) + fresh.first() else fresh
+}
 data class CloudTrack(val id: String, val originalId: String, val title: String, val artist: String,
     val album: String, val duration: Long, val cover: String?, val available: Boolean) {
     fun song() = Song(id = "netease:$id", uri = "ami-cloud://song/$id", folder = "netease-online", title = title,

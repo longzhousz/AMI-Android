@@ -95,7 +95,8 @@ class PlaybackService : MediaLibraryService() {
         val source = ResolvingDataSource.Factory(DefaultDataSource.Factory(this)) { spec ->
             if (spec.uri.scheme == "ami-cloud") spec.withUri(android.net.Uri.parse(repository.cloud.resolve(spec.uri.toString()))) else spec
         }
-        player = ExoPlayer.Builder(this).setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(source)).build().apply {
+        player = ExoPlayer.Builder(this, androidx.media3.exoplayer.DefaultRenderersFactory(this).setEnableAudioFloatOutput(true))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(source)).build().apply {
             setAudioAttributes(AudioAttributes.Builder().setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).setUsage(C.USAGE_MEDIA).build(), true)
             setHandleAudioBecomingNoisy(true)
             setWakeMode(C.WAKE_MODE_LOCAL)
@@ -104,6 +105,12 @@ class PlaybackService : MediaLibraryService() {
         }
         session = MediaLibrarySession.Builder(this, player, callback)
             .setSessionActivity(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)).build()
+        player.addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
+            override fun onAudioInputFormatChanged(eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                format: androidx.media3.common.Format, decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?) {
+                android.util.Log.i("AmiAudio", "input codec=${format.sampleMimeType} sampleRate=${format.sampleRate} channels=${format.channelCount} pcm=${format.pcmEncoding}")
+            }
+        })
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 player.setWakeMode(if (mediaItem?.mediaId?.startsWith("netease:") == true) C.WAKE_MODE_NETWORK else C.WAKE_MODE_LOCAL)

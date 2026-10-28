@@ -21,8 +21,9 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /** Direct phone login by default; cloudPreview retains the older paired-PC experiment. */
-class CloudMusic(context: Context, val direct: Boolean = com.longzhousz.ami.BuildConfig.BUILD_TYPE != "cloudPreview") {
-    private val account = NeteaseAccount(context)
+class CloudMusic internal constructor(context: Context, val direct: Boolean, web: NeteaseTransport) {
+    constructor(context: Context, direct: Boolean = com.longzhousz.ami.BuildConfig.BUILD_TYPE != "cloudPreview") : this(context, direct, NeteaseTransport())
+    private val account = NeteaseAccount(context, web)
     private val secret = SecretStore(context, "netease-connection")
     private val queueFile = AtomicFile(File(context.noBackupFilesDir, "netease-queue.json"))
     private val queueLock = Mutex()
@@ -63,6 +64,19 @@ class CloudMusic(context: Context, val direct: Boolean = com.longzhousz.ami.Buil
             CloudPlaylist(id(row.getString("id")), row.getString("title").take(200), picture(row), row.optInt("count"), row.optString("kind"))
         }
     }
+    suspend fun library(): CloudLibrary {
+        check(direct)
+        val playlists = playlists()
+        val rows = request("albums").getJSONArray("albums")
+        require(rows.length() <= 1000)
+        val albums = (0 until rows.length()).map { rows.getJSONObject(it) }.map {
+            CloudPlaylist(id(it.getString("id")), it.getString("title").take(200), picture(it), it.optInt("count"), "album", it.optString("artist").take(200))
+        }
+        return CloudLibrary(albums + playlists.filter { it.kind == "created" }, playlists.firstOrNull { it.kind == "liked" })
+    }
+    suspend fun tracks(collection: CloudPlaylist, offset: Int = 0): CloudTracks =
+        if (collection.kind == "album") page(request("albumTracks", JSONObject().put("id", id(collection.id)).put("offset", offset)))
+        else tracks(collection.id, offset)
     suspend fun tracks(playlist: String, offset: Int = 0) = page(request("tracks", JSONObject().put("id", id(playlist)).put("offset", offset)))
     suspend fun search(query: String, offset: Int = 0) = page(request("search", JSONObject().put("query", query.take(100)).put("offset", offset)))
     private fun page(result: JSONObject): CloudTracks {

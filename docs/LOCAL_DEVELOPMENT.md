@@ -12,7 +12,7 @@ cd AMI-Android
 git branch --show-current
 ```
 
-输出应为 `main`。它包含 0.1.13 及其依赖的全部前序改动，不需要逐个合并 PR。不能使用 Git 时，直接在 GitHub 默认分支选择 Code → Download ZIP。
+输出应为 `main`。它包含 0.1.14 及其依赖的全部前序改动，不需要逐个合并 PR。不能使用 Git 时，直接在 GitHub 默认分支选择 Code → Download ZIP。
 
 已经克隆过且工作区干净时：
 
@@ -80,6 +80,7 @@ Windows PowerShell：
 | Preview | `com.longzhousz.ami.preview` | 压缩版体验、系统媒体接入；不可调试 |
 | Release | `com.longzhousz.ami` | 正式发行；默认产物未签名 |
 | PhonePreview | `com.longzhousz.ami.phonepreview` | 只用手机的网易云随播，`assemblePhonePreview` |
+| MusicPreview | `com.longzhousz.ami.musicpreview` | 在线曲库与高音质试用，`assembleMusicPreview`；与本地签名的 0.1.13 并存 |
 | NeteasePreview | `com.longzhousz.ami.neteasepreview` | AMI 内登录、歌单、搜索和直接播放，`assembleNeteasePreview` |
 | CloudPreview | `com.longzhousz.ami.cloudpreview` | 旧 Windows 连接端试验，`assembleCloudPreview` |
 

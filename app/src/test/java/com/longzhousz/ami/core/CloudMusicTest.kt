@@ -4,6 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CloudMusicTest {
+    @org.junit.Test fun shelfRefreshChangesCardsWithoutMergingAlbumAndPlaylistIds() {
+        val album = CloudPlaylist("1234", "专辑", null, 2, "album")
+        val playlist = CloudPlaylist("1234", "歌单", null, 3, "created")
+        val previous = listOf(album, playlist)
+        val fresh = shuffledShelf(previous + album, previous)
+        org.junit.Assert.assertEquals(previous.reversed(), fresh)
+        org.junit.Assert.assertEquals(listOf(album, playlist), previous)
+        org.junit.Assert.assertEquals(emptyList<CloudPlaylist>(), shuffledShelf(emptyList(), emptyList()))
+    }
     private val token = "A".repeat(43)
     @Test fun pairingAcceptsPrivateLanAndHttpsWithoutLeakingTokenIntoBaseUrl() {
         listOf("http://192.168.1.2:17863", "http://10.0.2.2:17863", "http://172.16.1.2:17863", "http://localhost:17863", "https://bridge.example.test").forEach { origin ->

@@ -30,7 +30,7 @@ class RapidInteractionEvidenceTest {
         val script=File(config.parentFile,"ami-perfetto.sh")
         var traceStarted=false
         try {
-            songs.forEach(model.repository.db::upsert);model.repository.reload()
+            songs.forEach(model.repository.db::upsert);model.repository.load();model.repository.reload()
             compose.waitUntil(30000) { model.player.state.value.connected && model.repository.library.value.songsById.containsKey(songs[0].id) }
             compose.runOnIdle { model.play(songs,0);model.player.pause() }
             compose.waitUntil(10000) { model.lyrics.value.document!=null && model.lyrics.value.songId==songs[0].id }

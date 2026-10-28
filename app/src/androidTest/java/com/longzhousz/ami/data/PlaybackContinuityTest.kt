@@ -37,7 +37,7 @@ class PlaybackContinuityTest {
         val songs=listOf("Alpha","Beta","Gamma").mapIndexed { n,title ->
             Song("$name-$n","content://com.longzhousz.ami.test.fixtures/document/album.wav",folder="qa-continuity",title=title,duration=6000,lyrics="[00:00]$title-$name")
         }
-        songs.forEach(repo.db::upsert);repo.reload()
+        songs.forEach(repo.db::upsert);repo.load();repo.reload()
         lateinit var model:AmiViewModel
         instrumentation.runOnMainSync {
             model=AmiViewModel(context.applicationContext as AmiApplication,

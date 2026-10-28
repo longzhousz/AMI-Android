@@ -33,7 +33,7 @@ for attempt in 1 2; do
   adb shell am start -W -n "$package/com.longzhousz.ami.MainActivity"
   sleep 5
   adb shell pidof "$package"
-  python3 .github/scripts/android-wait-for-window.py "preview-smoke-results/launch-$attempt.xml" "$package" '前往设置'
+  python3 .github/scripts/android-wait-for-window.py "preview-smoke-results/launch-$attempt.xml" "$package" '登录网易云'
   python3 - "$package" "preview-smoke-results/launch-$attempt.xml" <<'PY'
 import sys
 import xml.etree.ElementTree as ET
@@ -41,8 +41,10 @@ package, path = sys.argv[1:]
 nodes = list(ET.parse(path).iter('node'))
 assert any(n.get('package') == package for n in nodes), 'App window is not visible'
 assert any(n.get('text') == '曲库' for n in nodes), 'Library did not render'
-assert any(n.get('text') == '暂无音乐' for n in nodes), 'Library did not finish loading'
-assert any(n.get('text') == '前往设置' for n in nodes), 'Settings entry is missing'
+assert any(n.get('text') == '登录网易云' for n in nodes), 'Online sign-in entry is missing'
+assert all(any(n.get('content-desc') == label for n in nodes) for label in ('曲库', '我喜欢', '设置')), 'Icon navigation is missing'
+assert not any(n.get('text') in ('我喜欢', '设置') for n in nodes), 'Bottom navigation still has text labels'
+assert not any(n.get('content-desc') == '网易云' for n in nodes), 'Separate NetEase tab remains'
 assert not any(n.get('content-desc') == '导入音乐文件夹' for n in nodes), 'Repeated import action remains'
 PY
 done
@@ -52,7 +54,7 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 nodes = list(ET.parse(sys.argv[1]).iter('node'))
-node = next(n for n in nodes if n.get('text') == '设置')
+node = next(n for n in nodes if n.get('content-desc') == '设置')
 x1, y1, x2, y2 = map(int, re.findall(r'\d+', node.get('bounds')))
 subprocess.run(['adb', 'shell', 'input', 'tap', str((x1+x2)//2), str((y1+y2)//2)], check=True)
 PY
@@ -62,7 +64,7 @@ python3 - <<'PY'
 import xml.etree.ElementTree as ET
 nodes = list(ET.parse('preview-smoke-results/settings.xml').iter('node'))
 assert any(n.get('text') == 'DeepSeek API Key' for n in nodes), 'Settings did not render'
-assert any(n.get('text') == '导入音乐' for n in nodes), 'Music import is missing from settings'
+assert any(n.get('text') == '网易云账号' for n in nodes), 'Account entry is missing from settings'
 PY
 python3 - <<'PY'
 import re
@@ -81,6 +83,27 @@ PY
 if adb logcat -b crash -d | grep -F "Process: $package,"; then
   echo 'The optimized app crashed' >&2
   exit 1
+fi
+if [ -d music-preview-apk ]; then
+  music_package=com.longzhousz.ami.musicpreview
+  music_apk=$(find music-preview-apk -name '*.apk' -print -quit)
+  test -n "$music_apk"
+  sha256sum "$music_apk" > preview-smoke-results/music-apk-sha256.txt
+  adb install -r "$music_apk"
+  adb shell am start -W -n "$music_package/com.longzhousz.ami.MainActivity"
+  python3 .github/scripts/android-wait-for-window.py preview-smoke-results/music-launch.xml "$music_package" '登录网易云'
+  python3 - <<'PYTHON'
+import xml.etree.ElementTree as ET
+nodes = list(ET.parse('preview-smoke-results/music-launch.xml').iter('node'))
+assert all(any(n.get('content-desc') == label for n in nodes) for label in ('曲库', '我喜欢', '设置'))
+assert not any(n.get('text') in ('我喜欢', '设置') for n in nodes)
+assert not any(n.get('content-desc') == '网易云' for n in nodes)
+PYTHON
+  adb exec-out screencap -p > preview-smoke-results/music-launch.png
+  if adb logcat -b crash -d | grep -F "Process: $music_package,"; then
+    echo 'The optimized music preview crashed' >&2
+    exit 1
+  fi
 fi
 if [ -d phone-preview-apk ]; then
   phone_package=com.longzhousz.ami.phonepreview

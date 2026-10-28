@@ -22,11 +22,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.longzhousz.ami.AmiViewModel
 import com.longzhousz.ami.data.LibraryRepository
 import com.longzhousz.ami.data.TranslationClient
+import com.longzhousz.ami.core.isCloudSong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@Composable fun SettingsScreen(model: AmiViewModel, onImport: () -> Unit, onNotifications: () -> Unit, onBridgeFolder: () -> Unit, onLyricsFolder: () -> Unit) {
+@Composable fun SettingsScreen(model: AmiViewModel, onImport: () -> Unit, onNotifications: () -> Unit, onBridgeFolder: () -> Unit, onLyricsFolder: () -> Unit,
+    onLocalLibrary: () -> Unit = {}) {
     val repo = model.repository
     val songs by repo.songs.collectAsStateWithLifecycle()
     val importState by repo.importState.collectAsStateWithLifecycle()
@@ -40,6 +42,8 @@ import kotlinx.coroutines.withContext
     val modelState by model.translationModels.state.collectAsStateWithLifecycle()
     val style by model.translationStyle.collectAsStateWithLifecycle()
     val savedKey by model.hasKey.collectAsStateWithLifecycle()
+    val configured by model.cloud.configured.collectAsStateWithLifecycle()
+    val signIn = rememberNeteaseLogin(model)
     val scope = rememberCoroutineScope()
     LaunchedEffect(importState.running) {
         cache = withContext(Dispatchers.IO) { repo.cacheInfo() }
@@ -48,14 +52,13 @@ import kotlinx.coroutines.withContext
     }
     LazyColumn(contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 18.dp, bottom = 30.dp)) {
         item {
-            SectionLabel("我的曲库")
-            SettingsGroup {
-                SettingRow(Icons.Rounded.CreateNewFolder, "导入音乐", "音频、LRC、CUE 与经典 NCM", onImport)
-                SettingRow(Icons.Rounded.Sync, "重新扫描", "${roots.size} 个已授权文件夹 · ${songs.size} 首歌曲", { if (roots.isNotEmpty()) repo.scan() else onImport() }, trailing = {
-                    if (importState.running) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.ChevronRight, null)
-                })
-                SettingRow(Icons.Rounded.FolderOpen, "管理音乐文件夹", "只读取你选择的文件夹", { roots = repo.roots(); dialog = "roots" })
-                if (importState.message.isNotEmpty() && !importState.running) SettingRow(Icons.Rounded.FactCheck, "最近导入结果", importState.message, { dialog = "import" })
+            if (model.cloud.direct) {
+                SectionLabel("账号")
+                SettingsGroup {
+                    SettingRow(Icons.Rounded.PersonOutline, "网易云账号", if (configured) "已登录" else "登录后同步专辑、歌单与红心歌曲", {
+                        if (configured) dialog = "account" else signIn()
+                    })
+                }
             }
             SectionLabel("歌词与翻译")
             SettingsGroup {
@@ -68,7 +71,17 @@ import kotlinx.coroutines.withContext
             SectionLabel("聆听与外观")
             SettingsGroup {
                 SettingRow(Icons.Rounded.Palette, "外观", when (theme) { "light" -> "浅色"; "dark" -> "深色"; else -> "跟随系统" }, { dialog = "theme" })
+            }
+            SectionLabel("本地音乐")
+            SettingsGroup {
+                SettingRow(Icons.Rounded.LibraryMusic, "浏览本地音乐", "保留已导入的曲库与收藏", onLocalLibrary)
+                SettingRow(Icons.Rounded.CreateNewFolder, "导入音乐", "音频、LRC、CUE 与经典 NCM", onImport)
+                SettingRow(Icons.Rounded.Sync, "重新扫描", "${roots.size} 个已授权文件夹 · ${songs.size} 首歌曲", { if (roots.isNotEmpty()) repo.scan() else onImport() }, trailing = {
+                    if (importState.running) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.ChevronRight, null)
+                })
+                SettingRow(Icons.Rounded.FolderOpen, "管理音乐文件夹", "只读取你选择的文件夹", { roots = repo.roots(); dialog = "roots" })
                 SettingRow(Icons.Rounded.NotificationsNone, "导入进度通知", "允许后台导入时显示进度", onNotifications)
+                if (importState.message.isNotEmpty() && !importState.running) SettingRow(Icons.Rounded.FactCheck, "最近导入结果", importState.message, { dialog = "import" })
             }
             SectionLabel("存储与隐私")
             SettingsGroup {
@@ -81,6 +94,16 @@ import kotlinx.coroutines.withContext
         }
     }
     when (dialog) {
+        "account" -> AlertDialog({ dialog = null }, title = { Text("网易云账号") }, text = { Text("可以重新登录或退出当前账号。") },
+            confirmButton = { TextButton({ dialog = null; signIn() }) { Text("重新登录") } },
+            dismissButton = { TextButton({ scope.launch {
+                try {
+                    model.cancelCloudPreparation()
+                    if (model.findSong(model.player.state.value.id)?.isCloudSong() == true) model.player.pause()
+                    model.resetOnlineLibrary(); model.cloud.disconnect(); dialog = null
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (_: Exception) { model.message.value = "退出登录未完成，请重试" }
+            } }) { Text("退出登录") } })
         "neteaseLyrics" -> AlertDialog({ dialog = null }, title = { Text("网易云歌词") }, text = {
             Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
                 Text("将 LrcDownload 文件夹整体导入，数字文件名无需修改。AMI 会读取 NCM 内的歌曲 ID，自动找到对应歌词。", style = MaterialTheme.typography.bodyMedium)

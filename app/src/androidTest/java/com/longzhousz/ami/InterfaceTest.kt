@@ -41,6 +41,11 @@ import java.io.File
 class InterfaceTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
+    private fun openLocalLibrary() {
+        compose.onNodeWithContentDescription("设置").performClick()
+        compose.onNodeWithText("浏览本地音乐").performScrollTo().performClick()
+    }
+
     @Test fun returningFromSettingsPreservesLibraryScroll() {
         val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
         val songs = (0 until 60).map { index ->
@@ -48,12 +53,13 @@ class InterfaceTest {
         }
         try {
             songs.forEach { model.repository.db.upsert(it) }
+            model.repository.load()
             model.repository.reload()
+            openLocalLibrary()
             compose.waitUntil(30000) { compose.onAllNodesWithText(songs.first().title).fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("library-song-list").performScrollToIndex(35)
             compose.onNodeWithText(songs[35].title).assertIsDisplayed()
-            compose.onNodeWithText("设置").performClick()
-            compose.onNodeWithText("曲库").performClick()
+            openLocalLibrary()
             compose.onNodeWithText(songs[35].title).assertIsDisplayed()
             compose.onNodeWithText(songs.first().title).assertDoesNotExist()
         } finally {
@@ -63,16 +69,18 @@ class InterfaceTest {
     }
 
     @Test fun emptyLibraryNavigationAndDarkAppearanceRender() {
-        compose.waitUntil(30000) { compose.onAllNodesWithText("前往设置").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("暂无音乐").assertIsDisplayed()
+        compose.waitUntil(30000) { compose.onAllNodesWithText("登录网易云").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("登录后，音乐就在这里").assertIsDisplayed()
+        compose.onNodeWithContentDescription("曲库").assertIsDisplayed()
+        compose.onNodeWithContentDescription("网易云").assertDoesNotExist()
+        compose.onNodeWithContentDescription("刷新网易云").assertDoesNotExist()
         compose.onNodeWithContentDescription("导入音乐文件夹").assertDoesNotExist()
         screenshot("empty-library")
-        compose.onNodeWithText("前往设置").performClick()
-        compose.onNodeWithText("导入音乐").assertIsDisplayed()
-        compose.onNodeWithText("我喜欢").performClick()
+        compose.onNodeWithContentDescription("我喜欢").performClick()
         compose.onAllNodesWithText("我喜欢").assertCountEquals(1)
-        compose.onNodeWithText("暂无收藏").assertIsDisplayed()
-        compose.onNodeWithText("设置").performClick()
+        compose.onNodeWithText("登录网易云").assertIsDisplayed()
+        compose.onNodeWithContentDescription("设置").performClick()
+        compose.onNodeWithText("网易云账号").assertIsDisplayed()
         compose.onNodeWithText("网易云歌词").performScrollTo().performClick()
         compose.onNodeWithText("选择歌词文件夹").assertIsDisplayed()
         compose.onNodeWithText("完成").performClick()
@@ -94,8 +102,9 @@ class InterfaceTest {
         try {
             // Import upsert preserves user state; seed favorites through their dedicated API.
             songs.forEach { model.repository.db.upsert(it); model.repository.db.favorite(it.id, it.favorite) }
+            model.repository.load()
             model.repository.reload()
-            compose.onNodeWithText("曲库").performClick()
+            openLocalLibrary()
             compose.onNodeWithText(songs.first().title).assertIsDisplayed()
             compose.onNodeWithContentDescription("导入音乐文件夹").assertDoesNotExist()
             screenshot("library-songs")
@@ -109,8 +118,8 @@ class InterfaceTest {
             assertTrue(compose.onNodeWithText(songs.last().title).fetchSemanticsNode().boundsInRoot.top < compose.onNodeWithText(songs[3].title).fetchSemanticsNode().boundsInRoot.top)
             compose.onNodeWithContentDescription("排序").performClick()
             compose.onNodeWithText("默认排序").performClick()
-            compose.onNodeWithText("我喜欢").performClick()
-            compose.onAllNodesWithText("我喜欢").assertCountEquals(1)
+            compose.onNodeWithText("本地喜欢").performClick()
+            compose.onAllNodesWithText("本地喜欢").assertCountEquals(1)
             try {
                 compose.onNodeWithText(songs.first().title).assertIsDisplayed()
             } catch (failure: AssertionError) {
@@ -121,7 +130,7 @@ class InterfaceTest {
             compose.onNodeWithText(songs[2].title).assertIsDisplayed()
             compose.onNodeWithText(songs[1].title).assertDoesNotExist()
             screenshot("favorites-songs")
-            compose.onNodeWithText("曲库").performClick()
+            compose.onNodeWithText("本地喜欢").performClick()
             compose.onNodeWithText("专辑").performClick()
             screenshot("library-albums")
             compose.onNodeWithText("晚风与回声").performClick()

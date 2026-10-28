@@ -65,14 +65,13 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         val focus = LocalFocusManager.current
         val library by model.repository.library.collectAsStateWithLifecycle()
         val onlineSongs by model.cloud.catalog.collectAsStateWithLifecycle()
-        val songs = library.songs
         val loading by model.repository.loading.collectAsStateWithLifecycle()
         val playback by model.player.state.collectAsStateWithLifecycle()
         val importing by model.repository.importState.collectAsStateWithLifecycle()
         val message by model.message.collectAsStateWithLifecycle()
         val songsById = library.songsById
         val albumsByKey = library.albumsByKey
-        var page by rememberSaveable { mutableIntStateOf(initialPage.coerceIn(0,3)) }
+        var page by rememberSaveable { mutableIntStateOf(if (initialPage == 3 && model.cloud.direct) 0 else initialPage.coerceIn(0,5)) }
         var albumKey by rememberSaveable { mutableStateOf<String?>(null) }
         var queue by rememberSaveable { mutableStateOf(false) }
         var remove by remember { mutableStateOf<Song?>(null) }
@@ -106,6 +105,9 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); if (model.message.value == it) model.message.value = null } }
         LaunchedEffect(playback.error) { playback.error?.let { snackbar.showSnackbar(it) } }
         BackHandler(selectedAlbum != null && !fullPlayer && !queue) { albumKey = null }
+        BackHandler(page in 1..2 && selectedAlbum == null && !fullPlayer && !queue) { page = 0 }
+        BackHandler(page >= 4 && selectedAlbum == null && !fullPlayer && !queue) { page = 2 }
+        LaunchedEffect(page) { if (page >= 4) model.repository.load() }
         Box(Modifier.fillMaxSize()) {
             Scaffold(
                 modifier = if (fullPlayer) Modifier.clearAndSetSemantics {} else Modifier,
@@ -116,8 +118,8 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                             onBounds = { miniBounds = it }, onOpen = { focus.clearFocus(); fullPlayer = true },
                             onToggle = { model.act("player.toggle") { model.player.toggle() } }, onNext = { model.act("player.next") { model.player.next() } })
                         NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 0.dp) {
-                            listOf(Triple("曲库", Icons.Rounded.Album, 0), Triple("我喜欢", Icons.Rounded.FavoriteBorder, 1), Triple("网易云", Icons.Rounded.CloudQueue, 3), Triple("设置", Icons.Rounded.Tune, 2)).forEach { (label, icon, index) ->
-                                NavigationBarItem(page == index, { page = index; albumKey = null }, { Icon(icon, label) }, label = { Text(label) })
+                            listOf(Triple("曲库", Icons.Rounded.LibraryMusic, 0), Triple("我喜欢", Icons.Rounded.FavoriteBorder, 1), Triple("设置", Icons.Rounded.Tune, 2)).forEach { (label, icon, index) ->
+                                NavigationBarItem(page == index || index == 2 && page >= 4, { page = index; albumKey = null }, { Icon(icon, label) }, alwaysShowLabel = false)
                             }
                         }
                     }
@@ -140,12 +142,20 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                         val album = albumsByKey[destination.albumKey]
                         when {
                             album != null -> AlbumScreen(album, playback.id, model, { albumKey = null }, { remove = it })
-                            destination.page == 2 -> SettingsScreen(model, onImport, onNotifications, onBridgeFolder, onLyricsFolder)
-                            destination.page == 3 -> CloudMusicScreen(model)
-                            else -> pageState.SaveableStateProvider("library-${destination.page}") {
-                                LibraryScreen(library, loading, destination.page == 1, playback.id, { page = 2 },
-                                    onAlbum = { albumKey = it.key }, onPlay = { list, index -> model.play(list, index) }, onFavorite = model::favorite, onRemove = { remove = it })
+                            destination.page == 2 -> SettingsScreen(model, onImport, onNotifications, onBridgeFolder, onLyricsFolder, onLocalLibrary = { page = 4 })
+                            destination.page >= 4 -> pageState.SaveableStateProvider("local-${destination.page}") {
+                                Column {
+                                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        ActionIcon(Icons.Rounded.ArrowBack, "返回设置", { page = 2 })
+                                        Text("本地音乐", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                                        FilterChip(destination.page == 5, { page = if (page == 5) 4 else 5 }, { Text("本地喜欢") })
+                                    }
+                                    LibraryScreen(library, loading, destination.page == 5, playback.id, { page = 2 },
+                                        onAlbum = { albumKey = it.key }, onPlay = { list, index -> model.play(list, index) }, onFavorite = model::favorite, onRemove = { remove = it })
+                                }
                             }
+                            !model.cloud.direct -> CloudMusicScreen(model)
+                            else -> pageState.SaveableStateProvider("online-${destination.page}") { OnlineLibraryScreen(model, destination.page == 1) }
                         }
                     }
                 }

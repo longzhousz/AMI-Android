@@ -4,6 +4,7 @@ import java.net.URI
 import java.net.URLEncoder
 import java.security.KeyFactory
 import java.security.SecureRandom
+import java.security.MessageDigest
 import java.security.spec.X509EncodedKeySpec
 import java.util.Base64
 import javax.crypto.Cipher
@@ -40,6 +41,17 @@ internal object NeteaseForm {
     private val random = SecureRandom()
     private const val alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     private const val publicKey = "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDgtQn2JZ34ZC28NWYpAUd98iZ37BUrX/aKzmFbt7clFSs6sXqHauqKWqdtLkF2KexO40H1YTX8z2lSgBBOAxLsvaklV8k4cBFK9snQXE9/DDaFt6Rr7iVZMldczhC0JNgTz+SHXT6CBHuX3e9SdB1Ua44oncaTWz7OBGLbCiK45wIDAQAB"
+    fun encodeClient(path: String, json: String): String {
+        require(path.matches(Regex("/api/[a-z0-9/]+")) && !path.contains("//"))
+        val digest = MessageDigest.getInstance("MD5").digest("nobody${path}use${json}md5forencrypt".toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 255) }
+        val bytes = "$path-36cd479b6b5-$json-36cd479b6b5-$digest".toByteArray(Charsets.UTF_8)
+        val encrypted = Cipher.getInstance("AES/ECB/PKCS5Padding").run {
+            init(Cipher.ENCRYPT_MODE, SecretKeySpec("e82ckenh8dichen8".toByteArray(Charsets.UTF_8), "AES"))
+            doFinal(bytes)
+        }
+        return "params=" + encrypted.joinToString("") { "%02X".format(it.toInt() and 255) }
+    }
     fun encode(json: String, key: String = buildString { repeat(16) { append(alphabet[random.nextInt(alphabet.length)]) } }): String {
         require(key.length == 16 && key.all { it in alphabet })
         fun aes(text: String, secret: String): String = Cipher.getInstance("AES/CBC/PKCS5Padding").run {

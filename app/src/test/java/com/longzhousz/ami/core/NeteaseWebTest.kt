@@ -21,4 +21,10 @@ class NeteaseWebTest {
         listOf("http://music.163.com/", "https://music.163.com.attacker.test/", "https://user@music.163.com/", "file:///sdcard/login.html", "https://music.163.com:8443/").forEach { assertFalse(it, neteaseLoginUrl(it)) }
         listOf("0", "-1", "1/../../user", "123?x=y").forEach { try { neteaseId(it); fail("Invalid id") } catch (_: IllegalArgumentException) { } }
     }
+    @Test fun clientAudioEnvelopeMatchesIndependentOpenSslVector() {
+        val form = NeteaseForm.encodeClient("/api/song/enhance/player/url/v1", "{\"test\":1}")
+        val hash = MessageDigest.getInstance("SHA-256").digest(form.toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) }
+        assertEquals("12beee6ae80b80c43da7f893c6f341053dbf1a74b8b68b6fc8fe7d69d057dfa8", hash)
+        try { NeteaseForm.encodeClient("https://other.test/api/song", "{}"); fail("Foreign endpoint accepted") } catch (_: IllegalArgumentException) { }
+    }
 }
