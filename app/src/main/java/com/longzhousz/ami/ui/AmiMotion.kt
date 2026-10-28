@@ -45,6 +45,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.dismiss
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -173,7 +174,7 @@ internal fun PlayerSheet(
                 .offset(x = with(density) { origin.left.toDp() })
                 .size(with(density) { origin.width.toDp() }, with(density) { origin.height.toDp() })
                 .graphicsLayer { alpha = (1f - progress.value * 4f).coerceIn(0f, 1f) }
-                .then(dragHandle).clearAndSetSemantics {}.testTag("player-mini-face")) { collapsedContent() }
+                .then(dragHandle).clearAndSetSemantics { this[SemanticsProperties.TestTag] = "player-mini-face" }) { collapsedContent() }
         }
     }
 }

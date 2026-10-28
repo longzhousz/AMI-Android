@@ -18,6 +18,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.longzhousz.ami.core.PlaybackSnapshot
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.playback.PlaybackService
+import com.longzhousz.ami.playback.PlayerConnection
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -40,6 +41,7 @@ class BackgroundPlaybackTest {
         val id="qa-background-${System.nanoTime()}"
         val song=Song(id,"content://com.longzhousz.ami.test.fixtures/document/album.wav",folder="qa",title="Background fixture",duration=6000)
         var browser:MediaBrowser?=null;var controller:MediaController?=null
+        var player: PlayerConnection? = null
         try {
             stopPreviousPlaybackSession()
             if (legacySleep) repo.prefs.edit().putLong("sleepAt",System.currentTimeMillis()+1500).apply()
@@ -54,9 +56,15 @@ class BackgroundPlaybackTest {
                 browser!!.connect()
             }
             assertTrue(connected.await(40,TimeUnit.SECONDS));assertNotNull(controller)
+            // Prepare the live fixture through the same queue commands as the UI. A late old
+            // service checkpoint must not race a test-only write to the persisted snapshot.
+            instrumentation.runOnMainSync { player = PlayerConnection(context) }
+            await("Fixture controller should connect") { player!!.state.value.connected }
+            instrumentation.runOnMainSync { player!!.play(listOf(song)); player!!.pause(); player!!.seek(500) }
+            await("Fixture track should reach the legacy controller") { controller!!.metadata?.description?.mediaId == song.id }
             block(browser!!,controller!!,activity,song)
         } finally {
-            instrumentation.runOnMainSync { controller?.transportControls?.stop();browser?.disconnect() }
+            instrumentation.runOnMainSync { controller?.transportControls?.stop();browser?.disconnect();player?.release() }
             stopPreviousPlaybackSession()
             repo.playback.publish(PlaybackSnapshot());repo.db.remove(id);repo.reload()
             activity.close()
