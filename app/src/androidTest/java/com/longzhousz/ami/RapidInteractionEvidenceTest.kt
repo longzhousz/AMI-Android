@@ -70,7 +70,7 @@ class RapidInteractionEvidenceTest {
                 compose.onNodeWithTag("full-player").assertIsDisplayed()
                 if (n%2==0) {
                     compose.onNodeWithContentDescription("展开专辑封面").performClick()
-                    compose.onNodeWithText("歌词").performClick()
+                    compose.onNodeWithContentDescription("切换到歌词").performClick()
                 }
                 compose.onNodeWithContentDescription("收起播放页").performClick()
                 compose.onNodeWithTag("full-player").assertDoesNotExist()

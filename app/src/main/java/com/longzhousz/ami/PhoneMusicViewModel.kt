@@ -32,8 +32,8 @@ class PhoneMusicViewModel internal constructor(app: Application, val session: Ph
                 translation?.cancel();lyrics.value=CurrentLyrics(song?.id,song?.lyricsVersion.orEmpty())
                 if (song==null) return@collectLatest
                 try {
-                    val doc=withContext(Dispatchers.IO) { source(song).also { it.lines;it.embeddedTranslation } };ensureActive()
-                    val translated=withContext(Dispatchers.IO) { TranslationClient(repository).cached(song,doc.lines) } ?: doc.embeddedTranslation
+                    val doc=withContext(Dispatchers.IO) { source(song).also { it.lines } };ensureActive()
+                    val translated=withContext(Dispatchers.IO) { TranslationClient(repository).cached(song,doc.lines) }
                     ensureActive()
                     if (session.state.value.song?.id==song.id) lyrics.value=CurrentLyrics(song.id,song.lyricsVersion,doc,translated)
                 } catch (cancelled: CancellationException) { throw cancelled }

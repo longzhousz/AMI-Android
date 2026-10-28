@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -37,6 +38,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
@@ -78,6 +83,9 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         var miniBounds by remember { mutableStateOf<Rect?>(null) }
         val pageState = rememberSaveableStateHolder()
         val current = songsById[playback.id] ?: onlineSongs[playback.id]
+        val floatingInset = if (current != null) 156.dp else 88.dp
+        var lastNavPage by remember { mutableIntStateOf(-1) }
+        var lastNavTap by remember { mutableLongStateOf(0L) }
         val selectedAlbum = albumsByKey[albumKey]
         val bridgeAlbum by model.bridgeAlbum.collectAsStateWithLifecycle()
         val bridgeEnabled by model.bridgeEnabled.collectAsStateWithLifecycle()
@@ -111,19 +119,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         Box(Modifier.fillMaxSize()) {
             Scaffold(
                 modifier = if (fullPlayer) Modifier.clearAndSetSemantics {} else Modifier,
-                snackbarHost = { SnackbarHost(snackbar) },
-                bottomBar = {
-                    Column {
-                        if (current != null) MiniPlayer(current, playback, model.player, clockEnabled = !fullPlayer,
-                            onBounds = { miniBounds = it }, onOpen = { focus.clearFocus(); fullPlayer = true },
-                            onToggle = { model.act("player.toggle") { model.player.toggle() } }, onNext = { model.act("player.next") { model.player.next() } })
-                        NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 0.dp) {
-                            listOf(Triple("曲库", Icons.Rounded.LibraryMusic, 0), Triple("我喜欢", Icons.Rounded.FavoriteBorder, 1), Triple("设置", Icons.Rounded.Tune, 2)).forEach { (label, icon, index) ->
-                                NavigationBarItem(page == index || index == 2 && page >= 4, { page = index; albumKey = null }, { Icon(icon, label) }, alwaysShowLabel = false)
-                            }
-                        }
-                    }
-                }
+                snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = floatingInset)) },
             ) { padding ->
                 Column(Modifier.fillMaxSize().padding(padding)) {
                     AnimatedVisibility(importing.running) {
@@ -141,10 +137,10 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                     }, label = "app-destination") { destination ->
                         val album = albumsByKey[destination.albumKey]
                         when {
-                            album != null -> AlbumScreen(album, playback.id, model, { albumKey = null }, { remove = it })
-                            destination.page == 2 -> SettingsScreen(model, onImport, onNotifications, onBridgeFolder, onLyricsFolder, onLocalLibrary = { page = 4 })
+                            album != null -> Box(Modifier.padding(bottom = floatingInset)) { AlbumScreen(album, playback.id, model, { albumKey = null }, { remove = it }) }
+                            destination.page == 2 -> Box(Modifier.padding(bottom = floatingInset)) { SettingsScreen(model, onImport, onNotifications, onBridgeFolder, onLyricsFolder, onLocalLibrary = { page = 4 }) }
                             destination.page >= 4 -> pageState.SaveableStateProvider("local-${destination.page}") {
-                                Column {
+                                Column(Modifier.padding(bottom = floatingInset)) {
                                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                         ActionIcon(Icons.Rounded.ArrowBack, "返回设置", { page = 2 })
                                         Text("本地音乐", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
@@ -155,7 +151,35 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                                 }
                             }
                             !model.cloud.direct -> CloudMusicScreen(model)
-                            else -> pageState.SaveableStateProvider("online-${destination.page}") { OnlineLibraryScreen(model, destination.page == 1) }
+                            else -> pageState.SaveableStateProvider("online-${destination.page}") { OnlineLibraryScreen(model, destination.page == 1, floatingInset) }
+                        }
+                    }
+                }
+            }
+            Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
+                .then(if (fullPlayer) Modifier.clearAndSetSemantics {} else Modifier), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (current != null) MiniPlayer(current, playback, model.player, clockEnabled = !fullPlayer, verticalPadding = 0,
+                        onBounds = { miniBounds = it }, onOpen = { focus.clearFocus(); fullPlayer = true },
+                        onToggle = { model.act("player.toggle") { model.player.toggle() } },
+                        onNext = { model.act("player.next") { model.player.next() } })
+                if (current != null) Spacer(Modifier.height(8.dp))
+                Surface(shape = RoundedCornerShape(32.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 6.dp) {
+                    Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(Triple("曲库", Icons.Rounded.LibraryMusic, 0), Triple("我喜欢", Icons.Rounded.FavoriteBorder, 1), Triple("设置", Icons.Rounded.Tune, 2)).forEach { (label, icon, index) ->
+                            val active = page == index || index == 2 && page >= 4
+                            IconButton(onClick = {
+                                val now = android.os.SystemClock.uptimeMillis()
+                                val doubleTap = lastNavPage == index && now - lastNavTap <= android.view.ViewConfiguration.getDoubleTapTimeout()
+                                lastNavPage = if (doubleTap) -1 else index; lastNavTap = now
+                                page = index; albumKey = null; focus.clearFocus()
+                                if (doubleTap && index < 2) model.requestOnlineRefresh(index)
+                            }, modifier = Modifier.size(52.dp).background(if (active) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent, CircleShape)
+                                .semantics {
+                                    selected = active
+                                    if (index < 2) customActions = listOf(CustomAccessibilityAction("刷新$label") { model.requestOnlineRefresh(index); true })
+                                }) {
+                                Icon(icon, label, tint = if (active) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                 }
@@ -248,7 +272,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
             }
             else -> LazyVerticalGrid(GridCells.Adaptive(145.dp), state = albumGrid, contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
                 items(filteredAlbums, key = { it.key }) { album ->
-                    Column(Modifier.animateItem(placementSpec = spring(stiffness = 500f)).clip(RoundedCornerShape(18.dp)).clickable { onAlbum(album) }) {
+                    Column(Modifier.animateItem(placementSpec = spring(stiffness = 500f)).clickable { onAlbum(album) }) {
                         Cover(album.cover, album.title, Modifier.fillMaxWidth().aspectRatio(1f))
                         Text(album.title, Modifier.padding(top = 10.dp, start = 2.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text("${album.artist} · ${album.songs.size} 首", Modifier.padding(start = 2.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)

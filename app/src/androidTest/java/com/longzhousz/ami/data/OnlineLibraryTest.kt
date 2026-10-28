@@ -33,14 +33,30 @@ class OnlineLibraryTest {
     @get:Rule val compose = createComposeRule()
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private lateinit var cloud: CloudMusic
+    private lateinit var cache: OnlineAudioCache
+    private lateinit var tone: ByteArray
+    private val cacheName = "qa-online-resolver"
     private val requests = CopyOnWriteArrayList<Pair<String, JSONObject>>()
     @Before fun prepare() {
         val web = NeteaseTransport(webForm = { it }, open = { address -> Fixture(address) })
-        cloud = CloudMusic(context, true, web)
+        tone = InstrumentationRegistry.getInstrumentation().context.assets.open("qa-96k-24bit.flac").use { it.readBytes() }
+        cache = OnlineAudioCache(context, cacheName, reserve = 0, open = { address ->
+            object : HttpURLConnection(URL(address)) {
+                override fun connect() = Unit
+                override fun disconnect() = Unit
+                override fun usingProxy() = false
+                override fun getResponseCode() = 200
+                override fun getContentLengthLong() = tone.size.toLong()
+                override fun getInputStream() = ByteArrayInputStream(tone)
+            }
+        })
+        cloud = CloudMusic(context, true, web, cache)
         runBlocking { cloud.disconnect(); cloud.login("MUSIC_U=qa-only-not-a-real-session") }
     }
     @After fun cleanup() {
         runBlocking { cloud.disconnect() }
+        cache.close(); context.deleteDatabase(File(context.noBackupFilesDir, "$cacheName.db").path)
+        File(context.cacheDir, cacheName).deleteRecursively()
         File(context.noBackupFilesDir, "netease-queue.json").delete()
     }
     private fun library() = runBlocking(Dispatchers.IO) { cloud.library() }
@@ -73,7 +89,7 @@ class OnlineLibraryTest {
         val plays = mutableListOf<Pair<List<CloudTrack>, Int>>()
         compose.setContent { AmiTheme("light") { Surface { OnlineLibraryContent(cloud, state, false, null, {
             refreshes++
-            state = state.copy(library = state.library.copy(collections = shuffledShelf(state.library.collections, state.library.collections)))
+            state = state.copy(library = state.library.copy(collections = shuffledShelf(state.library.collections, state.library.collections)), revision = state.revision + 1)
         }, { rows, index -> plays += rows to index }, {}) } } }
         compose.onNodeWithTag("online-shelf").assertIsDisplayed()
         compose.onNodeWithContentDescription("刷新网易云").assertDoesNotExist()
@@ -110,13 +126,42 @@ class OnlineLibraryTest {
         compose.onNodeWithText("红心歌曲 202").assertIsDisplayed()
         compose.onNodeWithText("夜里听海").assertDoesNotExist()
         screenshot("online-favorites")
+        val before = requests.size
         compose.runOnIdle { assertEquals(listOf("201"), played); favorites = false }
+        compose.onNodeWithTag("online-search").assertDoesNotExist()
+        compose.runOnIdle { favorites = true }
+        compose.onNodeWithText("红心歌曲 201").assertIsDisplayed()
+        compose.runOnIdle { assertEquals("Returning to favorites must reuse its page", before, requests.size); favorites = false }
+        compose.onNodeWithContentDescription("搜索音乐").performClick()
         compose.onNodeWithTag("online-search").performTextInput("晚风")
         compose.onNodeWithTag("online-search").performImeAction()
         compose.waitUntil(10000) { visible("搜索歌曲 301") }
         compose.onNodeWithText("搜索歌曲 301").performClick()
         compose.runOnIdle { assertEquals(listOf("201", "301"), played) }
         assertEquals("晚风", requests.last { it.first == "cloudsearch/pc" }.second.getString("s"))
+    }
+
+    @Test fun explicitFavoritesRefreshFetchesAgainAndShelfRefreshMovesTheFirstCard() {
+        var state by mutableStateOf(CloudLibraryState(library(), loaded = true))
+        var request by mutableIntStateOf(0)
+        var favorites by mutableStateOf(true)
+        compose.setContent { AmiTheme("light") { Surface { key(favorites) {
+            OnlineLibraryContent(cloud, state, favorites, null, {
+                state = state.copy(library = state.library.copy(collections = shuffledShelf(state.library.collections, state.library.collections)), revision = state.revision + 1)
+            }, { _, _ -> }, {}, refreshRequest = request)
+        } } } }
+        compose.waitUntil(10000) { visible("红心歌曲 201") }
+        val count = requests.count { it.first == "v6/playlist/detail" }
+        compose.runOnIdle { request++ }
+        compose.waitUntil(10000) { requests.count { it.first == "v6/playlist/detail" } > count }
+        compose.runOnIdle { request = 0; favorites = false }
+        val first = state.library.collections.first()
+        compose.runOnIdle { request++ }
+        compose.waitUntil(5000) { state.revision > 0 }
+        compose.runOnIdle { assertNotEquals(first.key, state.library.collections.first().key) }
+        val firstBounds = compose.onNodeWithTag("collection-${state.library.collections.first().key}").fetchSemanticsNode().boundsInRoot
+        val gridBounds = compose.onNodeWithTag("online-shelf").fetchSemanticsNode().boundsInRoot
+        assertTrue("Refresh must anchor the new first row", firstBounds.top - gridBounds.top < 20)
     }
 
     @Test fun streamRequestsHighQualityWithoutWritingUrlsOrCredentialsToTheQueue() = runBlocking(Dispatchers.IO) {
@@ -129,6 +174,29 @@ class OnlineLibraryTest {
         val persisted = File(context.noBackupFilesDir, "netease-queue.json").readText()
         assertFalse(persisted.contains("qa-audio")); assertFalse(persisted.contains("qa-only-not-a-real-session"))
         assertFalse(File(context.noBackupFilesDir, "netease-account.enc").readBytes().toString(Charsets.ISO_8859_1).contains("qa-only-not-a-real-session"))
+    }
+
+    @Test fun cachedAudioUsesNoStreamApiAndMissingAudioFallsBackWithTheSameLogicalSong() = runBlocking(Dispatchers.IO) {
+        val track = cloud.tracks(cloud.library().liked!!).tracks.first().copy(duration = 6000)
+        cloud.rememberQueue(listOf(track))
+        val account = cache.scope()!!; val now = System.currentTimeMillis()
+        repeat(3) { cache.record(account, track.id, 6000, now + it) }
+        cache.download(account, OnlineAudioCache.Candidate(track.id, 6000),
+            NeteaseAudio("https://m7.music.126.net/qa.flac", "hires", "flac", 2400000, tone.size.toLong()), now) { true }
+        requests.clear()
+        val local = cloud.resolve(track.song().uri)
+        assertTrue(local.startsWith("file:"))
+        assertTrue(requests.isEmpty())
+        assertEquals("Hi-Res", cloud.audioQuality.value[track.song().id]?.label)
+        assertEquals(track.song(), cloud.catalog.value[track.song().id])
+        // An already-open online source must stay online when this cache appears during playback.
+        assertEquals("https://m7.music.126.net/qa-audio.flac", cloud.resolve(track.song().uri, allowCache = false))
+        assertEquals(local, cloud.resolve(track.song().uri))
+        File(android.net.Uri.parse(local).path!!).delete()
+        assertEquals("https://m7.music.126.net/qa-audio.flac", cloud.resolve(track.song().uri))
+        assertEquals(2, requests.count { it.first == "client-audio" })
+        assertFalse(cloud.audioQuality.value[track.song().id]!!.cached)
+        assertEquals("ami-cloud://song/${track.id}", cloud.catalog.value[track.song().id]!!.uri)
     }
 
     private inner class Fixture(address: String) : HttpURLConnection(URL(address)) {

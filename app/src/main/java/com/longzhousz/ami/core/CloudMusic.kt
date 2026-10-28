@@ -28,12 +28,25 @@ data class CloudPlaylist(val id: String, val title: String, val cover: String?, 
 }
 data class CloudLibrary(val collections: List<CloudPlaylist> = emptyList(), val liked: CloudPlaylist? = null)
 data class CloudLibraryState(val library: CloudLibrary = CloudLibrary(), val loaded: Boolean = false,
-    val refreshing: Boolean = false, val error: String? = null)
+    val refreshing: Boolean = false, val error: String? = null, val revision: Long = 0)
 
 /** Reorder the shelf only; collection tracks and the playback queue are separate. */
 internal fun shuffledShelf(cards: List<CloudPlaylist>, previous: List<CloudPlaylist>): List<CloudPlaylist> {
-    val fresh = cards.distinctBy { it.key }.shuffled()
-    return if (fresh.size > 1 && fresh.map { it.key } == previous.map { it.key }) fresh.drop(1) + fresh.first() else fresh
+    val fresh = cards.distinctBy { it.key }.shuffled().toMutableList()
+    if (fresh.size > 1 && fresh.first().key == previous.firstOrNull()?.key)
+        java.util.Collections.swap(fresh, 0, kotlin.random.Random.nextInt(1, fresh.size))
+    return fresh
+}
+
+data class AudioQuality(val id: String, val level: String?, val codec: String, val bitrate: Int? = null, val cached: Boolean = false) {
+    val label: String get() {
+        val tier = when (level) {
+            "jyeffect" -> "高清臻音"; "hires" -> "Hi-Res"; "lossless" -> "无损"
+            "exhigh" -> "极高"; "higher" -> "较高"; "standard" -> "标准"
+            else -> if (codec == "unknown") "待确认" else codec.uppercase(Locale.ROOT)
+        }
+        return if (codec in setOf("mp3", "aac", "m4a") && bitrate != null && bitrate > 0) "$tier · ${bitrate / 1000} kbps" else tier
+    }
 }
 data class CloudTrack(val id: String, val originalId: String, val title: String, val artist: String,
     val album: String, val duration: Long, val cover: String?, val available: Boolean) {

@@ -73,7 +73,7 @@ class ArtworkTransitionTest {
         compose.mainClock.autoAdvance=false
         compose.onNodeWithContentDescription("展开专辑封面").performClick()
         compose.mainClock.advanceTimeBy(100)
-        compose.onNodeWithText("歌词").performClick()
+        compose.onNodeWithContentDescription("切换到歌词").performClick()
         compose.mainClock.advanceTimeBy(1500)
         assertEquals(small,compose.onNodeWithTag("player-cover").fetchSemanticsNode().boundsInRoot.width,2f)
         compose.mainClock.autoAdvance=true

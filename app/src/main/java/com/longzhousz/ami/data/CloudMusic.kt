@@ -4,6 +4,9 @@ import android.content.Context
 import android.util.AtomicFile
 import com.longzhousz.ami.core.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -21,17 +24,34 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /** Direct phone login by default; cloudPreview retains the older paired-PC experiment. */
-class CloudMusic internal constructor(context: Context, val direct: Boolean, web: NeteaseTransport) {
+class CloudMusic internal constructor(private val context: Context, val direct: Boolean, web: NeteaseTransport, cache: OnlineAudioCache? = null) {
     constructor(context: Context, direct: Boolean = com.longzhousz.ami.BuildConfig.BUILD_TYPE != "cloudPreview") : this(context, direct, NeteaseTransport())
     private val account = NeteaseAccount(context, web)
+    private val audioCache by lazy { cache ?: (context.applicationContext as com.longzhousz.ami.AmiApplication).repository.onlineCache }
+    private val authLock = Any()
+    @Volatile private var bypassCacheId: String? = null
+    @Volatile internal var recoveringAudio: String? = null
+    private fun cacheAccount(): String = synchronized(authLock) { account.accountKey().also { audioCache.switchAccount(it) } }
     private val secret = SecretStore(context, "netease-connection")
     private val queueFile = AtomicFile(File(context.noBackupFilesDir, "netease-queue.json"))
     private val queueLock = Mutex()
     private val closer = Dispatchers.IO.limitedParallelism(1)
     val configured = MutableStateFlow(if (direct) account.configured() else secret.configured())
     val catalog = MutableStateFlow<Map<String, Song>>(emptyMap())
+    val audioQuality = MutableStateFlow<Map<String, AudioQuality>>(emptyMap())
+    @Synchronized private fun rememberQuality(value: AudioQuality) {
+        val next = audioQuality.value.toMutableMap()
+        next.remove(value.id); next[value.id] = value
+        while (next.size > 4) next.remove(next.keys.first())
+        audioQuality.value = next
+    }
     private val lyricCache = LinkedHashMap<String, SongLyrics>(8, .75f, true)
     private var lyricBytes = 0
+    // One list per primary tab, not a growing cache for every visited album/search.
+    private val pages = arrayOfNulls<Pair<String, CloudTracks>>(2)
+    @Synchronized fun savedPage(favorites: Boolean, key: String): CloudTracks? = pages[if (favorites) 1 else 0]?.takeIf { it.first == key }?.second
+    @Synchronized fun savePage(favorites: Boolean, key: String, page: CloudTracks) { pages[if (favorites) 1 else 0] = key to page }
+    @Synchronized fun clearPages() { pages.fill(null) }
 
     private fun connection(): CloudConnection {
         val saved = secret.read()?.let(::JSONObject) ?: error("请先连接电脑上的网易云连接端")
@@ -49,13 +69,17 @@ class CloudMusic internal constructor(context: Context, val direct: Boolean, web
     suspend fun login(cookies: String): String {
         check(direct)
         val nickname = account.login(cookies)
+        withContext(Dispatchers.IO) { runCatching { cacheAccount() } }
+        clearPages()
         configured.value = true
         return nickname
     }
     fun refreshCatalog() { if (direct) account.invalidate() }
     suspend fun disconnect() = withContext(Dispatchers.IO) {
-        if (direct) account.logout() else secret.save("")
-        configured.value = false; trim()
+        if (direct) synchronized(authLock) {
+            account.logout(); OnlineCacheWorker.cancel(context); runCatching { audioCache.switchAccount(null) }
+        } else secret.save("")
+        configured.value = false; trim(); clearPages(); audioQuality.value = emptyMap()
     }
     suspend fun profile(): String = request("status").optString("nickname", "网易云音乐")
     suspend fun playlists(): List<CloudPlaylist> = request("playlists").getJSONArray("playlists").let { rows ->
@@ -117,10 +141,11 @@ class CloudMusic internal constructor(context: Context, val direct: Boolean, web
             ids.mapNotNull { catalog.value[it] }
         }
     }
-    suspend fun lyrics(song: Song): SongLyrics {
-        synchronized(lyricCache) { lyricCache[song.id]?.let { return it } }
+    suspend fun lyrics(song: Song): SongLyrics = withContext(Dispatchers.IO) {
+        synchronized(lyricCache) { lyricCache[song.id]?.let { return@withContext it } }
         val body = request("lyrics", JSONObject().put("id", if (direct) song.neteaseId ?: id(song.id.removePrefix("netease:")) else id(song.id.removePrefix("netease:"))))
         val document = SongLyrics(body.optString("original"), body.optString("translated"), song.lyricsVersion)
+        document.lines // Parse on the loader thread; lyric animation never parses a new document.
         synchronized(lyricCache) {
             if (document.estimatedBytes <= 2 * 1024 * 1024) {
                 lyricCache.remove(song.id)?.let { lyricBytes -= it.estimatedBytes }
@@ -128,18 +153,68 @@ class CloudMusic internal constructor(context: Context, val direct: Boolean, web
                 while (lyricBytes > 2 * 1024 * 1024) { val entry = lyricCache.entries.iterator(); lyricBytes -= entry.next().value.estimatedBytes; entry.remove() }
             }
         }
-        return document
+        document
     }
     fun trim() = synchronized(lyricCache) { lyricCache.clear(); lyricBytes = 0 }
 
+    suspend fun maintainAudioCache() = withContext(Dispatchers.IO) {
+        if (!direct || !configured.value) return@withContext
+        runCatching {
+            val key = cacheAccount(); val now = System.currentTimeMillis()
+            audioCache.cleanup(now)
+            if (audioCache.candidates(key, now).isNotEmpty()) OnlineCacheWorker.enqueue(context, key)
+        }
+    }
+    suspend fun recordListen(songId: String) = withContext(Dispatchers.IO) {
+        if (!direct || !configured.value || !songId.startsWith("netease:")) return@withContext
+        runCatching {
+            val key = cacheAccount(); val id = neteaseId(songId.removePrefix("netease:"))
+            val now = System.currentTimeMillis()
+            if (audioCache.record(key, id, catalog.value[songId]?.duration ?: 0, now)) {
+                audioCache.cleanup(now)
+                if (audioCache.candidates(key, now).isNotEmpty()) OnlineCacheWorker.enqueue(context, key)
+            }
+        }
+    }
+    fun protectAudio(songId: String?) { if (direct) audioCache.playingId = songId?.removePrefix("netease:") }
+    suspend fun discardCachedAudio(songId: String) = withContext(Dispatchers.IO) {
+        bypassCacheId = songId
+        if (direct && configured.value) runCatching { audioCache.invalidate(cacheAccount(), songId.removePrefix("netease:")) }
+        synchronized(this@CloudMusic) { audioQuality.value = audioQuality.value - songId }
+    }
+    internal suspend fun fillAudioCache(expectedAccount: String) = withContext(Dispatchers.IO) {
+        if (!direct || !configured.value || runCatching { account.accountKey() }.getOrNull() != expectedAccount || audioCache.scope() != expectedAccount) return@withContext
+        val coroutine = currentCoroutineContext()
+        for (candidate in audioCache.candidates(expectedAccount, System.currentTimeMillis())) {
+            ensureActive()
+            if (audioCache.scope() != expectedAccount) break
+            try {
+                val audio = account.stream(candidate.id, candidate.duration)
+                audioCache.download(expectedAccount, candidate, audio, System.currentTimeMillis()) {
+                    coroutine.isActive && audioCache.scope() == expectedAccount
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { audioCache.failed(expectedAccount, candidate.id, System.currentTimeMillis()) }
+        }
+    }
+
     /** Called only by Media3's loader thread, including seek/retry and background playback. */
-    fun resolve(uri: String): String {
+    fun resolve(uri: String, allowCache: Boolean = true): String {
         check(android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) { "网络播放需在加载线程准备" }
         val parsed = URI(uri); require(parsed.scheme == "ami-cloud" && parsed.host == "song")
         if (direct) {
             val key = id(parsed.path.removePrefix("/"))
+            val cached = if (!allowCache || bypassCacheId == "netease:$key") null else runCatching {
+                audioCache.get(cacheAccount(), key, System.currentTimeMillis())
+            }.getOrNull()
+            cached?.let { hit ->
+                rememberQuality(hit.quality)
+                return android.net.Uri.fromFile(hit.file).toString()
+            }
             val song = catalog.value["netease:$key"]
-            return account.stream(song?.neteaseId ?: neteaseId(key), song?.duration ?: 0)
+            val audio = account.stream(song?.neteaseId ?: neteaseId(key), song?.duration ?: 0)
+            rememberQuality(AudioQuality("netease:$key", audio.level, audio.codec, audio.bitrate))
+            return audio.url
         }
         val result = read("stream", JSONObject().put("id", id(parsed.path.removePrefix("/"))), connection())
         return cloudMediaUrl(result.getString("url"))

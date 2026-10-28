@@ -53,18 +53,19 @@ internal class ArtworkMemory(val expectedPath: () -> String?) {
     var key by mutableStateOf<MemoryCache.Key?>(null)
 }
 
-@Composable internal fun Cover(path: String?, title: String, modifier: Modifier = Modifier, memory: ArtworkMemory? = null, cornerRadius: androidx.compose.ui.unit.Dp = 18.dp) {
+@Composable internal fun Cover(path: String?, title: String, modifier: Modifier = Modifier, memory: ArtworkMemory? = null) {
     val context = LocalContext.current
     var previousImage by remember { mutableStateOf<MemoryCache.Key?>(null) }
     val latestPath by rememberUpdatedState(path)
-    Crossfade(path to title, modifier.clip(RoundedCornerShape(cornerRadius)), animationSpec = tween(260), label = "artwork") { artwork ->
+    Crossfade(path to title, modifier, animationSpec = tween(260), label = "artwork") { artwork ->
         val color = CoverPalette[(artwork.second.hashCode().toLong().let { if (it < 0) -it else it } % CoverPalette.size).toInt()]
-        Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(color.copy(alpha = 0.65f), color))), contentAlignment = Alignment.Center) {
+        val placeholder = if (artwork.first == null) Modifier.background(Brush.linearGradient(listOf(color.copy(alpha = 0.65f), color))) else Modifier
+        Box(Modifier.fillMaxSize().then(placeholder), contentAlignment = Alignment.Center) {
         if (artwork.first != null) {
             val request = remember(artwork.first, context) { ImageRequest.Builder(context).data(if (artwork.first!!.startsWith("https://")) artwork.first else File(artwork.first!!))
                 .diskCachePolicy(if (artwork.first!!.startsWith("https://")) CachePolicy.DISABLED else CachePolicy.ENABLED)
                 .placeholderMemoryCacheKey(memory?.key ?: previousImage).crossfade(150).build() }
-            AsyncImage(request, "《${artwork.second}》封面", Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+            AsyncImage(request, "《${artwork.second}》封面", Modifier.fillMaxSize(), contentScale = ContentScale.Fit,
                 onSuccess = { if (artwork.first == latestPath && (memory == null || memory.expectedPath() == artwork.first)) {
                     if (memory == null) previousImage = it.result.memoryCacheKey else memory.key = it.result.memoryCacheKey
                 } })

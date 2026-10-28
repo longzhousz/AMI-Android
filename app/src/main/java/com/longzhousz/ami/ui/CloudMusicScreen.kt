@@ -130,7 +130,7 @@ import kotlinx.coroutines.launch
                     val shown = playlists.filter { category == "all" || !cloud.direct || it.kind == category }
                     items(shown, key = { it.id }) { playlist ->
                         Row(Modifier.fillMaxWidth().clickable { selected = playlist; submitted = ""; offset = 0 }.padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Cover(playlist.cover, playlist.title, Modifier.size(62.dp), cornerRadius = 14.dp)
+                            Cover(playlist.cover, playlist.title, Modifier.size(62.dp))
                             Spacer(Modifier.width(14.dp)); Column(Modifier.weight(1f)) {
                                 Text(playlist.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
                                 Text("${playlist.count} 首", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -102,13 +102,13 @@ class PhoneFollowTest {
         compose.setContent { PhonePlayerBody(vm,true,{},{},{},{}) }
         compose.waitUntil(15000) { compose.onAllNodesWithText("第二句甲").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("随播歌曲甲").assertIsDisplayed()
-        compose.onNodeWithText("队列").assertDoesNotExist()
+        compose.onNodeWithContentDescription("播放队列").assertDoesNotExist()
         compose.onNodeWithContentDescription("开启随机播放").assertDoesNotExist()
         compose.onNodeWithContentDescription("加入喜欢").assertDoesNotExist()
         screenshot("phone-lyrics")
         compose.onNodeWithContentDescription("展开专辑封面").performClick()
         screenshot("phone-artwork")
-        compose.onNodeWithText("歌词").performClick()
+        compose.onNodeWithContentDescription("切换到歌词").performClick()
         compose.onNodeWithTag("playback-seek").performSemanticsAction(SemanticsActions.SetProgress) { it(15000f) }
         compose.waitUntil(5000) { requestedSeek.get()==15000L }
         compose.onNodeWithContentDescription("下一首").performClick()

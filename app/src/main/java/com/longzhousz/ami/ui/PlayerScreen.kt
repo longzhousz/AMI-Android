@@ -50,6 +50,7 @@ internal data class PlayerActions(
 @Composable fun PlayerScreen(song: Song, model: AmiViewModel, onClose: () -> Unit, onQueue: () -> Unit, onLyricFile: () -> Unit, dragHandle: Modifier = Modifier) {
     val playback by model.player.state.collectAsStateWithLifecycle()
     val lyrics by model.lyrics.collectAsStateWithLifecycle()
+    val qualities by model.cloud.audioQuality.collectAsStateWithLifecycle()
     val matched = lyrics.songId == song.id && lyrics.revision == song.lyricsVersion
     val document = lyrics.document.takeIf { matched }
     val detailed = song.copy(lyrics = document?.original.orEmpty(), lyricTranslation = document?.translated.orEmpty())
@@ -66,7 +67,8 @@ internal data class PlayerActions(
         repeat = { model.act("player.repeat") { model.player.repeat() } },
         translate = { model.translate(song) }, retranslate = { model.translate(song, force = true) },
         restoreLyrics = { model.clearLyrics(song) },
-    ), lyricPosition = { clock.value }, dragHandle = dragHandle, preparedLines = document?.lines, lyricsReady = document != null)
+    ), lyricPosition = { clock.value }, dragHandle = dragHandle, preparedLines = document?.lines, lyricsReady = document != null,
+        audioQuality = if (song.isCloudSong()) qualities[song.id]?.label ?: "待确认" else song.format.ifBlank { "待确认" })
 }
 
 private val PlayerColors = darkColorScheme(
@@ -81,6 +83,7 @@ private val PlayerColors = darkColorScheme(
     dragHandle: Modifier = Modifier,
     preparedLines: List<LyricLine>? = null,
     lyricsReady: Boolean = true,
+    audioQuality: String = "暂不可知",
 ) {
     val latestSongId by rememberUpdatedState(song.id)
     val latestActions by rememberUpdatedState(actions)
@@ -98,9 +101,13 @@ private val PlayerColors = darkColorScheme(
                     ActionIcon(Icons.Rounded.KeyboardArrowDown, "收起播放页", actions.close)
                     Spacer(Modifier.weight(1f))
                     actions.settings?.let { ActionIcon(Icons.Rounded.Tune,"设置",it,tint=Color.White.copy(alpha=.7f)) }
-                    if ((!song.isCloudSong() && !actions.external) || !translation.isNullOrEmpty()) Box {
+                    Box {
                         ActionIcon(Icons.Rounded.MoreHoriz, "歌词选项", { lyricMenu = true }, tint = Color.White.copy(alpha = .7f))
                         DropdownMenu(lyricMenu, { lyricMenu = false }) {
+                            DropdownMenuItem(text = { Text("当前音质：$audioQuality") }, onClick = {}, enabled = false,
+                                leadingIcon = { Icon(Icons.Rounded.HighQuality, null) },
+                                colors = MenuDefaults.itemColors(disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                                    disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant))
                             if (!song.isCloudSong() && !actions.external) DropdownMenuItem(text = { Text("为这首歌导入歌词") }, onClick = { lyricMenu = false; actions.lyricFile() })
                             if (song.manualLyrics && !actions.external) DropdownMenuItem(text = { Text("恢复自动匹配") }, onClick = { lyricMenu = false; actions.restoreLyrics() })
                             if (!translation.isNullOrEmpty()) DropdownMenuItem(text = { Text("重新翻译") }, onClick = { lyricMenu = false; actions.retranslate() }, enabled = !translating)
@@ -190,20 +197,14 @@ private data class PlayerStage(val song: Song, val translation: List<String>?, v
                 }
             }
             Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onLyrics, contentPadding = PaddingValues(horizontal = 14.dp),
-                    colors = ButtonDefaults.textButtonColors(containerColor = Color.White.copy(alpha = .10f))) {
-                    Icon(if (showLyrics) Icons.Rounded.Album else Icons.Rounded.Lyrics, null, Modifier.size(17.dp))
-                    Spacer(Modifier.width(7.dp)); Text(if (showLyrics) "封面" else "歌词", fontSize = 12.sp)
-                }
-                if (showLyrics && song.lyrics.isNotBlank()) TextButton(onTranslation, enabled = !translating,
-                    contentPadding = PaddingValues(horizontal = 12.dp),
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = if (translated && !showTranslation) .45f else .85f))) {
-                    Icon(Icons.Rounded.Translate, null, Modifier.size(17.dp)); Spacer(Modifier.width(7.dp))
-                    Text(if (translated) "译文" else "翻译", fontSize = 12.sp)
-                } else Spacer(Modifier.weight(1f))
-                TextButton(actions.queue, contentPadding = PaddingValues(horizontal = 12.dp)) {
-                    Icon(if (actions.external) Icons.Rounded.OpenInNew else Icons.Rounded.QueueMusic, null, Modifier.size(19.dp)); Spacer(Modifier.width(7.dp)); Text(if (actions.external) "网易云" else "队列", fontSize = 12.sp)
-                }
+                ActionIcon(if (showLyrics) Icons.Rounded.Album else Icons.Rounded.Lyrics,
+                    if (showLyrics) "切换到封面" else "切换到歌词", onLyrics, tint = Color.White.copy(alpha = .85f))
+                if (showLyrics && song.lyrics.isNotBlank()) ActionIcon(Icons.Rounded.Translate,
+                    if (translated) if (showTranslation) "隐藏译文" else "显示译文" else "翻译歌词", onTranslation,
+                    enabled = !translating, tint = Color.White.copy(alpha = if (translated && !showTranslation) .45f else .85f))
+                else Spacer(Modifier.size(48.dp))
+                ActionIcon(if (actions.external) Icons.Rounded.OpenInNew else Icons.Rounded.QueueMusic,
+                    if (actions.external) "打开网易云音乐" else "播放队列", actions.queue, tint = Color.White.copy(alpha = .85f))
             }
         }
     }

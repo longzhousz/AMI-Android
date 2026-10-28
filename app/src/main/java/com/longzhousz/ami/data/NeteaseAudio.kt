@@ -3,7 +3,7 @@ package com.longzhousz.ami.data
 import org.json.JSONObject
 
 internal val neteaseAudioLevels = listOf("jyeffect", "hires", "lossless", "exhigh")
-internal data class NeteaseAudio(val url: String, val level: String?, val codec: String, val bitrate: Int?) {
+internal data class NeteaseAudio(val url: String, val level: String?, val codec: String, val bitrate: Int?, val bytes: Long = 0, val md5: String? = null) {
     val rank get() = neteaseAudioLevels.indexOf(level).takeIf { it >= 0 } ?: Int.MAX_VALUE
 }
 
@@ -18,7 +18,8 @@ internal fun neteaseAudio(root: JSONObject, id: String, duration: Long): Netease
         codec in setOf("mp3", "aac", "m4a") -> reported.takeIf { it in setOf("exhigh", "higher", "standard") }
         else -> null
     }
-    return NeteaseAudio(url, level, codec, row.optInt("br").takeIf { it > 0 })
+    return NeteaseAudio(url, level, codec, row.optInt("br").takeIf { it > 0 }, row.optLong("size").coerceAtLeast(0),
+        row.optString("md5").lowercase().takeIf { it.matches(Regex("[a-f0-9]{32}")) })
 }
 
 /** At most four quality probes, stopping once the server has already supplied the next tier. */

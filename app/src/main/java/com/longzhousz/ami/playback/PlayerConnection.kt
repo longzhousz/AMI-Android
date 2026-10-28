@@ -18,7 +18,7 @@ data class PlaybackState(
     val nextId: String? = null,
 )
 
-class PlayerConnection(context: Context) {
+class PlayerConnection(private val context: Context) {
     val state = MutableStateFlow(PlaybackState())
     private val future = MediaController.Builder(context, SessionToken(context, ComponentName(context, PlaybackService::class.java))).buildAsync()
     private var controller: MediaController? = null
@@ -40,11 +40,12 @@ class PlayerConnection(context: Context) {
             val ids = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }
             if (ids != queue) queue = ids
         }
-        val playRequested = c.playWhenReady && c.playbackState != Player.STATE_ENDED && c.playerError == null
+        val recovering = c.currentMediaItem?.mediaId?.let { (context.applicationContext as com.longzhousz.ami.AmiApplication).repository.cloud.recoveringAudio == it } == true
+        val playRequested = c.playWhenReady && c.playbackState != Player.STATE_ENDED && (c.playerError == null || recovering)
         state.value = PlaybackState(true, c.currentMediaItem?.mediaId, playRequested, c.currentPosition.coerceAtLeast(0),
-            c.duration.coerceAtLeast(0), c.playbackState == Player.STATE_BUFFERING, c.shuffleModeEnabled, c.repeatMode,
+            c.duration.coerceAtLeast(0), c.playbackState == Player.STATE_BUFFERING || recovering, c.shuffleModeEnabled, c.repeatMode,
             queue,
-            c.playerError?.let { if (c.currentMediaItem?.mediaId?.startsWith("netease:") == true)
+            c.playerError?.takeUnless { recovering }?.let { if (c.currentMediaItem?.mediaId?.startsWith("netease:") == true)
                 "网易云播放暂不可用，请检查登录、网络和曲目权限" else "无法播放此音频（${it.errorCodeName}），请检查文件授权或格式" }, advancing = c.isPlaying,
             nextId = c.nextMediaItemIndex.takeIf { it >= 0 }?.let { c.getMediaItemAt(it).mediaId })
     }

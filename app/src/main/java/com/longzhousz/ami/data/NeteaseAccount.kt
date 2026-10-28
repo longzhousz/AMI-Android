@@ -7,13 +7,15 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Read-only account/library access. No account writes, downloads, alternative audio, or public proxy. */
+/** Read-only account/library access; audio URLs retain the signed-in account's permissions. */
 internal class NeteaseAccount(context: Context, private val web: NeteaseTransport = NeteaseTransport()) {
     private val secret = SecretStore(context, "netease-account")
     private data class PlaylistIds(val at: Long, val ids: List<String>)
     private val lists = LinkedHashMap<String, PlaylistIds>(4, .75f, true)
     fun configured() = secret.configured()
     private fun credentials(): JSONObject = secret.read()?.let(::JSONObject) ?: error("请先登录网易云音乐")
+    fun accountKey(): String = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(credentials().getString("uid").toByteArray()).joinToString("") { "%02x".format(it) }
     suspend fun login(rawCookies: String): String = withContext(Dispatchers.IO) {
         val cookie = neteaseCookies(rawCookies)
         val profile = profile(web.post("w/nuser/account/get", JSONObject(), cookie))
@@ -122,7 +124,7 @@ internal class NeteaseAccount(context: Context, private val web: NeteaseTranspor
         }
     }
     /** Media3 loader thread resolves short-lived URLs only when audio is requested. */
-    fun stream(id: String, duration: Long): String {
+    fun stream(id: String, duration: Long): NeteaseAudio {
         val auth = credentials(); val cookie = neteaseCookies(auth.getString("cookie")); neteaseId(id)
         var clientAvailable = true
         val audio = try { bestNeteaseAudio(id, duration) { level ->
@@ -137,7 +139,7 @@ internal class NeteaseAccount(context: Context, private val web: NeteaseTranspor
             neteaseAudio(web.blockingPost("song/enhance/player/url", JSONObject().put("ids", JSONArray().put(id).toString()).put("br", 320000), cookie), id, duration)
         }
         android.util.Log.i("AmiAudio", "source=netease level=${audio.level ?: "unknown"} codec=${audio.codec} bitrate=${audio.bitrate ?: 0}")
-        return audio.url
+        return audio
     }
     companion object {
         private fun profile(root: JSONObject): Pair<String, String> {

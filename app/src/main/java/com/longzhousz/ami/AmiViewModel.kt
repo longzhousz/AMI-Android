@@ -46,6 +46,9 @@ class AmiViewModel internal constructor(app: Application,
     private var cloudPlayJob: kotlinx.coroutines.Job? = null
     private var libraryJob: kotlinx.coroutines.Job? = null
     val onlineLibrary = MutableStateFlow(CloudLibraryState())
+    val onlineRefresh = MutableStateFlow<Int?>(null)
+    fun requestOnlineRefresh(page: Int) { if (page in 0..1) onlineRefresh.value = page }
+    fun consumeOnlineRefresh(page: Int) = onlineRefresh.compareAndSet(page, null)
     val player = PlayerConnection(app)
     val theme = MutableStateFlow(repository.prefs.getString("theme", "system")!!)
     val message = MutableStateFlow<String?>(null)
@@ -110,7 +113,7 @@ class AmiViewModel internal constructor(app: Application,
                         if (!uiActive.value || currentKey()!=key || document.revision!=key.revision) return@collectLatest
                         val cached=if (epoch==translationEpoch && document.lines.isNotEmpty()) client.cached(song,document.lines,key.model,key.style) else null
                         if (!uiActive.value || currentKey()!=key) return@collectLatest
-                        if (epoch==translationEpoch) publish(CurrentLyrics(song.id,key.revision,document,cached ?: document.embeddedTranslation))
+                        if (epoch==translationEpoch) publish(CurrentLyrics(song.id,key.revision,document,cached))
                         else publish(lyrics.value.copy(document=document))
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
@@ -133,7 +136,7 @@ class AmiViewModel internal constructor(app: Application,
         catch (_: Exception) { message.value = "操作未完成，播放服务可能正在连接，请稍后重试" }
     }
     fun cancelCloudPreparation() { cloudPlayJob?.cancel() }
-    fun resetOnlineLibrary() { libraryJob?.cancel(); onlineLibrary.value = CloudLibraryState() }
+    fun resetOnlineLibrary() { libraryJob?.cancel(); cloud.clearPages(); onlineLibrary.value = CloudLibraryState() }
     fun refreshOnlineLibrary() {
         if (!cloud.configured.value || libraryJob?.isActive == true) return
         libraryJob = viewModelScope.launch {
@@ -142,7 +145,8 @@ class AmiViewModel internal constructor(app: Application,
                 cloud.refreshCatalog()
                 val fresh = cloud.library()
                 ensureActive()
-                onlineLibrary.value = CloudLibraryState(fresh.copy(collections = shuffledShelf(fresh.collections, onlineLibrary.value.library.collections)), loaded = true)
+                onlineLibrary.value = CloudLibraryState(fresh.copy(collections = shuffledShelf(fresh.collections, onlineLibrary.value.library.collections)),
+                    loaded = true, revision = onlineLibrary.value.revision + 1)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
                 onlineLibrary.value = onlineLibrary.value.copy(refreshing = false, error = failure.message?.take(150) ?: "曲库暂时无法刷新")

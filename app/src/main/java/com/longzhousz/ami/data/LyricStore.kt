@@ -22,7 +22,7 @@ class LyricStore(private val db: LibraryDatabase, private val byteLimit: Int = 2
         cache.get(key)?.let { return@withContext it }
         ensureActive()
         Trace.beginSection("ami:load-lyrics")
-        val document = try { db.songLyrics(song.id).also { it.lines; it.embeddedTranslation } }
+        val document = try { db.songLyrics(song.id).also { it.lines } }
         finally { Trace.endSection() }
         ensureActive()
         synchronized(cache) {

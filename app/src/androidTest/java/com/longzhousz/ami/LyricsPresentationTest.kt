@@ -66,12 +66,12 @@ class LyricsPresentationTest {
         compose.onNodeWithText("回到当前句").assertIsDisplayed().performClick()
         compose.onNodeWithTag("lyric-1").assertIsSelected().assertIsDisplayed()
         assertAnchored(1)
-        compose.onNodeWithText("译文").performClick()
+        compose.onNodeWithContentDescription("隐藏译文").performClick()
         compose.onNodeWithText(translations[1]).assertDoesNotExist()
         compose.onNodeWithTag("lyric-1").assertIsDisplayed()
-        compose.onNodeWithText("封面").performClick()
+        compose.onNodeWithContentDescription("切换到封面").performClick()
         compose.onNodeWithTag("player-cover").assertIsDisplayed()
-        compose.onNodeWithText("歌词").performClick()
+        compose.onNodeWithContentDescription("切换到歌词").performClick()
         compose.onNodeWithTag("lyric-1").assertIsDisplayed()
         compose.onNodeWithTag("playback-seek").performSemanticsAction(SemanticsActions.SetProgress) { it(42000f) }
         compose.runOnIdle { assertEquals(42000, sought) }
@@ -97,8 +97,8 @@ class LyricsPresentationTest {
         assertFalse(layouts.single().didOverflowHeight)
         assertFalse(layouts.single().didOverflowWidth)
         compose.onNodeWithContentDescription("播放").assertIsDisplayed()
-        compose.onNodeWithText("队列").assertIsDisplayed()
-        compose.onNodeWithText("译文").assertIsDisplayed()
+        compose.onNodeWithContentDescription("播放队列").assertIsDisplayed()
+        compose.onNodeWithContentDescription("隐藏译文").assertIsDisplayed()
         screenshot("lyrics-large-font")
     }
 
@@ -110,6 +110,20 @@ class LyricsPresentationTest {
         compose.onNodeWithTag("lyric-0").assertIsNotSelected().assertIsNotEnabled()
         compose.onNodeWithText("暂无时间轴 · 可自由滚动阅读").assertIsDisplayed()
         screenshot("lyrics-untimed")
+    }
+
+    @Test fun cloudPlayerUsesIconsAndShowsTheCurrentSourceQualityInItsMenu() {
+        compose.setContent {
+            AmiTheme("dark") { PlayerContent(song.copy(id = "netease:123", uri = "ami-cloud://song/123"), PlaybackState(), null, false, PlayerActions(), audioQuality = "无损") }
+        }
+        compose.onNodeWithText("封面").assertDoesNotExist()
+        compose.onNodeWithText("翻译").assertDoesNotExist()
+        compose.onNodeWithText("队列").assertDoesNotExist()
+        compose.onNodeWithContentDescription("切换到封面").assertIsDisplayed()
+        compose.onNodeWithContentDescription("翻译歌词").assertIsDisplayed()
+        compose.onNodeWithContentDescription("播放队列").assertIsDisplayed()
+        compose.onNodeWithContentDescription("歌词选项").performClick()
+        compose.onNodeWithText("当前音质：无损").assertIsDisplayed()
     }
 
     private fun assertAnchored(index: Int) {

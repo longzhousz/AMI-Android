@@ -10,7 +10,6 @@ import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.gestures.animateTo
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -106,13 +105,13 @@ private val ArtworkSpring = spring<Float>(dampingRatio = .88f, stiffness = 230f)
                 translationY = artworkBounds.top + (thumbnailBounds.top - artworkBounds.top) * p - rootBounds.top
                 scaleX = scale; scaleY = scale
                 transformOrigin = TransformOrigin(0f, 0f)
-                shape = RoundedCornerShape(((26f + (13f - 26f) * p) / scale).dp)
+                shape = androidx.compose.ui.graphics.RectangleShape
                 clip = true
-                shadowElevation = (18f + (3f - 18f) * p).dp.toPx() / scale
+                shadowElevation = 0f
             }.clickable(onClickLabel = if (lyricsMode) "展开专辑封面" else "收起封面，查看歌词", onClick = toggle)
                 .semantics { contentDescription = if (lyricsMode) "展开专辑封面" else "收起封面，查看歌词" }
                 .testTag("player-cover")) {
-                Cover(song.cover, song.album, Modifier.fillMaxSize(), memory, cornerRadius = 0.dp)
+                Cover(song.cover, song.album, Modifier.fillMaxSize(), memory)
             }
         }
         }

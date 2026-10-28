@@ -154,7 +154,7 @@ class InterfaceTest {
             val bitmap = compose.onNodeWithTag("full-player").captureToImage().asAndroidBitmap()
             val directory = File(compose.activity.filesDir, "qa").apply { mkdirs() }
             File(directory, "lyrics-player-window.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-            compose.onNodeWithText("队列").performClick()
+            compose.onNodeWithContentDescription("播放队列").performClick()
             compose.onNodeWithText("播放队列 · ${songs.size}").assertIsDisplayed()
             compose.waitUntil(10000) { !compose.activity.hasWindowFocus() }
             pressSystemBack()

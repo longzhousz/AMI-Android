@@ -4,6 +4,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CloudMusicTest {
+    @Test fun everyShelfRefreshChangesItsFirstCardAndPreservesAllCards() {
+        var cards = (1..12).map { CloudPlaylist("$it", "$it", null, 1, "album") }
+        repeat(100) {
+            val next = shuffledShelf(cards, cards)
+            assertNotEquals(cards.first().key, next.first().key)
+            assertEquals(cards.toSet(), next.toSet())
+            cards = next
+        }
+    }
+    @Test fun qualityLabelsDescribeTheDeliveredSourceRatherThanTheRequestedTier() {
+        assertEquals("极高 · 320 kbps", AudioQuality("a", "exhigh", "mp3", 320000).label)
+        assertEquals("无损", AudioQuality("a", "lossless", "flac", 1200000, cached = true).label)
+        assertEquals("待确认", AudioQuality("a", null, "unknown").label)
+    }
     @org.junit.Test fun shelfRefreshChangesCardsWithoutMergingAlbumAndPlaylistIds() {
         val album = CloudPlaylist("1234", "专辑", null, 2, "album")
         val playlist = CloudPlaylist("1234", "歌单", null, 3, "created")

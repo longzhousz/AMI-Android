@@ -23,6 +23,7 @@ import com.longzhousz.ami.AmiApplication
 import com.longzhousz.ami.MainActivity
 import com.longzhousz.ami.core.PlaybackSnapshot
 import com.longzhousz.ami.core.Song
+import com.longzhousz.ami.core.ListeningCounter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +52,9 @@ class PlaybackService : MediaLibraryService() {
     private val restoration = CompletableDeferred<Unit>()
     private var queue: List<String> = emptyList()
     private var positionJob: Job? = null
+    private val listening = ListeningCounter()
+    private var cacheRetry: Job? = null
+    private var cacheRetryId: String? = null
     private val callback = object : MediaLibrarySession.Callback {
         @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
         override fun onPlaybackResumption(session: MediaSession, controller: MediaSession.ControllerInfo, isForPlayback: Boolean): com.google.common.util.concurrent.ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
@@ -92,8 +96,20 @@ class PlaybackService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
         if (OriginOsMediaHints.isVivo()) setMediaNotificationProvider(OriginOsMediaNotification(this))
-        val source = ResolvingDataSource.Factory(DefaultDataSource.Factory(this)) { spec ->
-            if (spec.uri.scheme == "ami-cloud") spec.withUri(android.net.Uri.parse(repository.cloud.resolve(spec.uri.toString()))) else spec
+        val data = DefaultDataSource.Factory(this)
+        val source = androidx.media3.datasource.DataSource.Factory {
+            var local: android.net.Uri? = null
+            var opened = false
+            ResolvingDataSource.Factory(data) { spec ->
+                if (spec.uri.scheme != "ami-cloud") spec else {
+                    // A seek must not splice a newly cached rendition into an existing online source.
+                    // A local source keeps its complete file; if it disappears, recovery prepares anew.
+                    val uri = local ?: android.net.Uri.parse(repository.cloud.resolve(spec.uri.toString(), allowCache = !opened))
+                    if (uri.scheme == "file") local = uri
+                    opened = true
+                    spec.withUri(uri)
+                }
+            }.createDataSource()
         }
         player = ExoPlayer.Builder(this, androidx.media3.exoplayer.DefaultRenderersFactory(this).setEnableAudioFloatOutput(true))
             .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(source)).build().apply {
@@ -113,7 +129,28 @@ class PlaybackService : MediaLibraryService() {
         })
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                cacheRetry?.cancel(); cacheRetryId = null
+                repository.cloud.recoveringAudio = null
+                updateListening(restart = reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)
+                repository.cloud.protectAudio(mediaItem?.mediaId)
                 player.setWakeMode(if (mediaItem?.mediaId?.startsWith("netease:") == true) C.WAKE_MODE_NETWORK else C.WAKE_MODE_LOCAL)
+            }
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                val id = player.currentMediaItem?.mediaId ?: return
+                if (repository.cloud.audioQuality.value[id]?.cached != true || cacheRetryId == id) {
+                    repository.cloud.recoveringAudio = null; return
+                }
+                cacheRetryId = id
+                repository.cloud.recoveringAudio = id
+                val index = player.currentMediaItemIndex
+                val position = player.currentPosition
+                cacheRetry = scope.launch {
+                    repository.cloud.discardCachedAudio(id)
+                    if (player.currentMediaItem?.mediaId == id && player.currentMediaItemIndex == index && player.playerError != null) {
+                        player.seekTo(index, position); player.prepare()
+                    }
+                    repository.cloud.recoveringAudio = null
+                }
             }
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
                 if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
@@ -122,6 +159,7 @@ class PlaybackService : MediaLibraryService() {
                 }
             }
             override fun onEvents(player: Player, events: Player.Events) {
+                updateListening()
                 if (restored && events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION))
                     session?.notifyChildrenChanged(recentRoot, if (player.currentMediaItem == null) 0 else 1, null)
                 if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_POSITION_DISCONTINUITY,
@@ -145,6 +183,7 @@ class PlaybackService : MediaLibraryService() {
                 }
             }
             restored = true
+            repository.scope.launch { repository.cloud.maintainAudioCache() }
             checkpoint()
             updatePositionJob()
             restoration.complete(Unit)
@@ -157,7 +196,7 @@ class PlaybackService : MediaLibraryService() {
         positionJob = scope.launch {
             while (player.isPlaying) {
                 delay(10_000)
-                if (player.isPlaying) checkpoint()
+                if (player.isPlaying) { updateListening(); checkpoint() }
             }
         }
     }
@@ -166,8 +205,18 @@ class PlaybackService : MediaLibraryService() {
         val position = if (queue.isEmpty() || player.playbackState == Player.STATE_ENDED) 0 else player.currentPosition.coerceAtLeast(0)
         repository.playback.publish(PlaybackSnapshot(queue, player.currentMediaItemIndex.coerceAtLeast(0), position, player.repeatMode, player.shuffleModeEnabled))
     }
+    private fun updateListening(restart: Boolean = false) {
+        val id = player.currentMediaItem?.mediaId
+        val duration = player.duration.takeIf { it > 0 } ?: player.currentMediaItem?.mediaMetadata?.durationMs ?: 0
+        listening.update(id, duration, player.isPlaying, android.os.SystemClock.elapsedRealtime(), restart)?.let { qualified ->
+            repository.scope.launch { repository.cloud.recordListen(qualified) }
+        }
+    }
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
     override fun onDestroy() {
+        listening.update(null, 0, false, android.os.SystemClock.elapsedRealtime())?.let { id -> repository.scope.launch { repository.cloud.recordListen(id) } }
+        repository.cloud.protectAudio(null)
+        repository.cloud.recoveringAudio = null
         checkpoint()
         restored = false
         restoration.cancel()
