@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -103,7 +102,7 @@ internal fun PlayerSheet(
         SideEffect { state.updateAnchors(anchors, newTarget = state.targetValue) }
         val currentTravel by rememberUpdatedState(travel)
         val progress = remember(state, travel) { derivedStateOf { (1f - state.requireOffset() / travel).coerceIn(0f, 1f) } }
-        val showMini by remember(progress) { derivedStateOf { progress.value < .26f } }
+        val showMini by remember(progress) { derivedStateOf { progress.value < .4f } }
         val statusCenter = WindowInsets.statusBars.getTop(density) / 2f
         val navigationCenter = heightPx - WindowInsets.navigationBars.getBottom(density) / 2f
         LaunchedEffect(state, origin, heightPx, statusCenter, navigationCenter) {
@@ -162,18 +161,16 @@ internal fun PlayerSheet(
                 translationY = state.requireOffset()
                 clip = true
                 shape = PlayerSheetShape(progress.value, origin, heightPx)
-                shadowElevation = 2.dp.toPx() * (1f - progress.value)
             }.testTag("player-sheet")
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .semantics { paneTitle = "正在播放"; dismiss { close(); true } }) {
-            Box(Modifier.fillMaxSize().graphicsLayer { alpha = ((progress.value - .06f) / .54f).coerceIn(0f, 1f) }) {
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = ((progress.value - .18f) / .42f).coerceIn(0f, 1f) }) {
                 content(close, dragHandle)
             }
             // Retain the exact mini-player face while its surface expands into the full player.
             if (origin != null && showMini) Box(Modifier
                 .offset(x = with(density) { origin.left.toDp() })
                 .size(with(density) { origin.width.toDp() }, with(density) { origin.height.toDp() })
-                .graphicsLayer { alpha = (1f - progress.value * 4f).coerceIn(0f, 1f) }
+                .graphicsLayer { alpha = ((.4f - progress.value) / .2f).coerceIn(0f, 1f) }
                 .then(dragHandle).clearAndSetSemantics { this[SemanticsProperties.TestTag] = "player-mini-face" }) { collapsedContent() }
         }
     }
