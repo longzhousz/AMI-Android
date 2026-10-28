@@ -41,7 +41,6 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.memory.MemoryCache
 import coil.request.ImageRequest
-import coil.request.CachePolicy
 import com.longzhousz.ami.core.isCloudSong
 import androidx.compose.ui.platform.LocalContext
 import com.longzhousz.ami.core.Song
@@ -63,8 +62,7 @@ internal class ArtworkMemory(val expectedPath: () -> String?) {
         Box(Modifier.fillMaxSize().then(placeholder), contentAlignment = Alignment.Center) {
         if (artwork.first != null) {
             val request = remember(artwork.first, context) { ImageRequest.Builder(context).data(if (artwork.first!!.startsWith("https://")) artwork.first else File(artwork.first!!))
-                .diskCachePolicy(if (artwork.first!!.startsWith("https://")) CachePolicy.DISABLED else CachePolicy.ENABLED)
-                .placeholderMemoryCacheKey(memory?.key ?: previousImage).crossfade(150).build() }
+                .placeholderMemoryCacheKey(memory?.key ?: previousImage).build() }
             AsyncImage(request, "《${artwork.second}》封面", Modifier.fillMaxSize(), contentScale = ContentScale.Fit,
                 onSuccess = { if (artwork.first == latestPath && (memory == null || memory.expectedPath() == artwork.first)) {
                     if (memory == null) previousImage = it.result.memoryCacheKey else memory.key = it.result.memoryCacheKey
@@ -99,7 +97,7 @@ internal class ArtworkMemory(val expectedPath: () -> String?) {
 @Composable fun SongRow(song: Song, playing: Boolean, onPlay: () -> Unit, onFavorite: () -> Unit, onRemove: (() -> Unit)? = null, number: Int? = null, modifier: Modifier = Modifier) {
     var menu by remember { mutableStateOf(false) }
     val background by animateColorAsState(if (playing) MaterialTheme.colorScheme.primary.copy(alpha = .08f) else Color.Transparent, tween(220), label = "track-highlight")
-    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(background).clickable(onClick = onPlay).padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth().background(background).clickable(onClick = onPlay).padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
         if (number != null) Box(Modifier.width(35.dp), contentAlignment = Alignment.Center) {
             if (playing) Icon(Icons.Rounded.Equalizer, "正在播放", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
             else Text("%02d".format(number), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)

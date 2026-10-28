@@ -176,7 +176,15 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
             }
         }
     }
-    fun protectAudio(songId: String?) { if (direct) audioCache.playingId = songId?.removePrefix("netease:") }
+    fun protectAudio(songId: String?) {
+        if (!direct) return
+        val next = songId?.removePrefix("netease:")
+        val changed = audioCache.playingId != next
+        audioCache.playingId = next
+        if (changed && audioCache.trimPending) (context.applicationContext as com.longzhousz.ami.AmiApplication).repository.scope.launch {
+            audioCache.cleanup(System.currentTimeMillis())
+        }
+    }
     suspend fun discardCachedAudio(songId: String) = withContext(Dispatchers.IO) {
         bypassCacheId = songId
         if (direct && configured.value) runCatching { audioCache.invalidate(cacheAccount(), songId.removePrefix("netease:")) }

@@ -35,6 +35,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import java.io.File
 
 @RunWith(AndroidJUnit4::class)
@@ -44,6 +46,21 @@ class InterfaceTest {
     private fun openLocalLibrary() {
         compose.onNodeWithContentDescription("设置").performClick()
         compose.onNodeWithText("浏览本地音乐").performScrollTo().performClick()
+    }
+
+    @Test fun frequentSongCacheLimitIsAdjustableAndPersisted() {
+        val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
+        val previous = model.repository.audioCacheLimit.value
+        try {
+            compose.runOnIdle { model.repository.setAudioCacheLimit(512L * 1024 * 1024) }
+            compose.onNodeWithContentDescription("设置").performClick()
+            compose.onNodeWithText("常听歌曲缓存上限").performScrollTo().performClick()
+            compose.onNodeWithText("1 GB").performClick()
+            compose.runOnIdle {
+                assertEquals(1024L * 1024 * 1024, model.repository.audioCacheLimit.value)
+                assertEquals(model.repository.audioCacheLimit.value, model.repository.prefs.getLong("onlineCacheLimit", 0))
+            }
+        } finally { compose.runOnIdle { model.repository.setAudioCacheLimit(previous) } }
     }
 
     @Test fun returningFromSettingsPreservesLibraryScroll() {
@@ -147,7 +164,30 @@ class InterfaceTest {
                 model.player.pause()
             }
             compose.waitUntil(10000) { model.player.state.value.id == songs.first().id }
+            val mini = compose.onNodeWithTag("mini-player").fetchSemanticsNode().boundsInRoot
+            val perf = File(compose.activity.filesDir, "qa/performance").apply { mkdirs() }
+            shell("dumpsys gfxinfo ${compose.activity.packageName} reset")
+            compose.mainClock.autoAdvance = false
             compose.onNodeWithTag("mini-player").performClick()
+            compose.mainClock.advanceTimeBy(1500)
+            compose.runOnIdle { assertFalse(compose.activity.window.isNavigationBarContrastEnforced) }
+            val distance = mini.top * .85f
+            compose.onNodeWithTag("player-header").performTouchInput {
+                down(center); moveBy(Offset(0f, distance), delayMillis = 400)
+            }
+            compose.mainClock.advanceTimeBy(32)
+            val face = compose.onNodeWithTag("player-mini-face", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            assertEquals("The handoff face must have the floating bar's left edge", mini.left, face.left, 1f)
+            assertEquals("The handoff face must have the floating bar's width", mini.width, face.width, 1f)
+            screenshot("player-collapse-handoff")
+            compose.runOnIdle { assertFalse(compose.activity.window.isNavigationBarContrastEnforced) }
+            compose.onNodeWithTag("player-header").performTouchInput {
+                moveBy(Offset(0f, -distance), delayMillis = 400); advanceEventTime(400); up()
+            }
+            compose.mainClock.autoAdvance = true
+            compose.waitForIdle()
+            assertEquals(0f, compose.onNodeWithTag("player-sheet").fetchSemanticsNode().boundsInRoot.top, 1f)
+            File(perf, "player-collapse-reverse-gfxinfo.txt").writeText(shell("dumpsys gfxinfo ${compose.activity.packageName} framestats"))
             compose.onNodeWithTag("full-player").assertIsDisplayed()
             compose.waitUntil(10000) { compose.onAllNodesWithTag("lyrics-stage").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("lyrics-stage").assertIsDisplayed()
@@ -162,6 +202,9 @@ class InterfaceTest {
             compose.onNodeWithTag("full-player").assertIsDisplayed()
             compose.onNodeWithContentDescription("收起播放页").performClick()
             compose.onNodeWithTag("mini-player").assertIsDisplayed()
+            val landed = compose.onNodeWithTag("mini-player").fetchSemanticsNode().boundsInRoot
+            assertEquals(mini.left, landed.left, 1f); assertEquals(mini.top, landed.top, 1f); assertEquals(mini.width, landed.width, 1f)
+            screenshot("player-minibar-corners")
             compose.onNodeWithTag("mini-player").performClick()
             compose.onNodeWithTag("player-header").performTouchInput {
                 swipe(Offset(centerX, height * .4f), Offset(centerX, height + 200f), durationMillis = 300)
@@ -187,6 +230,8 @@ class InterfaceTest {
             songs.forEach { model.repository.db.remove(it.id) }; model.repository.reload()
         }
     }
+    private fun shell(command: String): String = ParcelFileDescriptor.AutoCloseInputStream(
+        InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)).bufferedReader().use { it.readText() }
     private fun pressSystemBack() {
         recoverEmulatorSystemUiOverlay()
         // Route through the system so native sheets and the activity receive the same Back

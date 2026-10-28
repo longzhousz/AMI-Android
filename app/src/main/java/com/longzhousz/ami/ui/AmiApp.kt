@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -66,7 +67,10 @@ private data class AppDestination(val page: Int, val albumKey: String?)
     onLyricsFolder: () -> Unit, onLyricFile: (Song) -> Unit, initialPage: Int = 0) {
     val theme by model.theme.collectAsStateWithLifecycle()
     var fullPlayer by rememberSaveable { mutableStateOf(false) }
-    AmiTheme(theme, immersive = fullPlayer) {
+    var playerOverStatusBar by remember { mutableStateOf(false) }
+    var playerOverNavigationBar by remember { mutableStateOf(false) }
+    AmiTheme(theme, statusBarImmersive = fullPlayer && playerOverStatusBar,
+        navigationBarImmersive = fullPlayer && playerOverNavigationBar) {
         val focus = LocalFocusManager.current
         val library by model.repository.library.collectAsStateWithLifecycle()
         val onlineSongs by model.cloud.catalog.collectAsStateWithLifecycle()
@@ -158,8 +162,11 @@ private data class AppDestination(val page: Int, val albumKey: String?)
             }
             Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
                 .then(if (fullPlayer) Modifier.clearAndSetSemantics {} else Modifier), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (current != null) MiniPlayer(current, playback, model.player, clockEnabled = !fullPlayer, verticalPadding = 0,
-                        onBounds = { miniBounds = it }, onOpen = { focus.clearFocus(); fullPlayer = true },
+                if (current != null) MiniPlayer(current, playback, model.player, clockEnabled = !fullPlayer,
+                        modifier = Modifier.padding(horizontal = 12.dp).graphicsLayer { alpha = if (fullPlayer) 0f else 1f },
+                        onBounds = { miniBounds = it }, onOpen = {
+                            focus.clearFocus(); playerOverStatusBar = false; playerOverNavigationBar = false; fullPlayer = true
+                        },
                         onToggle = { model.act("player.toggle") { model.player.toggle() } },
                         onNext = { model.act("player.next") { model.player.next() } })
                 if (current != null) Spacer(Modifier.height(8.dp))
@@ -184,8 +191,10 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                     }
                 }
             }
-            if (fullPlayer && current != null) PlayerSheet(miniBounds, { fullPlayer = false }, collapsedContent = {
-                MiniPlayer(current, playback, model.player, clockEnabled = false, verticalPadding = 0,
+            if (fullPlayer && current != null) PlayerSheet(miniBounds, { fullPlayer = false }, onSystemBars = { status, navigation ->
+                playerOverStatusBar = status; playerOverNavigationBar = navigation
+            }, collapsedContent = {
+                MiniPlayer(current, playback, model.player, clockEnabled = false,
                     onOpen = {}, onToggle = {}, onNext = {})
             }) { close, dragHandle ->
                 Box(Modifier.fillMaxSize()) {
@@ -296,16 +305,16 @@ private data class AppDestination(val page: Int, val albumKey: String?)
 @Composable private fun MiniPlayer(
     song: Song, playback: PlaybackState, player: PlayerConnection,
     onOpen: () -> Unit, onToggle: () -> Unit, onNext: () -> Unit,
-    clockEnabled: Boolean = true, onBounds: (Rect) -> Unit = {}, verticalPadding: Int = 5,
+    clockEnabled: Boolean = true, onBounds: (Rect) -> Unit = {}, modifier: Modifier = Modifier,
 ) {
     val clock = rememberPlaybackClock(player, playback, clockEnabled)
     val duration = playback.duration.takeIf { it > 0 } ?: song.duration
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = verticalPadding.dp)
+    Surface(modifier.fillMaxWidth()
         .onGloballyPositioned { onBounds(it.boundsInRoot()) }.testTag("mini-player")
         .clip(RoundedCornerShape(20.dp)).clickable(onClick = onOpen), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 2.dp) {
         Column {
             Row(Modifier.padding(start = 9.dp, top = 7.dp, bottom = 7.dp, end = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                Cover(song.cover, song.album, Modifier.size(46.dp)); Spacer(Modifier.width(12.dp))
+                Cover(song.cover, song.album, Modifier.size(46.dp).clip(RoundedCornerShape(9.dp))); Spacer(Modifier.width(12.dp))
                 AnimatedContent(song.title to song.artist, Modifier.weight(1f), transitionSpec = { AmiMotion.page(true) }, label = "mini-track") { track ->
                     Column { Text(track.first, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(track.second, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
                 }

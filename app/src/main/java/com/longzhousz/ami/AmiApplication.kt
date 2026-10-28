@@ -5,14 +5,32 @@ import com.longzhousz.ami.data.LibraryRepository
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.memory.MemoryCache
+import coil.EventListener
+import coil.decode.DataSource
+import coil.request.ImageRequest
+import coil.request.SuccessResult
+import com.longzhousz.ami.data.OnlineArtworkCache
+import kotlinx.coroutines.launch
 import android.content.ComponentCallbacks2
 
 class AmiApplication : Application(), ImageLoaderFactory {
     private val repositoryHolder = lazy { LibraryRepository(this) }
     val repository by repositoryHolder
     private var activeImageLoader: ImageLoader? = null
+    internal val artwork by lazy { OnlineArtworkCache(this) }
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
-        .memoryCache { MemoryCache.Builder(this).maxSizePercent(.12).build() }.build().also { activeImageLoader=it }
+        .memoryCache { MemoryCache.Builder(this).maxSizePercent(.12).build() }
+        .diskCache(null)
+        .components { add(artwork.factory()) }
+        .eventListener(object : EventListener {
+            override fun onSuccess(request: ImageRequest, result: SuccessResult) {
+                if (result.dataSource == DataSource.MEMORY_CACHE && request.data.toString().startsWith("https://"))
+                    repository.scope.launch { artwork.touch(request.data.toString()) }
+            }
+        }).build().also {
+            activeImageLoader=it
+            repository.scope.launch { artwork.cleanup() }
+        }
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)

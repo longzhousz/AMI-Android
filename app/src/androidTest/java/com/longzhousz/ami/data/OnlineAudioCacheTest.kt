@@ -20,13 +20,15 @@ class OnlineAudioCacheTest {
     private var payload = byteArrayOf()
     private var name = ""
     private var now = 0L
+    private var limit = 0L
     private val owner = "test-account-hash"
     @Before fun prepare() {
         name = "qa-online-audio-${System.nanoTime()}"
         now = System.currentTimeMillis()
         tone = instrumentation.context.assets.open("qa-96k-24bit.flac").use { it.readBytes() }
         payload = tone
-        cache = OnlineAudioCache(context, name, budget = tone.size * 2L, reserve = 0, open = { address ->
+        limit = tone.size * 2L
+        cache = OnlineAudioCache(context, name, budget = { limit }, reserve = 0, open = { address ->
             object : HttpURLConnection(URL(address)) {
                 override fun connect() = Unit
                 override fun disconnect() = Unit
@@ -128,5 +130,18 @@ class OnlineAudioCacheTest {
         hot("1")
         cache.download(owner, OnlineAudioCache.Candidate("1", 6000), audio(), now) { cache.cleanup(now); true }
         assertNotNull(cache.get(owner, "1", now))
+    }
+    @Test fun loweringTheLimitTrimsOldCopiesAndDefersThePlayingFileUntilItIsReleased() {
+        save("1", now - 1000); save("2", now)
+        cache.playingId = "2"
+        limit = tone.size / 2L
+        cache.cleanup(now)
+        assertNull(cache.get(owner, "1", now))
+        assertNotNull(cache.get(owner, "2", now))
+        assertTrue(cache.trimPending)
+        cache.playingId = null
+        cache.cleanup(now)
+        assertNull(cache.get(owner, "2", now))
+        assertFalse(cache.trimPending)
     }
 }

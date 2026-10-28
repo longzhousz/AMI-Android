@@ -18,7 +18,6 @@ import androidx.compose.ui.platform.LocalContext
 import android.graphics.drawable.BitmapDrawable
 import coil.imageLoader
 import coil.request.ImageRequest
-import coil.request.CachePolicy
 import coil.request.SuccessResult
 
 private data class ArtworkColors(val top: Color, val bottom: Color, val glow: Color)
@@ -38,7 +37,7 @@ internal fun clearArtworkColorCache() { ArtworkColorCache.evictAll() }
                 ArtworkColorCache.get(key)?.let { return@runCatching it }
                 val bitmap = if (remote) {
                     val result = context.imageLoader.execute(ImageRequest.Builder(context).data(cover).size(48).allowHardware(false)
-                        .diskCachePolicy(CachePolicy.DISABLED).build()) as? SuccessResult
+                        .build()) as? SuccessResult
                     (result?.drawable as? BitmapDrawable)?.bitmap
                 } else {
                     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

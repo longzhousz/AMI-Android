@@ -22,6 +22,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.longzhousz.ami.AmiViewModel
 import com.longzhousz.ami.data.LibraryRepository
 import com.longzhousz.ami.data.TranslationClient
+import com.longzhousz.ami.data.OnlineAudioCache
 import com.longzhousz.ami.core.isCloudSong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -43,6 +44,7 @@ import kotlinx.coroutines.withContext
     val style by model.translationStyle.collectAsStateWithLifecycle()
     val savedKey by model.hasKey.collectAsStateWithLifecycle()
     val configured by model.cloud.configured.collectAsStateWithLifecycle()
+    val audioCacheLimit by repo.audioCacheLimit.collectAsStateWithLifecycle()
     val signIn = rememberNeteaseLogin(model)
     val scope = rememberCoroutineScope()
     LaunchedEffect(importState.running) {
@@ -85,6 +87,7 @@ import kotlinx.coroutines.withContext
             }
             SectionLabel("存储与隐私")
             SettingsGroup {
+                SettingRow(Icons.Rounded.LibraryMusic, "常听歌曲缓存上限", cacheLimitLabel(audioCacheLimit), { dialog = "audioCacheLimit" })
                 SettingRow(Icons.Rounded.Storage, "缓存管理", "${megabytes(cache.bytes)} · ${cache.files} 个文件", { scope.launch { cache = withContext(Dispatchers.IO) { repo.cacheInfo() }; dialog = "cache" } })
                 SettingRow(Icons.Rounded.SmartToy, "Agent 与自动化", "默认关闭 · 仅处理授权文件夹中的请求", { dialog = "agent" })
                 SettingRow(Icons.Rounded.History, "操作记录", "最近 50 条 · 仅保存在本机", { scope.launch { logs = withContext(Dispatchers.IO) { repo.db.actionLog() }; dialog = "logs" } })
@@ -94,6 +97,8 @@ import kotlinx.coroutines.withContext
         }
     }
     when (dialog) {
+        "audioCacheLimit" -> ChoiceDialog("常听歌曲缓存上限", OnlineAudioCache.LIMITS.map { it.toString() to cacheLimitLabel(it) },
+            audioCacheLimit.toString(), { repo.setAudioCacheLimit(it.toLong()); dialog = null }, { dialog = null })
         "account" -> AlertDialog({ dialog = null }, title = { Text("网易云账号") }, text = { Text("可以重新登录或退出当前账号。") },
             confirmButton = { TextButton({ dialog = null; signIn() }) { Text("重新登录") } },
             dismissButton = { TextButton({ scope.launch {
@@ -193,7 +198,7 @@ import kotlinx.coroutines.withContext
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(MaterialTheme.colorScheme.surfaceContainerLow), content = content)
 }
 @Composable private fun ChoiceDialog(title: String, choices: List<Pair<String, String>>, selected: String, onChoice: (String) -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(onDismiss, title = { Text(title) }, text = { Column { choices.forEach { (value, label) ->
+    AlertDialog(onDismiss, title = { Text(title) }, text = { Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState())) { choices.forEach { (value, label) ->
         Row(Modifier.fillMaxWidth().clickable { onChoice(value) }.padding(vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { RadioButton(selected == value, { onChoice(value) }); Text(label) }
     } } }, confirmButton = { TextButton(onDismiss) { Text("取消") } })
 }
@@ -201,3 +206,4 @@ import kotlinx.coroutines.withContext
     AlertDialog(onDismiss, title = { Text(title) }, text = { LazyColumn(Modifier.heightIn(max = 470.dp)) { item { Text(text, style = MaterialTheme.typography.bodyMedium) } } }, confirmButton = { TextButton(onDismiss) { Text("关闭") } })
 }
 private fun megabytes(bytes: Long) = "%.1f MB".format(bytes / 1048576.0)
+private fun cacheLimitLabel(bytes: Long) = if (bytes >= 1024L * 1024 * 1024) "${bytes / (1024L * 1024 * 1024)} GB" else "${bytes / (1024 * 1024)} MB"

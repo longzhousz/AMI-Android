@@ -19,13 +19,15 @@ import java.io.File
 data class ImportState(val running: Boolean = false, val done: Int = 0, val total: Int = 0, val message: String = "", val errors: List<String> = emptyList())
 
 class LibraryRepository(val context: Context) {
-    internal val onlineCache by lazy { OnlineAudioCache(context) }
+    internal val onlineCache by lazy { OnlineAudioCache(context, budget = { audioCacheLimit.value }) }
     private val cloudHolder = lazy { CloudMusic(context) }
     val cloud by cloudHolder
     fun trimCloud() { if (cloudHolder.isInitialized()) cloud.trim() }
     val db = LibraryDatabase(context)
     val secrets = SecretStore(context)
     val prefs = context.getSharedPreferences("ami", Context.MODE_PRIVATE)
+    val audioCacheLimit = MutableStateFlow(prefs.getLong("onlineCacheLimit", OnlineAudioCache.DEFAULT_BUDGET)
+        .takeIf { it in OnlineAudioCache.LIMITS } ?: OnlineAudioCache.DEFAULT_BUDGET)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val playback = PlaybackStore(db, prefs, scope)
     val lyrics = LyricStore(db)
@@ -37,6 +39,13 @@ class LibraryRepository(val context: Context) {
     val audioDir = File(context.filesDir, "AudioCache").apply { mkdirs() }
     val coverDir = File(context.filesDir, "Covers").apply { mkdirs() }
     private val libraryRequested = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun setAudioCacheLimit(bytes: Long) {
+        require(bytes in OnlineAudioCache.LIMITS)
+        audioCacheLimit.value = bytes
+        prefs.edit().putLong("onlineCacheLimit", bytes).apply()
+        scope.launch { onlineCache.cleanup(System.currentTimeMillis()) }
+    }
 
     fun load() {
         if (libraryRequested.compareAndSet(false, true)) scope.launch { try { reload() } finally { loading.value = false } }

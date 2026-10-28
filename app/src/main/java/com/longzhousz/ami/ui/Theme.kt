@@ -38,17 +38,20 @@ private val Type = Typography(
     bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 22.sp),
     labelLarge = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp),
 )
-@Composable fun AmiTheme(preference: String, immersive: Boolean = false, content: @Composable () -> Unit) {
+@Composable fun AmiTheme(preference: String, immersive: Boolean = false,
+    statusBarImmersive: Boolean = immersive, navigationBarImmersive: Boolean = immersive,
+    content: @Composable () -> Unit) {
     val dark = when (preference) { "dark" -> true; "light" -> false; else -> isSystemInDarkTheme() }
     val view = LocalView.current
     if (!view.isInEditMode) SideEffect {
         val activity = view.context as? Activity
         if (activity != null) {
             WindowCompat.getInsetsController(activity.window, view).apply {
-                isAppearanceLightStatusBars = !dark && !immersive
-                isAppearanceLightNavigationBars = !dark && !immersive
+                isAppearanceLightStatusBars = !dark && !statusBarImmersive
+                isAppearanceLightNavigationBars = !dark && !navigationBarImmersive
             }
-            if (Build.VERSION.SDK_INT >= 29) activity.window.isNavigationBarContrastEnforced = !immersive
+            // Keep the window geometry/background stable while the player hands back to its bar.
+            if (Build.VERSION.SDK_INT >= 29) activity.window.isNavigationBarContrastEnforced = false
         }
     }
     MaterialTheme(colorScheme = if (dark) Dark else Light, typography = Type, content = content)

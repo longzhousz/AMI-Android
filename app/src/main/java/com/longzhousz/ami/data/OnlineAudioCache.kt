@@ -17,7 +17,7 @@ import java.util.UUID
 internal class OnlineAudioCache(
     context: Context,
     name: String = "online-audio",
-    private val budget: Long = 512L * 1024 * 1024,
+    private val budget: () -> Long = { DEFAULT_BUDGET },
     private val reserve: Long = 1024L * 1024 * 1024,
     private val open: (String) -> HttpURLConnection = { URI(it).toURL().openConnection() as HttpURLConnection },
 ) : SQLiteOpenHelper(context, File(context.noBackupFilesDir, "$name.db").path, null, 1) {
@@ -26,6 +26,8 @@ internal class OnlineAudioCache(
     private var owner: String? = null
     private var downloading: File? = null
     @Volatile var playingId: String? = null
+    @Volatile var trimPending: Boolean = false
+        private set
     data class Candidate(val id: String, val duration: Long)
     data class Hit(val file: File, val quality: AudioQuality)
     override fun onCreate(db: SQLiteDatabase) {
@@ -91,6 +93,7 @@ internal class OnlineAudioCache(
         if (scope() == account) writableDatabase.execSQL("UPDATE audio SET retry=? WHERE id=?", arrayOf<Any>(now + DAY, id))
     }
     @Synchronized fun cleanup(now: Long, incoming: Long = 0, diskIncoming: Long = incoming): Boolean {
+        val limit = budget()
         data class Stored(val id: String, val file: File?, val bytes: Long, val heard: Long)
         val files = readableDatabase.rawQuery("SELECT id,file,bytes,t1 FROM audio WHERE file IS NOT NULL ORDER BY t1", null).use { rows ->
             buildList { while (rows.moveToNext()) add(Stored(rows.getString(0), ownedFile(rows.getString(1)), rows.getLong(2), rows.getLong(3))) }
@@ -101,7 +104,7 @@ internal class OnlineAudioCache(
         dir.listFiles()?.filter { it.name !in referenced && it != downloading }?.forEach { it.delete() }
         var total = files.sumOf { it.bytes }
         files.forEach {
-            if (it.id != playingId && (it.heard < now - WEEK || it.file?.isFile != true || total + incoming > budget || dir.usableSpace < reserve + diskIncoming)) {
+            if (it.id != playingId && (it.heard < now - WEEK || it.file?.isFile != true || total + incoming > limit || dir.usableSpace < reserve + diskIncoming)) {
                 if (it.file == null || !it.file.exists() || it.file.delete()) {
                     total -= it.bytes
                     writableDatabase.execSQL("UPDATE audio SET file=NULL,bytes=0 WHERE id=?", arrayOf(it.id))
@@ -109,11 +112,12 @@ internal class OnlineAudioCache(
             }
         }
         writableDatabase.delete("audio", "t1<? AND file IS NULL", arrayOf((now - WEEK).toString()))
-        return total + incoming <= budget && dir.usableSpace >= reserve + diskIncoming
+        trimPending = total > limit
+        return total + incoming <= limit && dir.usableSpace >= reserve + diskIncoming
     }
     /** Download outside the DB lock; publish one verified file atomically, or leave no playable entry. */
     fun download(account: String, candidate: Candidate, audio: NeteaseAudio, now: Long, active: () -> Boolean) {
-        require(audio.bytes in 1..minOf(budget, MAX_FILE)) { "Unbounded audio" }
+        require(audio.bytes in 1..minOf(budget(), MAX_FILE)) { "Unbounded audio" }
         require(scope() == account && active())
         dir.mkdirs()
         check(cleanup(now, audio.bytes)) { "Cache budget" }
@@ -163,6 +167,8 @@ internal class OnlineAudioCache(
     }
     private fun ownedFile(name: String?): File? = name?.takeIf { it.matches(Regex("[a-f0-9-]{36}\\.audio")) }?.let { File(dir, it) }
     companion object {
+        const val DEFAULT_BUDGET = 512L * 1024 * 1024
+        val LIMITS = listOf(256L, 512L, 1024L, 2048L, 4096L, 8192L).map { it * 1024 * 1024 }
         const val DAY = 86_400_000L
         const val WEEK = 7 * DAY
         const val MAX_FILE = 256L * 1024 * 1024
