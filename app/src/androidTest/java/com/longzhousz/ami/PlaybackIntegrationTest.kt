@@ -22,6 +22,44 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackIntegrationTest {
+    @Test fun highResolutionFlacDecodesAndSeeksThroughTheProductionPlayer() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val activity = ActivityScenario.launch(MainActivity::class.java)
+        val source = File(context.cacheDir, "qa-96k-24bit.flac")
+        instrumentation.context.assets.open("qa-96k-24bit.flac").use { input -> source.outputStream().use { output -> input.copyTo(output) } }
+        var future: com.google.common.util.concurrent.ListenableFuture<MediaController>? = null
+        instrumentation.runOnMainSync { future = MediaController.Builder(context, SessionToken(context, ComponentName(context, PlaybackService::class.java))).buildAsync() }
+        val controller = future!!.get(40, TimeUnit.SECONDS)
+        fun await(predicate: () -> Boolean): Boolean {
+            val deadline = System.currentTimeMillis() + 20000
+            var ready = false
+            while (!ready && System.currentTimeMillis() < deadline) {
+                instrumentation.runOnMainSync { ready = predicate() }
+                if (!ready) Thread.sleep(100)
+            }
+            return ready
+        }
+        try {
+            instrumentation.runOnMainSync {
+                controller.repeatMode = Player.REPEAT_MODE_OFF
+                controller.setMediaItem(Song("qa-hires", Uri.fromFile(source).toString(), folder = "qa", title = "96kHz / 24-bit QA", duration = 6000).mediaItem())
+                controller.prepare(); controller.play()
+            }
+            assertTrue("The production float-enabled player must decode 24-bit FLAC", await { controller.isPlaying && controller.currentPosition > 100 })
+            instrumentation.runOnMainSync {
+                val formats = controller.currentTracks.groups.flatMap { group -> (0 until group.length).map(group::getTrackFormat) }
+                assertTrue(formats.any { it.sampleMimeType == "audio/flac" && it.sampleRate == 96000 && it.channelCount == 2 })
+                assertEquals(6000L, controller.duration)
+                controller.pause(); controller.seekTo(2000); controller.play()
+            }
+            assertTrue("High-resolution seeking should resume", await { controller.isPlaying && controller.currentPosition in 2100..5000 })
+        } finally {
+            instrumentation.runOnMainSync { controller.stop(); controller.clearMediaItems(); MediaController.releaseFuture(future!!) }
+            source.delete(); activity.close()
+        }
+    }
+
     @Test fun cueClipPlaysThroughNativeSessionWithRelativeDurationAndSeek() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
