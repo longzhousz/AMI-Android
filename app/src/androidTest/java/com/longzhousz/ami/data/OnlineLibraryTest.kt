@@ -229,6 +229,22 @@ class OnlineLibraryTest {
         assertEquals(2, requests.size)
     }
 
+    @Test fun normalBufferRefillsDelayNewWorkWithoutDiscardingAnActiveCopy() {
+        val repository = (context.applicationContext as com.longzhousz.ami.AmiApplication).repository
+        repository.setUiActive(true)
+        try {
+            repository.setPlaybackBusy(false, loading = true)
+            repository.setUiActive(false)
+            assertFalse(repository.canMaintainCaches)
+            assertTrue("A normal top-up must not restart a large cached download", repository.canDownloadCache)
+            repository.setPlaybackBusy(true, loading = true)
+            assertFalse("An actual playback stall must take priority", repository.canDownloadCache)
+            repository.setUiActive(true)
+            repository.setPlaybackBusy(false)
+            assertFalse("Opening the UI must stop optional copies", repository.canDownloadCache)
+        } finally { repository.setPlaybackBusy(false); repository.setUiActive(false) }
+    }
+
     private inner class Fixture(address: String) : HttpURLConnection(URL(address)) {
         private val output = ByteArrayOutputStream()
         private val response by lazy {

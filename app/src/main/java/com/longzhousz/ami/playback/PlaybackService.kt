@@ -160,7 +160,7 @@ class PlaybackService : MediaLibraryService() {
             }
             override fun onEvents(player: Player, events: Player.Events) {
                 updatePreloading()
-                repository.setPlaybackBusy(player.playbackState == Player.STATE_BUFFERING || player.isLoading)
+                repository.setPlaybackBusy(player.playbackState == Player.STATE_BUFFERING, player.isLoading)
                 updateListening()
                 if (restored && events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION))
                     session?.notifyChildrenChanged(recentRoot, if (player.currentMediaItem == null) 0 else 1, null)

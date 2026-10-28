@@ -19,7 +19,9 @@ class OnlineCacheWorker(context: Context, parameters: WorkerParameters) : Corout
         val app = applicationContext as AmiApplication
         val repository = app.repository
         if (!repository.canMaintainCaches) return@withContext Result.success()
-        inputData.getString("account")?.let { repository.cloud.fillAudioCache(it) { repository.canMaintainCaches } }
+        // An ordinary buffer top-up must not throw away a mostly downloaded large file.
+        // Only foreground UI, a real playback stall, or import interrupts an active copy.
+        inputData.getString("account")?.let { repository.cloud.fillAudioCache(it) { repository.canDownloadCache } }
         Result.success()
     }
     companion object {

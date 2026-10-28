@@ -38,15 +38,18 @@ class LibraryRepository(val context: Context) {
     val importLock = Mutex()
     @Volatile private var uiActive = false
     @Volatile private var playbackBusy = false
-    internal val canMaintainCaches get() = !uiActive && !playbackBusy && !importState.value.running
+    @Volatile private var playbackLoading = false
+    internal val canDownloadCache get() = !uiActive && !playbackBusy && !importState.value.running
+    internal val canMaintainCaches get() = canDownloadCache && !playbackLoading
     fun setUiActive(active: Boolean) {
         uiActive = active
         if (!active) scheduleCacheMaintenance()
     }
-    internal fun setPlaybackBusy(busy: Boolean) {
-        val wasBusy = playbackBusy
+    internal fun setPlaybackBusy(busy: Boolean, loading: Boolean = false) {
+        val wasBusy = playbackBusy || playbackLoading
         playbackBusy = busy
-        if (wasBusy && !busy) scheduleCacheMaintenance()
+        playbackLoading = loading
+        if (wasBusy && !busy && !loading) scheduleCacheMaintenance()
     }
     private fun scheduleCacheMaintenance() {
         scope.launch { if (canMaintainCaches) cloud.maintainAudioCache() }
