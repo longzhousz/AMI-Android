@@ -119,4 +119,14 @@ class OnlineAudioCacheTest {
         assertTrue(cache.candidates("another-account", now).isEmpty())
         assertTrue(File(context.cacheDir, name).listFiles().orEmpty().isEmpty())
     }
+    @Test fun startupReclaimsInterruptedFilesButCleanupPreservesTheActiveDownload() {
+        val directory = File(context.cacheDir, name)
+        File(directory, "interrupted.part").writeBytes(tone)
+        File(directory, java.util.UUID.randomUUID().toString() + ".audio").writeBytes(tone)
+        cache.cleanup(now)
+        assertTrue(directory.listFiles().orEmpty().isEmpty())
+        hot("1")
+        cache.download(owner, OnlineAudioCache.Candidate("1", 6000), audio(), now) { cache.cleanup(now); true }
+        assertNotNull(cache.get(owner, "1", now))
+    }
 }

@@ -24,6 +24,7 @@ internal class OnlineAudioCache(
     private val dir = File(context.cacheDir, name)
     private var ownerLoaded = false
     private var owner: String? = null
+    private var downloading: File? = null
     @Volatile var playingId: String? = null
     data class Candidate(val id: String, val duration: Long)
     data class Hit(val file: File, val quality: AudioQuality)
@@ -94,6 +95,10 @@ internal class OnlineAudioCache(
         val files = readableDatabase.rawQuery("SELECT id,file,bytes,t1 FROM audio WHERE file IS NOT NULL ORDER BY t1", null).use { rows ->
             buildList { while (rows.moveToNext()) add(Stored(rows.getString(0), ownedFile(rows.getString(1)), rows.getLong(2), rows.getLong(3))) }
         }
+        val referenced = files.mapNotNull { it.file?.name }.toSet()
+        // Process death can leave a partial or a renamed-but-uncommitted file. Reclaim it on the
+        // next visit, while preserving the one download currently owned by this process.
+        dir.listFiles()?.filter { it.name !in referenced && it != downloading }?.forEach { it.delete() }
         var total = files.sumOf { it.bytes }
         files.forEach {
             if (it.id != playingId && (it.heard < now - WEEK || it.file?.isFile != true || total + incoming > budget || dir.usableSpace < reserve + diskIncoming)) {
@@ -103,8 +108,6 @@ internal class OnlineAudioCache(
                 }
             }
         }
-        val referenced = files.mapNotNull { it.file?.name }.toSet()
-        dir.listFiles()?.filter { it.name !in referenced && it.lastModified() < now - DAY }?.forEach { it.delete() }
         writableDatabase.delete("audio", "t1<? AND file IS NULL", arrayOf((now - WEEK).toString()))
         return total + incoming <= budget && dir.usableSpace >= reserve + diskIncoming
     }
@@ -115,8 +118,10 @@ internal class OnlineAudioCache(
         dir.mkdirs()
         check(cleanup(now, audio.bytes)) { "Cache budget" }
         val part = File(dir, UUID.randomUUID().toString() + ".part")
-        val http = open(cloudMediaUrl(audio.url))
+        synchronized(this) { downloading = part }
+        var connection: HttpURLConnection? = null
         try {
+            val http = open(cloudMediaUrl(audio.url)).also { connection = it }
             http.instanceFollowRedirects = false; http.connectTimeout = 7000; http.readTimeout = 15000
             http.setRequestProperty("Accept-Encoding", "identity")
             require(http.responseCode == 200)
@@ -151,7 +156,10 @@ internal class OnlineAudioCache(
                 }
                 if (writableDatabase.update("audio", values, "id=? AND file IS NULL", arrayOf(candidate.id)) != 1) File(dir, name).delete()
             }
-        } finally { http.disconnect(); part.delete() }
+        } finally {
+            connection?.disconnect(); part.delete()
+            synchronized(this) { if (downloading == part) downloading = null }
+        }
     }
     private fun ownedFile(name: String?): File? = name?.takeIf { it.matches(Regex("[a-f0-9-]{36}\\.audio")) }?.let { File(dir, it) }
     companion object {
