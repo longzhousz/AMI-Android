@@ -64,6 +64,17 @@ try:
         remaining=set(pids)&set(shell('pidof',package,check=False).strip().split())
         if remaining:time.sleep(.2)
     assert not remaining,'Previous process is still alive'
+    # pidof can become empty before MediaSessionManager processes binder death.
+    # Wait for the old owner to leave its stack before injecting the one recovery
+    # key, otherwise Android can deliver it to the already-dead session callback.
+    deadline=time.monotonic()+10
+    settled=''
+    while time.monotonic()<deadline:
+        settled=shell('dumpsys','media_session')
+        if not any(re.search(r'ownerPid='+re.escape(pid)+r'\b',settled) for pid in pids): break
+        time.sleep(.1)
+    (out/'before-replay-sessions.txt').write_text(settled)
+    assert not any(re.search(r'ownerPid='+re.escape(pid)+r'\b',settled) for pid in pids),'OS still retains the reclaimed session'
     automatically_restarted=bool(shell('pidof',package,check=False).strip())
     shell('input','keyevent','KEYCODE_MEDIA_PLAY')
     playing=wait_state(3);(out/'playing-sessions.txt').write_text(playing)
