@@ -66,19 +66,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Check personal NetEase bridge
         run: node --test tools/netease-bridge/bridge.test.mjs tools/netease-bridge/adapter.test.mjs
-      - run: ./gradlew testDebugUnitTest lintDebug assemblePreview assemblePhonePreview assembleNeteasePreview assembleMusicPreview assembleRelease
+      - run: ./gradlew testDebugUnitTest lintDebug assemblePreview assembleMusicPreview assembleRelease
       - uses: actions/upload-artifact@v4
         with:
           name: AMI-Android-preview
           path: app/build/outputs/apk/preview/*.apk
-      - uses: actions/upload-artifact@v4
-        with:
-          name: AMI-Android-phone-preview
-          path: app/build/outputs/apk/phonePreview/*.apk
-      - uses: actions/upload-artifact@v4
-        with:
-          name: AMI-Android-netease-preview
-          path: app/build/outputs/apk/neteasePreview/*.apk
       - uses: actions/upload-artifact@v4
         with:
           name: AMI-Android-music-preview
@@ -194,11 +186,6 @@ jobs:
           path: preview-apk
           run-id: ${{ github.event.inputs.smoke_run_id || github.run_id }}
           github-token: ${{ github.token }}
-      - uses: actions/download-artifact@v4
-        if: ${{ needs.build.result == 'success' && github.event.inputs.smoke_release_tag == '' && github.event.inputs.smoke_run_id == '' }}
-        with:
-          name: AMI-Android-phone-preview
-          path: phone-preview-apk
       - uses: actions/download-artifact@v4
         if: ${{ needs.build.result == 'success' && github.event.inputs.smoke_release_tag == '' && github.event.inputs.smoke_run_id == '' }}
         with:
