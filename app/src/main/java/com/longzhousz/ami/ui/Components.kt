@@ -72,10 +72,14 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
             // request cannot fade the old image into an empty frame; memory hits remain immediate.
             val request = remember(path, context) { ImageRequest.Builder(context).data(if (path.startsWith("https://")) path else File(path))
                 .placeholderMemoryCacheKey(previousImage).crossfade(AmiMotion.TRACK_MILLIS).build() }
-            AsyncImage(request, "《${title}》封面", Modifier.fillMaxSize(), contentScale = ContentScale.Fit,
-                placeholder = previousPainter,
-                onSuccess = { if (path == latestPath) { previousImage = it.result.memoryCacheKey; previousPainter = it.painter; failed = false } },
-                onError = { if (path == latestPath) failed = true })
+            // A new painter starts independently; cancellation of a slow old request must not
+            // block the current cover. The retained placeholder stays outside this keyed scope.
+            key(path) {
+                AsyncImage(request, "《${title}》封面", Modifier.fillMaxSize(), contentScale = ContentScale.Fit,
+                    placeholder = previousPainter,
+                    onSuccess = { if (path == latestPath) { previousImage = it.result.memoryCacheKey; previousPainter = it.painter; failed = false } },
+                    onError = { if (path == latestPath) failed = true })
+            }
         }
     }
 }

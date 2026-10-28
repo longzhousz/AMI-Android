@@ -118,7 +118,7 @@ class ArtworkTransitionTest {
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val returned = CompletableDeferred<Unit>()
-        val red = 0xffd84840.toInt(); val green = 0xff467f61.toInt()
+        val red = 0xffd84840.toInt(); val blue = 0xff426fc4.toInt(); val green = 0xff467f61.toInt()
         fun png(color: Int): ByteArray {
             val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
             return ByteArrayOutputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it); bitmap.recycle(); it.toByteArray() }
@@ -133,7 +133,8 @@ class ArtworkTransitionTest {
                             withContext(NonCancellable) { release.await() }
                             returned.complete(Unit)
                         }
-                        return SourceResult(ImageSource(Buffer().write(png(if (data.lastPathSegment == "first.png") red else green)), context), "image/png", DataSource.NETWORK)
+                        val color = when (data.lastPathSegment) { "first.png" -> red; "slow.png" -> blue; else -> green }
+                        return SourceResult(ImageSource(Buffer().write(png(color)), context), "image/png", DataSource.NETWORK)
                     }
                 }
             }
