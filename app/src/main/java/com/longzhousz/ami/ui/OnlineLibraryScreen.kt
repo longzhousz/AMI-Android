@@ -120,7 +120,10 @@ import kotlinx.coroutines.flow.collect
     }
     LaunchedEffect(key, list) {
         snapshotFlow {
-            showingTracks && loadedKey == key && more && !loading && next > offset && list.layoutInfo.visibleItemsInfo.isNotEmpty() &&
+            // Wait until layout represents this page; a stale header-only layout looks near its end.
+            val expectedItems = tracks.size + (if (selected != null) 1 else 0) + (if (more && loadedKey == key) 1 else 0)
+            showingTracks && loadedKey == key && tracks.isNotEmpty() && more && !loading && next > offset &&
+                list.layoutInfo.totalItemsCount == expectedItems && list.layoutInfo.visibleItemsInfo.isNotEmpty() &&
                 (list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1) >= list.layoutInfo.totalItemsCount - 5
         }.collect { nearEnd -> if (nearEnd) offset = next }
     }
@@ -168,10 +171,10 @@ import kotlinx.coroutines.flow.collect
                             selectedKey = card.key; submitted = ""; offset = 0; error = null
                         }.testTag("collection-${card.key}")) {
                             Cover(card.cover, card.title, Modifier.fillMaxWidth().aspectRatio(1f), cornerRadius = 14.dp)
-                            Text(card.title, Modifier.padding(top = 10.dp, start = 2.dp).heightIn(min = 46.dp),
+                            Text(card.title, Modifier.padding(top = 10.dp, start = 2.dp),
                                 style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Text(if (card.kind == "album") card.artist.ifBlank { "专辑" } else "歌单 · ${card.count} 首",
-                                Modifier.padding(start = 2.dp), style = MaterialTheme.typography.bodySmall,
+                                Modifier.padding(start = 2.dp, top = 4.dp), style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }

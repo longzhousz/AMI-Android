@@ -2,6 +2,7 @@ package com.longzhousz.ami.data
 
 import android.graphics.Bitmap
 import androidx.compose.runtime.*
+import androidx.compose.material3.Surface
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -45,6 +46,7 @@ class OnlineLibraryTest {
     private fun library() = runBlocking(Dispatchers.IO) { cloud.library() }
     private fun visible(text: String) = compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
     private fun screenshot(name: String) {
+        compose.mainClock.advanceTimeBy(500); compose.waitForIdle()
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
         File(context.filesDir, "qa/$name.png").apply { parentFile!!.mkdirs() }.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
@@ -69,10 +71,10 @@ class OnlineLibraryTest {
         var state by mutableStateOf(CloudLibraryState(library(), loaded = true))
         var refreshes = 0
         val plays = mutableListOf<Pair<List<CloudTrack>, Int>>()
-        compose.setContent { AmiTheme("light") { OnlineLibraryContent(cloud, state, false, null, {
+        compose.setContent { AmiTheme("light") { Surface { OnlineLibraryContent(cloud, state, false, null, {
             refreshes++
             state = state.copy(library = state.library.copy(collections = shuffledShelf(state.library.collections, state.library.collections)))
-        }, { rows, index -> plays += rows to index }, {}) } }
+        }, { rows, index -> plays += rows to index }, {}) } } }
         compose.onNodeWithTag("online-shelf").assertIsDisplayed()
         compose.onNodeWithContentDescription("刷新网易云").assertDoesNotExist()
         compose.onNodeWithContentDescription("网易云账号").assertDoesNotExist()
@@ -100,9 +102,9 @@ class OnlineLibraryTest {
         val state = CloudLibraryState(library(), loaded = true)
         var favorites by mutableStateOf(true)
         val played = mutableListOf<String>()
-        compose.setContent { AmiTheme("dark") { key(favorites) {
+        compose.setContent { AmiTheme("dark") { Surface { key(favorites) {
             OnlineLibraryContent(cloud, state, favorites, null, {}, { rows, index -> played += rows[index].id }, {})
-        } } }
+        } } } }
         compose.waitUntil(10000) { visible("红心歌曲 201") }
         compose.onNodeWithText("红心歌曲 201").performClick()
         compose.onNodeWithText("红心歌曲 202").assertIsDisplayed()
