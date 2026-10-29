@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-package=com.longzhousz.ami.preview
 mkdir -p preview-smoke-results
 collect_logs() {
   adb logcat -d > preview-smoke-results/logcat.txt
@@ -11,10 +10,13 @@ collect_logs() {
 trap collect_logs EXIT
 apk=$(find preview-apk -name '*.apk' -print -quit)
 test -n "$apk"
+package=$("$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest application-id "$apk")
+[[ "$package" == com.longzhousz.ami.preview || "$package" == com.longzhousz.ami.musicpreview ]]
 sha256sum "$apk" | tee preview-smoke-results/apk-sha256.txt
 if [ -d baseline-apk ]; then
   baseline=$(find baseline-apk -name '*.apk' -print -quit)
   test -n "$baseline"
+  test "$("$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest application-id "$baseline")" = "$package"
   adb install "$baseline"
   adb shell am start -W -n "$package/com.longzhousz.ami.MainActivity"
   sleep 3
