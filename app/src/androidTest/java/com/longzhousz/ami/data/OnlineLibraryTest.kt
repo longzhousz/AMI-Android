@@ -75,9 +75,10 @@ class OnlineLibraryTest {
     }
     private fun library() = runBlocking(Dispatchers.IO) { cloud.library() }
     private fun visible(text: String) = compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
-    private fun screenshot(name: String) {
+    private fun screenshot(name: String, system: Boolean = false) {
         compose.mainClock.advanceTimeBy(500); compose.waitForIdle()
-        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+        val bitmap = if (system) requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+            else compose.onRoot().captureToImage().asAndroidBitmap()
         File(context.filesDir, "qa/$name.png").apply { parentFile!!.mkdirs() }.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
@@ -359,7 +360,7 @@ class OnlineLibraryTest {
         } } }
         compose.onNodeWithContentDescription("发现音乐").performClick()
         compose.onNodeWithText("私人 FM").assertIsDisplayed()
-        screenshot("online-discovery")
+        screenshot("online-discovery", system = true)
         compose.onNodeWithText("每日推荐").performClick()
         compose.runOnIdle { assertEquals("daily", chosen) }
         assertFalse(requests.any { it.first in setOf("v1/radio/get", "v3/discovery/recommend/songs") })
