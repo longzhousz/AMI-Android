@@ -18,6 +18,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.longzhousz.ami.core.Lyrics
 import com.longzhousz.ami.core.Song
+import com.longzhousz.ami.core.SongLyrics
 import com.longzhousz.ami.playback.PlaybackState
 import com.longzhousz.ami.ui.AmiTheme
 import com.longzhousz.ami.ui.PlayerActions
@@ -43,6 +44,35 @@ class LyricsPresentationTest {
         "让安静的时光，带我们回家", "There are stories still to tell", "Listen slowly tomorrow", "May this song stay with you",
     )
     private val song = Song("presentation", "file:///unused", folder = "qa", title = "光经过的地方", artist = "AMI · 听见日常", album = "晚风与回声", duration = 90000, format = "FLAC", lyrics = raw)
+
+    @Test fun genuineWordsBrightenWithoutMovingTheLineAndFreezeWithTheClock() {
+        val document = SongLyrics("[00:01]风 经过 窗边\n[00:08]下一句", wordTimed = "[1000,6000](1000,2000,0)风 (3000,2000,0)经过 (5000,2000,0)窗边")
+        val position = mutableLongStateOf(1000)
+        compose.setContent { AmiTheme("dark") {
+            PlayerContent(song.copy(lyrics = document.original), PlaybackState(position = 1000, duration = 90000), null, false,
+                PlayerActions(), lyricPosition = { position.longValue }, preparedLines = document.lines,
+                lyricsPage = remember { mutableStateOf(true) })
+        } }
+        compose.onNodeWithTag("word-timed-lyric").assertIsDisplayed()
+        fun brightness(): Double {
+            val image = compose.onNodeWithTag("word-timed-lyric").captureToImage().asAndroidBitmap()
+            var sum = 0L; var count = 0
+            for (y in 0 until image.height step 2) for (x in 0 until image.width step 2) {
+                val pixel = image.getPixel(x, y)
+                sum += ((pixel shr 16) and 255) + ((pixel shr 8) and 255) + (pixel and 255); count++
+            }
+            return sum.toDouble() / count / 3
+        }
+        val bounds = compose.onNodeWithTag("lyric-0").fetchSemanticsNode().boundsInRoot
+        val dim = brightness()
+        compose.runOnIdle { position.longValue = 6800 }
+        val bright = brightness()
+        assertTrue("Real word timing must change the visible text", bright > dim + 2)
+        assertEquals(bounds, compose.onNodeWithTag("lyric-0").fetchSemanticsNode().boundsInRoot)
+        compose.mainClock.advanceTimeBy(2000)
+        assertEquals("A frozen playback clock must not keep animating words", bright, brightness(), .5)
+        screenshot("lyrics-word-timing")
+    }
 
     @Test fun bilingualLyricsFollowSeekAndRespectManualBrowsing() {
         val position = mutableLongStateOf(13000)

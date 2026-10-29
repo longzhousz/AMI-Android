@@ -1,6 +1,7 @@
 package com.longzhousz.ami.core
 
-data class LyricLine(val time: Long?, val text: String)
+data class LyricWord(val start: Long, val end: Long, val from: Int, val until: Int)
+data class LyricLine(val time: Long?, val text: String, val words: List<LyricWord> = emptyList())
 
 object Lyrics {
     private val timestamp = Regex("\\[(\\d+):(\\d{1,2})(?:[.:](\\d{1,3}))?]")

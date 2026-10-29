@@ -115,9 +115,31 @@ internal class NeteaseAccount(context: Context, private val web: NeteaseTranspor
                 JSONObject().put("tracks", JSONArray().apply { for (i in 0 until rows.length()) { val row = rows.getJSONObject(i); put(track(row, row.optJSONObject("privilege"))) } })
                     .put("nextOffset", offset + rows.length()).put("more", offset + rows.length() < root.optInt("songCount"))
             }
+            "fm", "daily" -> {
+                val root = web.post(if (path == "fm") "v1/radio/get" else "v3/discovery/recommend/songs", JSONObject(), cookie)
+                val rows = if (path == "fm") root.optJSONArray("data") else
+                    root.optJSONObject("data")?.optJSONArray("dailySongs") ?: root.optJSONArray("recommend")
+                require(rows != null && rows.length() <= 100) { "推荐暂时无法读取，请稍后重试" }
+                val rights = privileges(root)
+                JSONObject().put("tracks", JSONArray().apply {
+                    for (i in 0 until rows.length()) {
+                        val row = rows.getJSONObject(i)
+                        put(track(row, row.optJSONObject("privilege") ?: rights[row.optString("id")]))
+                    }
+                }).put("nextOffset", rows.length()).put("more", false)
+            }
             "lyrics" -> {
-                val root = web.post("song/lyric", JSONObject().put("id", neteaseId(data.getString("id"))).put("lv", -1).put("tv", -1).put("rv", -1).put("kv", -1), cookie)
-                JSONObject().put("original", root.optJSONObject("lrc")?.optString("lyric").orEmpty().take(500000))
+                val id = neteaseId(data.getString("id"))
+                val root = try {
+                    web.post("song/lyric/v1", JSONObject().put("id", id).put("cp", false)
+                        .put("lv", 0).put("tv", 0).put("rv", 0).put("kv", 0).put("yv", 0).put("ytv", 0).put("yrv", 0), cookie)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (expired: NeteaseLoginExpired) { throw expired }
+                catch (_: Exception) { web.post("song/lyric", JSONObject().put("id", id).put("lv", -1).put("tv", -1).put("rv", -1).put("kv", -1), cookie) }
+                val words = root.optJSONObject("yrc")?.optString("lyric").orEmpty().take(500000)
+                val original = root.optJSONObject("lrc")?.optString("lyric").orEmpty().take(500000)
+                    .ifBlank { if (words.isBlank()) "" else runCatching { NeteaseLyrics.decode(words).original }.getOrDefault("") }
+                JSONObject().put("original", original).put("wordTimed", words)
                     .put("translated", root.optJSONObject("tlyric")?.optString("lyric").orEmpty().take(500000))
             }
             else -> error("不支持的网易云操作")

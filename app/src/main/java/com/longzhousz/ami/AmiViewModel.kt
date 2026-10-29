@@ -30,6 +30,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -48,6 +52,7 @@ class AmiViewModel internal constructor(app: Application,
     private var libraryJob: kotlinx.coroutines.Job? = null
     val onlineLibrary = MutableStateFlow(CloudLibraryState())
     val onlineRefresh = MutableStateFlow<Int?>(null)
+    val discovering = MutableStateFlow(false)
     fun requestOnlineRefresh(page: Int) { if (page in 0..1) onlineRefresh.value = page }
     fun consumeOnlineRefresh(page: Int) = onlineRefresh.compareAndSet(page, null)
     val player = PlayerConnection(app)
@@ -147,7 +152,7 @@ class AmiViewModel internal constructor(app: Application,
         }
         catch (_: Exception) { message.value = "操作未完成，播放服务可能正在连接，请稍后重试" }
     }
-    fun cancelCloudPreparation() { cloudPlayJob?.cancel() }
+    fun cancelCloudPreparation() { cloudPlayJob?.cancel(); discovering.value = false }
     fun resetOnlineLibrary() { libraryJob?.cancel(); cloud.clearPages(); onlineLibrary.value = CloudLibraryState() }
     fun refreshOnlineLibrary() {
         if (!cloud.configured.value || libraryJob?.isActive == true) return
@@ -168,21 +173,45 @@ class AmiViewModel internal constructor(app: Application,
     fun play(songs: List<Song>, index: Int = 0) {
         repository.prefs.edit().putBoolean("phoneFollowing",false).apply()
         cancelCloudPreparation()
+        cloud.stopRadio()
         act("player.play") { player.play(songs, index) }
     }
     fun playCloud(tracks: List<CloudTrack>, index: Int) {
         if (tracks.getOrNull(index)?.available != true) { message.value = "当前账号暂时无法播放这首歌，请检查歌曲权限"; return }
         repository.prefs.edit().putBoolean("phoneFollowing",false).apply()
+        cancelCloudPreparation()
+        cloudPlayJob = viewModelScope.launch {
+            try { startCloudQueue(tracks, index) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { message.value = "在线队列暂时无法保存，请稍后重试" }
+        }
+    }
+    fun discover(kind: String, onReady: () -> Unit) {
+        if (kind !in setOf("fm", "daily") || !cloud.configured.value) return
+        cancelCloudPreparation()
+        discovering.value = true
+        cloudPlayJob = viewModelScope.launch {
+            try {
+                val tracks = cloud.discovery(kind)
+                check(tracks.isNotEmpty()) { "暂时没有可播放的推荐歌曲" }
+                ensureActive()
+                repository.prefs.edit().putBoolean("phoneFollowing", false).apply()
+                val chosen = startCloudQueue(tracks, 0, if (kind == "fm") java.util.UUID.randomUUID().toString() else null)
+                check(withTimeoutOrNull(5000) { player.state.first { it.id == chosen } } != null)
+                ensureActive(); onReady()
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { message.value = "推荐暂时无法播放，请稍后重试" }
+            finally { if (currentCoroutineContext().isActive) discovering.value = false }
+        }
+    }
+    private suspend fun startCloudQueue(tracks: List<CloudTrack>, index: Int, radioToken: String? = null): String {
         val chosen = tracks[index].id
         val available = tracks.filter { it.available }
         val start = (available.indexOfFirst { it.id == chosen } - 500).coerceIn(0, (available.size - 1000).coerceAtLeast(0))
         val queue = available.drop(start).take(1000)
-        cloudPlayJob?.cancel()
-        cloudPlayJob = viewModelScope.launch {
-            try { cloud.rememberQueue(queue); ensureActive(); act("player.play") { player.play(queue.map { it.song() }, queue.indexOfFirst { it.id == chosen }) } }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { message.value = "在线队列暂时无法保存，请稍后重试" }
-        }
+        cloud.rememberQueue(queue, radioToken); currentCoroutineContext().ensureActive()
+        act("player.play") { player.play(queue.map { it.song() }, queue.indexOfFirst { it.id == chosen }, radioToken != null) }
+        return "netease:$chosen"
     }
     private fun persistAction(name: String, block: suspend () -> Unit) {
         viewModelScope.launch {

@@ -158,7 +158,11 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                                 }
                             }
                             !model.cloud.direct -> CloudMusicScreen(model)
-                            else -> pageState.SaveableStateProvider("online-${destination.page}") { OnlineLibraryScreen(model, destination.page == 1, floatingInset) }
+                            else -> pageState.SaveableStateProvider("online-${destination.page}") {
+                                OnlineLibraryScreen(model, destination.page == 1, floatingInset) {
+                                    if (page == 0) { focus.clearFocus(); playerOverStatusBar = false; playerOverNavigationBar = false; fullPlayer = true }
+                                }
+                            }
                         }
                     }
                 }

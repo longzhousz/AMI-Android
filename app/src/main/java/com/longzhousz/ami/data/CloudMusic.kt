@@ -38,6 +38,9 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
     private val closer = Dispatchers.IO.limitedParallelism(1)
     val configured = MutableStateFlow(if (direct) account.configured() else secret.configured())
     val catalog = MutableStateFlow<Map<String, Song>>(emptyMap())
+    val radio = MutableStateFlow<String?>(null)
+    private var queueTracks: List<CloudTrack> = emptyList()
+    fun stopRadio() { radio.value = null }
     val audioQuality = MutableStateFlow<Map<String, AudioQuality>>(emptyMap())
     @Synchronized private fun rememberQuality(value: AudioQuality) {
         val next = audioQuality.value.toMutableMap()
@@ -68,6 +71,7 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
     }
     suspend fun login(cookies: String): String {
         check(direct)
+        stopRadio()
         val nickname = account.login(cookies)
         withContext(Dispatchers.IO) { runCatching { cacheAccount() } }
         clearPages()
@@ -76,6 +80,7 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
     }
     fun refreshCatalog() { if (direct) account.invalidate() }
     suspend fun disconnect() = withContext(Dispatchers.IO) {
+        stopRadio()
         if (direct) synchronized(authLock) {
             account.logout(); OnlineCacheWorker.cancel(context); runCatching { audioCache.switchAccount(null) }
         } else secret.save("")
@@ -103,6 +108,10 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
         else tracks(collection.id, offset)
     suspend fun tracks(playlist: String, offset: Int = 0) = page(request("tracks", JSONObject().put("id", id(playlist)).put("offset", offset)))
     suspend fun search(query: String, offset: Int = 0) = page(request("search", JSONObject().put("query", query.take(100)).put("offset", offset)))
+    suspend fun discovery(kind: String): List<CloudTrack> {
+        require(direct && kind in setOf("fm", "daily"))
+        return page(request(kind)).tracks.distinctBy { it.id }.filter { it.available }
+    }
     private fun page(result: JSONObject): CloudTracks {
         val rows = result.getJSONArray("tracks"); require(rows.length() <= 500)
         return CloudTracks((0 until rows.length()).map { track(rows.getJSONObject(it)) }, result.getInt("nextOffset"), result.optBoolean("more"))
@@ -114,18 +123,36 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
         return CloudTrack(id(row.getString("id")), original, row.getString("title").take(200), row.getString("artist").take(200),
             row.getString("album").take(200), row.getLong("duration").coerceIn(0, 86_400_000), picture(row), row.optBoolean("available"))
     }
-    suspend fun rememberQueue(tracks: List<CloudTrack>) = withContext(Dispatchers.IO) {
+    suspend fun rememberQueue(tracks: List<CloudTrack>, radioToken: String? = null) = withContext(Dispatchers.IO) {
         require(tracks.size in 1..1000)
-        val songs = tracks.map { it.song() }
+        queueLock.withLock { ensureActive(); writeQueue(tracks, radioToken) }
+    }
+    /** Called under queueLock on IO. Queue and its radio identity are committed together. */
+    private fun writeQueue(tracks: List<CloudTrack>, radioToken: String?) {
         val rows = JSONArray().apply { tracks.forEach { track -> put(JSONObject().put("id", track.id).put("originalId", track.originalId)
             .put("title", track.title).put("artist", track.artist).put("album", track.album).put("duration", track.duration)
             .put("cover", track.cover).put("available", track.available)) } }
+        val saved = JSONObject().put("tracks", rows).put("radio", radioToken)
+            .put("radioAccount", if (radioToken == null) null else account.accountKey())
+        val bytes = saved.toString().toByteArray(Charsets.UTF_8)
+        require(bytes.size <= 2_000_000) { "播放队列过大，请减少载入的曲目" }
+        val output = queueFile.startWrite()
+        try { output.write(bytes); queueFile.finishWrite(output) }
+        catch (error: Exception) { queueFile.failWrite(output); throw error }
+        queueTracks = tracks
+        catalog.value = tracks.map { it.song() }.associateBy { it.id }
+        radio.value = radioToken
+    }
+    suspend fun appendRadio(token: String, ids: List<String>, candidates: List<CloudTrack>): List<Song> = withContext(Dispatchers.IO) {
         queueLock.withLock {
             ensureActive()
-            val output = queueFile.startWrite()
-            try { output.write(rows.toString().toByteArray()); queueFile.finishWrite(output) }
-            catch (error: Exception) { queueFile.failWrite(output); throw error }
-            catalog.value = songs.associateBy { it.id }
+            if (radio.value != token || ids.size >= 1000) return@withLock emptyList()
+            val byId = queueTracks.associateBy { "netease:${it.id}" }
+            val existing = ids.map { byId[it] ?: return@withLock emptyList() }
+            val seen = ids.toHashSet()
+            val added = candidates.filter { it.available && "netease:${it.id}" !in seen }.distinctBy { it.id }.take(1000 - existing.size)
+            if (added.isNotEmpty()) writeQueue(existing + added, token)
+            added.map { it.song() }
         }
     }
     suspend fun restore(ids: List<String>): List<Song> = withContext(Dispatchers.IO) {
@@ -134,8 +161,14 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
             if (catalog.value.isEmpty() && queueFile.baseFile.exists()) {
                 runCatching {
                     require(queueFile.baseFile.length() <= 2_000_000)
-                    val rows = JSONArray(queueFile.openRead().bufferedReader().use { it.readText() }); require(rows.length() <= 1000)
-                    catalog.value = (0 until rows.length()).map { track(rows.getJSONObject(it)).song() }.associateBy { it.id }
+                    val text = queueFile.openRead().bufferedReader().use { it.readText() }
+                    val root = text.takeIf { it.trimStart().startsWith('{') }?.let(::JSONObject)
+                    val rows = root?.getJSONArray("tracks") ?: JSONArray(text); require(rows.length() <= 1000)
+                    queueTracks = (0 until rows.length()).map { track(rows.getJSONObject(it)) }
+                    catalog.value = queueTracks.map { it.song() }.associateBy { it.id }
+                    radio.value = root?.optString("radio")?.takeIf {
+                        it.matches(Regex("[a-f0-9-]{36}")) && root.optString("radioAccount") == account.accountKey()
+                    }
                 }
             }
             ids.mapNotNull { catalog.value[it] }
@@ -144,7 +177,7 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
     suspend fun lyrics(song: Song): SongLyrics = withContext(Dispatchers.IO) {
         synchronized(lyricCache) { lyricCache[song.id]?.let { return@withContext it } }
         val body = request("lyrics", JSONObject().put("id", if (direct) song.neteaseId ?: id(song.id.removePrefix("netease:")) else id(song.id.removePrefix("netease:"))))
-        val document = SongLyrics(body.optString("original"), body.optString("translated"), song.lyricsVersion)
+        val document = SongLyrics(body.optString("original"), body.optString("translated"), song.lyricsVersion, body.optString("wordTimed"))
         document.lines // Parse on the loader thread; lyric animation never parses a new document.
         ensureActive()
         synchronized(lyricCache) {

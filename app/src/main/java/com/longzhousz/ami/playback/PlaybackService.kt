@@ -55,6 +55,7 @@ class PlaybackService : MediaLibraryService() {
     private val listening = ListeningCounter()
     private var cacheRetry: Job? = null
     private var cacheRetryId: String? = null
+    private lateinit var radio: RadioQueue
     private val callback = object : MediaLibrarySession.Callback {
         @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
         override fun onPlaybackResumption(session: MediaSession, controller: MediaSession.ControllerInfo, isForPlayback: Boolean): com.google.common.util.concurrent.ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
@@ -119,6 +120,7 @@ class PlaybackService : MediaLibraryService() {
             repeatMode = repository.prefs.getInt("repeat", Player.REPEAT_MODE_ALL)
             shuffleModeEnabled = repository.prefs.getBoolean("shuffle", false)
         }
+        radio = RadioQueue(repository.cloud, player, scope)
         session = MediaLibrarySession.Builder(this, player, callback)
             .setSessionActivity(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)).build()
         player.addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
@@ -160,6 +162,7 @@ class PlaybackService : MediaLibraryService() {
             }
             override fun onEvents(player: Player, events: Player.Events) {
                 updatePreloading()
+                if (restored) radio.update()
                 repository.setPlaybackBusy(player.playbackState == Player.STATE_BUFFERING, player.isLoading)
                 updateListening()
                 if (restored && events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION))

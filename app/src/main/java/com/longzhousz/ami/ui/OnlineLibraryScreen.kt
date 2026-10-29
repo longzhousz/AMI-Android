@@ -6,9 +6,16 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -69,31 +76,35 @@ import kotlinx.coroutines.withContext
     return { login.launch(Intent(context, NeteaseLoginActivity::class.java)) }
 }
 
-@Composable internal fun OnlineLibraryScreen(model: AmiViewModel, favorites: Boolean, bottomInset: Dp = 24.dp) {
+@Composable internal fun OnlineLibraryScreen(model: AmiViewModel, favorites: Boolean, bottomInset: Dp = 24.dp, onOpenPlayer: () -> Unit = {}) {
     val configured by model.cloud.configured.collectAsStateWithLifecycle()
     val state by model.onlineLibrary.collectAsStateWithLifecycle()
     val playback by model.player.state.collectAsStateWithLifecycle()
     val signIn = rememberNeteaseLogin(model)
     val refresh by model.onlineRefresh.collectAsStateWithLifecycle()
+    val discovering by model.discovering.collectAsStateWithLifecycle()
     var request by remember { mutableIntStateOf(0) }
     LaunchedEffect(refresh) { if (model.consumeOnlineRefresh(if (favorites) 1 else 0)) request++ }
     LaunchedEffect(configured) {
         if (!configured) model.resetOnlineLibrary()
         else if (!state.loaded) model.refreshOnlineLibrary()
     }
-    OnlineLibraryContent(model.cloud, state, favorites, playback.id, model::refreshOnlineLibrary, model::playCloud, signIn, request, bottomInset)
+    OnlineLibraryContent(model.cloud, state, favorites, playback.id, model::refreshOnlineLibrary, model::playCloud, signIn, request, bottomInset,
+        onDiscover = { model.discover(it, onOpenPlayer) }, discovering = discovering)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable internal fun OnlineLibraryContent(
     cloud: CloudMusic, state: CloudLibraryState, favorites: Boolean, currentId: String?,
     onRefresh: () -> Unit, onPlay: (List<CloudTrack>, Int) -> Unit, onLogin: () -> Unit,
     refreshRequest: Int = 0, bottomInset: Dp = 24.dp,
+    onDiscover: (String) -> Unit = {}, discovering: Boolean = false,
 ) {
     val configured by cloud.configured.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var submitted by rememberSaveable { mutableStateOf("") }
     var searchExpanded by rememberSaveable { mutableStateOf(false) }
+    var discoveryMenu by remember { mutableStateOf(false) }
     var selectedKey by rememberSaveable { mutableStateOf<String?>(null) }
     val selected = state.library.collections.firstOrNull { it.key == selectedKey }
     val collection = if (favorites) state.library.liked else selected
@@ -112,7 +123,8 @@ import kotlinx.coroutines.withContext
     val focus = LocalFocusManager.current
     val searchFocus = remember { FocusRequester() }
     val shelf = rememberLazyGridState()
-    val list = rememberLazyListState()
+    val list = key(key) { rememberLazyListState() }
+    val visibleCards by remember { derivedStateOf { shelf.layoutInfo.visibleItemsInfo.map { it.key }.toSet() } }
     val visibleTracks = tracks.takeIf { key == loadedKey }.orEmpty()
     var seenRevision by rememberSaveable { mutableLongStateOf(state.revision) }
     fun back() { selectedKey = null; submitted = ""; query = ""; offset = 0; error = null; searchExpanded = false; focus.clearFocus() }
@@ -169,6 +181,13 @@ import kotlinx.coroutines.withContext
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).combinedClickable(onClick = {}, onDoubleClick = {
                     if (favorites) refresh() else if (selected == null && !searching) onRefresh()
                 }))
+            if (!favorites && selected == null && !searching && configured) Box {
+                ActionIcon(Icons.Rounded.Explore, "发现音乐", { discoveryMenu = true }, enabled = !discovering)
+                DropdownMenu(discoveryMenu, { discoveryMenu = false }) {
+                    DropdownMenuItem({ Text("私人 FM") }, { discoveryMenu = false; onDiscover("fm") }, leadingIcon = { Icon(Icons.Rounded.Radio, null) })
+                    DropdownMenuItem({ Text("每日推荐") }, { discoveryMenu = false; onDiscover("daily") }, leadingIcon = { Icon(Icons.Rounded.WbSunny, null) })
+                }
+            }
             if (!favorites && selected == null && configured) ActionIcon(if (searchExpanded) Icons.Rounded.Close else Icons.Rounded.Search,
                 if (searchExpanded) "收起搜索" else "搜索音乐", {
                     if (searchExpanded) back() else searchExpanded = true
@@ -203,44 +222,58 @@ import kotlinx.coroutines.withContext
                 modifier = Modifier.weight(1f).semantics {
                     customActions = listOf(CustomAccessibilityAction(if (favorites) "刷新我喜欢" else "刷新曲库") { refresh(); true })
                 }) {
-                if (!showingTracks) LazyVerticalGrid(GridCells.Adaptive(145.dp), state = shelf,
-                    modifier = Modifier.fillMaxSize().testTag("online-shelf"),
-                    contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 4.dp, bottom = bottomInset),
-                    horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-                    items(state.library.collections, key = { it.key }) { card ->
-                        Column(Modifier.animateItem(placementSpec = spring(stiffness = 320f)).clickable {
-                            selectedKey = card.key; submitted = ""; offset = 0; error = null; searchExpanded = false; focus.clearFocus()
-                        }.testTag("collection-${card.key}")) {
-                            Cover(card.cover, card.title, Modifier.fillMaxWidth().aspectRatio(1f))
-                            Text(card.title, Modifier.padding(top = 10.dp, start = 2.dp),
-                                style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text(if (card.kind == "album") card.artist.ifBlank { "专辑" } else "歌单 · ${card.count} 首",
-                                Modifier.padding(start = 2.dp, top = 4.dp), style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                SharedTransitionLayout(Modifier.fillMaxSize()) {
+                    AnimatedContent(selected, Modifier.fillMaxSize(), transitionSpec = {
+                        fadeIn(tween(200, 80)) togetherWith fadeOut(tween(140))
+                    }, label = "collection-transition") { destination ->
+                        // Exiting details retain their own list, including during rapid reversal.
+                        val pageList = remember(destination?.key, searching, submitted) { list }
+                        val pageKey = if (searching) "search:$submitted" else if (favorites) collection?.key else destination?.key
+                        val pageTracks = tracks.takeIf { loadedKey == pageKey }.orEmpty()
+                        if (!favorites && destination == null && !searching) LazyVerticalGrid(GridCells.Adaptive(145.dp), state = shelf,
+                            modifier = Modifier.fillMaxSize().testTag("online-shelf"),
+                            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 4.dp, bottom = bottomInset),
+                            horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+                            items(state.library.collections, key = { it.key }) { card ->
+                                Column(Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = spring(stiffness = 320f)).clickable {
+                                    selectedKey = card.key; submitted = ""; offset = 0; error = null; searchExpanded = false; focus.clearFocus()
+                                }.testTag("collection-${card.key}")) {
+                                    Cover(card.cover, card.title, Modifier.fillMaxWidth().aspectRatio(1f).then(
+                                        if (card.key in visibleCards) Modifier.sharedElement(rememberSharedContentState("cover:${card.key}"),
+                                            animatedVisibilityScope = this@AnimatedContent, boundsTransform = { _, _ -> spring(dampingRatio = .9f, stiffness = 320f) }) else Modifier))
+                                    Text(card.title, Modifier.padding(top = 10.dp, start = 2.dp),
+                                        style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Text(if (card.kind == "album") card.artist.ifBlank { "专辑" } else "歌单 · ${card.count} 首",
+                                        Modifier.padding(start = 2.dp, top = 4.dp), style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                            if (state.loaded && state.library.collections.isEmpty() && failure == null) item(span = { GridItemSpan(maxLineSpan) }) {
+                                ShelfEmpty("收藏的专辑和你创建的歌单，会出现在这里")
+                            }
+                        } else LazyColumn(state = pageList, modifier = Modifier.fillMaxSize().testTag("online-tracks"),
+                            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = bottomInset)) {
+                            if (destination != null) item(key = "collection-header") {
+                                Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Cover(destination.cover, destination.title, Modifier.fillMaxWidth(.68f).widthIn(max = 280.dp).aspectRatio(1f)
+                                        .sharedElement(rememberSharedContentState("cover:${destination.key}"), animatedVisibilityScope = this@AnimatedContent,
+                                            boundsTransform = { _, _ -> spring(dampingRatio = .9f, stiffness = 320f) }).testTag("collection-cover"))
+                                    Text(if (destination.kind == "album") destination.artist else "${destination.count} 首", Modifier.padding(top = 12.dp),
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            itemsIndexed(pageTracks, key = { _, it -> it.id }) { index, track ->
+                                SongRow(track.song(), currentId == "netease:${track.id}", {
+                                    if (track.available) onPlay(pageTracks, index) else error = "当前账号暂时无法播放这首歌"
+                                }, {}, modifier = Modifier.animateItem().alpha(if (track.available) 1f else .5f))
+                            }
+                            if (more && loadedKey == key) item {
+                                Spacer(Modifier.fillMaxWidth().height(20.dp))
+                            }
+                            if (pageTracks.isEmpty() && !loading && !state.refreshing && state.loaded && failure == null) item {
+                                ShelfEmpty(if (favorites) "还没有红心歌曲" else "没有找到歌曲")
+                            }
                         }
-                    }
-                    if (state.loaded && state.library.collections.isEmpty() && failure == null) item(span = { GridItemSpan(maxLineSpan) }) {
-                        ShelfEmpty("收藏的专辑和你创建的歌单，会出现在这里")
-                    }
-                } else LazyColumn(state = list, modifier = Modifier.fillMaxSize().testTag("online-tracks"),
-                    contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = bottomInset)) {
-                    if (selected != null) item(key = "collection-header") {
-                        Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Cover(selected.cover, selected.title, Modifier.size(164.dp))
-                            Text(if (selected.kind == "album") selected.artist else "${selected.count} 首", Modifier.padding(top = 12.dp),
-                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                    itemsIndexed(visibleTracks, key = { _, it -> it.id }) { index, track ->
-                        SongRow(track.song(), currentId == "netease:${track.id}", {
-                            if (track.available) onPlay(visibleTracks, index) else error = "当前账号暂时无法播放这首歌"
-                        }, {}, modifier = Modifier.animateItem().alpha(if (track.available) 1f else .5f))
-                    }
-                    if (more && loadedKey == key) item {
-                        Spacer(Modifier.fillMaxWidth().height(20.dp))
-                    }
-                    if (visibleTracks.isEmpty() && !loading && !state.refreshing && state.loaded && failure == null) item {
-                        ShelfEmpty(if (favorites) "还没有红心歌曲" else "没有找到歌曲")
                     }
                 }
             }

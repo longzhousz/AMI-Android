@@ -13,6 +13,16 @@ import com.longzhousz.ami.ui.AmiTheme
 import com.longzhousz.ami.ui.OnlineLibraryContent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import com.longzhousz.ami.playback.RadioQueue
+import com.longzhousz.ami.playback.mediaItem
+import androidx.media3.exoplayer.ExoPlayer
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.*
@@ -37,6 +47,9 @@ class OnlineLibraryTest {
     private lateinit var tone: ByteArray
     private val cacheName = "qa-online-resolver"
     private val requests = CopyOnWriteArrayList<Pair<String, JSONObject>>()
+    @Volatile private var fmGate: java.util.concurrent.CountDownLatch? = null
+    private val fmGeneration = java.util.concurrent.atomic.AtomicInteger()
+    @Volatile private var lyricStatus = 200
     @Before fun prepare() {
         val web = NeteaseTransport(webForm = { it }, open = { address -> Fixture(address) })
         tone = InstrumentationRegistry.getInstrumentation().context.assets.open("qa-96k-24bit.flac").use { it.readBytes() }
@@ -54,6 +67,7 @@ class OnlineLibraryTest {
         runBlocking { cloud.disconnect(); cloud.login("MUSIC_U=qa-only-not-a-real-session") }
     }
     @After fun cleanup() {
+        fmGate?.countDown()
         runBlocking { cloud.disconnect() }
         cache.close(); context.deleteDatabase(File(context.noBackupFilesDir, "$cacheName.db").path)
         File(context.cacheDir, cacheName).deleteRecursively()
@@ -245,6 +259,137 @@ class OnlineLibraryTest {
         } finally { repository.setPlaybackBusy(false); repository.setUiActive(false) }
     }
 
+    @Test fun discoveryIsExplicitAndRadioRejectsLateResultsAfterAnotherQueueIsChosen() = runBlocking(Dispatchers.IO) {
+        assertFalse(requests.any { it.first in setOf("v1/radio/get", "v3/discovery/recommend/songs") })
+        val fm = cloud.discovery("fm")
+        assertEquals(listOf("401", "402"), fm.map { it.id })
+        assertEquals(listOf("501", "502"), cloud.discovery("daily").map { it.id })
+        val token = "12345678-1234-1234-1234-123456789abc"
+        cloud.rememberQueue(fm, token)
+        val extra = fm.first().copy(id = "403", originalId = "403")
+        val ids = fm.map { it.song().id }
+        val added = cloud.appendRadio(token, ids, fm + extra + extra)
+        assertEquals(listOf("netease:403"), added.map { it.id })
+        assertEquals(ids + "netease:403", cloud.restore(ids + "netease:403").map { it.id })
+        val restored = CloudMusic(context, true, NeteaseTransport(webForm = { it }, open = { Fixture(it) }), cache)
+        assertEquals(ids + "netease:403", restored.restore(ids + "netease:403").map { it.id })
+        assertEquals(token, restored.radio.value)
+        cloud.rememberQueue(cloud.discovery("daily"))
+        assertNull(cloud.radio.value)
+        assertTrue(cloud.appendRadio(token, ids, listOf(extra)).isEmpty())
+        assertEquals(setOf("netease:501", "netease:502"), cloud.catalog.value.keys)
+        val oversized = List(1000) { dailyIndex -> extra.copy(id = (10000 + dailyIndex).toString(), originalId = (10000 + dailyIndex).toString(),
+            cover = "https://p1.music.126.net/" + "x".repeat(7900)) }
+        assertTrue(runCatching { cloud.rememberQueue(oversized) }.isFailure)
+        assertEquals(setOf("netease:501", "netease:502"), cloud.catalog.value.keys)
+    }
+
+    @Test fun onlineWordTimingPreservesTheOriginalLineAndOrdinaryLyricsCache() = runBlocking(Dispatchers.IO) {
+        val song = cloud.discovery("daily").first().song()
+        val document = cloud.lyrics(song)
+        assertEquals("歌词 501", document.lines.single().text)
+        assertEquals(2, document.lines.single().words.size)
+        assertEquals(1000, document.lines.single().words.last().start)
+        assertSame(document, cloud.lyrics(song))
+        assertEquals(1, requests.count { it.first == "song/lyric/v1" })
+        assertFalse(requests.any { it.first == "client-audio" })
+    }
+
+    @Test fun nativeFmRefillsOnlyNearTheEndAndCancelledResultsCannotChangeANewQueue() = runBlocking {
+        val daily = cloud.discovery("daily")
+        val seed = daily + daily.last().copy(id = "503", originalId = "503")
+        val token = "12345678-1234-1234-1234-123456789abc"
+        cloud.rememberQueue(seed, token)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val player = withContext(Dispatchers.Main) { ExoPlayer.Builder(context).build() }
+        val radio = RadioQueue(cloud, player, scope)
+        try {
+            withContext(Dispatchers.Main) {
+                player.setMediaItems(seed.map { it.song().mediaItem() }, 0, 0)
+                player.playWhenReady = true; radio.update()
+            }
+            assertFalse(requests.any { it.first == "v1/radio/get" })
+            withContext(Dispatchers.Main) { player.seekTo(1, 0); radio.update() }
+            withTimeout(10000) { while (withContext(Dispatchers.Main) { player.mediaItemCount } < 5) delay(20) }
+            withContext(Dispatchers.Main) {
+                assertEquals("netease:502", player.currentMediaItem!!.mediaId)
+                assertEquals(1, player.currentMediaItemIndex)
+                radio.update()
+            }
+            assertEquals(1, requests.count { it.first == "v1/radio/get" })
+            withContext(Dispatchers.Main) { player.seekTo(3, 0); radio.update() }
+            withTimeout(10000) { while (withContext(Dispatchers.Main) { player.mediaItemCount } < 7) delay(20) }
+            withContext(Dispatchers.Main) { assertEquals("netease:401", player.currentMediaItem!!.mediaId) }
+            assertEquals(2, requests.count { it.first == "v1/radio/get" })
+            val gate = java.util.concurrent.CountDownLatch(1).also { fmGate = it }
+            cloud.rememberQueue(seed, "22345678-1234-1234-1234-123456789abc")
+            withContext(Dispatchers.Main) { player.setMediaItems(seed.map { it.song().mediaItem() }, 1, 0); radio.update() }
+            withTimeout(10000) { while (requests.count { it.first == "v1/radio/get" } < 3) delay(20) }
+            cloud.rememberQueue(daily)
+            withContext(Dispatchers.Main) { player.setMediaItems(daily.map { it.song().mediaItem() }); radio.update() }
+            gate.countDown(); fmGate = null
+            withTimeout(5000) { scope.coroutineContext[Job]!!.children.toList().forEach { it.join() } }
+            withContext(Dispatchers.Main) {
+                assertEquals(2, player.mediaItemCount)
+                assertEquals("netease:501", player.getMediaItemAt(0).mediaId)
+            }
+        } finally {
+            fmGate?.countDown(); fmGate = null; scope.cancel()
+            withContext(Dispatchers.Main) { player.release() }
+        }
+    }
+
+    @Test fun wordEndpointFailureKeepsOrdinaryLyricsButDoesNotHideExpiredLogin() = runBlocking(Dispatchers.IO) {
+        val songs = cloud.discovery("daily")
+        lyricStatus = 401
+        assertTrue(runCatching { cloud.lyrics(songs.first().song()) }.exceptionOrNull() is NeteaseLoginExpired)
+        assertFalse(requests.any { it.first == "song/lyric" })
+        lyricStatus = 404
+        val document = cloud.lyrics(songs.last().song())
+        assertEquals("歌词 502", document.lines.single().text)
+        assertTrue(document.lines.single().words.isEmpty())
+        assertEquals(1, requests.count { it.first == "song/lyric" })
+    }
+
+    @Test fun discoveryMenuHasTwoLightweightChoicesAndDoesNotFetchBeforeSelection() {
+        var chosen = ""
+        val state = CloudLibraryState(library(), loaded = true)
+        compose.setContent { AmiTheme("light") { Surface {
+            OnlineLibraryContent(cloud, state, false, null, {}, { _, _ -> }, {}, onDiscover = { chosen = it })
+        } } }
+        compose.onNodeWithContentDescription("发现音乐").performClick()
+        compose.onNodeWithText("私人 FM").assertIsDisplayed()
+        compose.onNodeWithText("每日推荐").performClick()
+        compose.runOnIdle { assertEquals("daily", chosen) }
+        assertFalse(requests.any { it.first in setOf("v1/radio/get", "v3/discovery/recommend/songs") })
+    }
+
+    @Test fun albumCoverExpandsAndReturnsToTheSameShelfPositionDuringReversal() {
+        val cards = (1..60).map { CloudPlaylist((1000 + it).toString(), "唱片 $it", null, 35, "album", "AMI QA") }
+        compose.setContent { AmiTheme("light") { Surface {
+            OnlineLibraryContent(cloud, CloudLibraryState(CloudLibrary(cards), loaded = true), false, null, {}, { _, _ -> }, {})
+        } } }
+        compose.onNodeWithTag("online-shelf").performScrollToIndex(20)
+        val card = compose.onNodeWithTag("collection-album:1021")
+        val before = card.fetchSemanticsNode().boundsInRoot
+        card.performClick()
+        compose.onNodeWithTag("collection-cover").assertIsDisplayed()
+        val enlarged = compose.onNodeWithTag("collection-cover").fetchSemanticsNode().boundsInRoot
+        assertTrue(enlarged.width > before.width + 10)
+        screenshot("shelf-album-expanded")
+        compose.onNodeWithContentDescription("返回曲库").performClick()
+        val returned = compose.onNodeWithTag("collection-album:1021").fetchSemanticsNode().boundsInRoot
+        assertEquals(before.top, returned.top, 2f)
+        compose.mainClock.autoAdvance = false
+        compose.onNodeWithTag("collection-album:1021").performClick()
+        compose.mainClock.advanceTimeBy(96)
+        compose.onNodeWithContentDescription("返回曲库").performClick()
+        compose.mainClock.advanceTimeBy(1500)
+        compose.mainClock.autoAdvance = true
+        compose.onNodeWithTag("collection-album:1021").assertIsDisplayed()
+        compose.onAllNodesWithTag("online-shelf").assertCountEquals(1)
+    }
+
     private inner class Fixture(address: String) : HttpURLConnection(URL(address)) {
         private val output = ByteArrayOutputStream()
         private val response by lazy {
@@ -265,7 +410,7 @@ class OnlineLibraryTest {
                 "user/playlist" -> JSONObject().put("playlist", JSONArray()
                     .put(playlist(100, "我喜欢的音乐", 5, 42)).put(playlist(200, "夜里听海", 0, 42)).put(playlist(300, "别人创建的歌单", 0, 99)))
                 "album/sublist" -> JSONObject().put("data", JSONArray().put(album(200, "晚风与回声")).put(album(201, "海边来信")))
-                "v1/album/200", "v1/album/201" -> JSONObject().put("songs", JSONArray((1..35).map(::song)))
+                "v1/album/200", "v1/album/201", "v1/album/1021" -> JSONObject().put("songs", JSONArray((1..35).map(::song)))
                 "v6/playlist/detail" -> JSONObject().put("playlist", JSONObject().put("trackIds", JSONArray(
                     (if (body.getString("id") == "100") listOf(201, 202) else listOf(105, 101, 104)).map { JSONObject().put("id", it) })))
                 "v3/song/detail" -> JSONObject().put("songs", JSONArray(JSONArray(body.getString("c")).let { ids ->
@@ -275,6 +420,13 @@ class OnlineLibraryTest {
                 "client-audio" -> JSONObject().put("data", JSONArray().put(JSONObject().put("id", 201).put("code", 200).put("time", 180000)
                     .put("url", "https://m7.music.126.net/qa-audio.flac").put("level", "jyeffect").put("type", "flac").put("br", 1800000).put("size", tone.size)))
                 "song/lyric" -> JSONObject().put("lrc", JSONObject().put("lyric", "[00:00]歌词 ${body.getString("id")}"))
+                "song/lyric/v1" -> JSONObject().put("lrc", JSONObject().put("lyric", "[00:00]歌词 ${body.getString("id")}"))
+                    .put("yrc", JSONObject().put("lyric", "[0,2000](0,1000,0)歌词 (1000,1000,0)${body.getString("id")}"))
+                "v1/radio/get" -> {
+                    fmGate?.await(); val first = 401 + (fmGeneration.getAndIncrement() * 2)
+                    JSONObject().put("data", JSONArray().put(song(first)).put(song(first + 1)).put(song(first + 1)))
+                }
+                "v3/discovery/recommend/songs" -> JSONObject().put("data", JSONObject().put("dailySongs", JSONArray().put(song(501)).put(song(502))))
                 else -> error("Unexpected fixture endpoint: $path")
             }
             result.put("code", 200).toString().toByteArray()
@@ -283,7 +435,7 @@ class OnlineLibraryTest {
         override fun disconnect() = Unit
         override fun usingProxy() = false
         override fun getOutputStream() = output
-        override fun getResponseCode(): Int { response; return 200 }
+        override fun getResponseCode(): Int { response; return if (url.path.endsWith("song/lyric/v1")) lyricStatus else 200 }
         override fun getInputStream() = ByteArrayInputStream(response)
     }
     private fun playlist(id: Int, title: String, special: Int, owner: Int) = JSONObject().put("id", id).put("name", title)

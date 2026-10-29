@@ -166,6 +166,16 @@ jobs:
           test "${#apks[@]}" -eq 1
           printf '%s  %s\n' "$APK_SHA256" "${apks[0]}" | sha256sum --check
           gh release upload "$RELEASE_TAG" .distribution/* --clobber
+          # This write-scoped job can read draft releases; the smoke jobs remain read-only.
+          gh release download "$RELEASE_TAG" --pattern '*.apk' --dir verified-release
+          mapfile -t downloaded < <(find verified-release -maxdepth 1 -type f -name '*.apk')
+          test "${#downloaded[@]}" -eq 1
+          printf '%s  %s\n' "$APK_SHA256" "${downloaded[0]}" | sha256sum --check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AMI-Android-signed-distribution
+          path: verified-release/*.apk
+          retention-days: 7
   preview-smoke:
     needs: [build, upload-preview]
     if: ${{ always() && !cancelled() && (needs.build.result == 'success' || github.event.inputs.smoke_run_id != '' || (github.event.inputs.smoke_release_tag != '' && (needs.upload-preview.result == 'success' || needs.upload-preview.result == 'skipped'))) }}
@@ -192,11 +202,16 @@ jobs:
           name: AMI-Android-music-preview
           path: music-preview-apk
       - name: Download the exact distribution APK
-        if: ${{ github.event.inputs.smoke_release_tag != '' }}
+        if: ${{ github.event.inputs.smoke_release_tag != '' && github.event.inputs.upload_apk_commit == '' }}
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.inputs.smoke_release_tag }}
         run: gh release download "$RELEASE_TAG" --pattern '*.apk' --dir preview-apk
+      - uses: actions/download-artifact@v4
+        if: ${{ github.event.inputs.upload_apk_commit != '' }}
+        with:
+          name: AMI-Android-signed-distribution
+          path: preview-apk
       - name: Download the previous APK for upgrade verification
         if: ${{ github.event.inputs.smoke_release_tag != '' && github.event.inputs.upgrade_from_tag != '' }}
         env:

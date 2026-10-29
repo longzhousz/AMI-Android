@@ -49,9 +49,10 @@ class PlayerConnection(private val context: Context) {
                 "网易云播放暂不可用，请检查登录、网络和曲目权限" else "无法播放此音频（${it.errorCodeName}），请检查文件授权或格式" }, advancing = c.isPlaying,
             nextId = c.nextMediaItemIndex.takeIf { it >= 0 }?.let { c.getMediaItemAt(it).mediaId })
     }
-    fun play(songs: List<Song>, index: Int = 0) {
+    fun play(songs: List<Song>, index: Int = 0, radio: Boolean = false) {
         val c = controller ?: error("播放服务正在连接，请稍后再试")
         require(songs.isNotEmpty() && index in songs.indices)
+        if (radio) { c.repeatMode = Player.REPEAT_MODE_OFF; c.shuffleModeEnabled = false }
         c.setMediaItems(songs.map { it.mediaItem() }, index, 0); c.prepare(); c.play()
     }
     fun toggle() { controller?.let {

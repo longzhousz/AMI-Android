@@ -122,7 +122,7 @@ import kotlin.math.abs
                         .padding(vertical = 15.dp)
                         .graphicsLayer { alpha = opacity.value; scaleX = scale.value; scaleY = scale.value; transformOrigin = TransformOrigin(0f, .5f) },
                 ) {
-                    Text(line.text, color = Color(0xFFFFFCF8), style = TextStyle(
+                    WordLyricText(line, current && following && line.words.isNotEmpty(), clock, style = TextStyle(
                         fontSize = fontSize, lineHeight = fontSize * 1.28f, fontWeight = FontWeight.Bold,
                         letterSpacing = (-.45).sp, lineBreak = LineBreak.Paragraph,
                         platformStyle = PlatformTextStyle(includeFontPadding = false),

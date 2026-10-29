@@ -35,6 +35,8 @@ import coil.request.Options
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
 import okio.Buffer
 import org.junit.Assert.*
 import org.junit.Rule
@@ -162,6 +164,51 @@ class ArtworkTransitionTest {
             release.complete(Unit)
             compose.runOnIdle { visible = false }
             Coil.setImageLoader(original); loader.shutdown()
+        }
+    }
+
+    @Test fun recycledSeenCoversShowImmediatelyWhileFullRequestsAreStillBlocked() {
+        val app = context.applicationContext as AmiApplication
+        val original = context.imageLoader
+        val release = CompletableDeferred<Unit>()
+        val addresses = (0 until 12).map { "https://p1.music.126.net/qa-return-${System.nanoTime()}-$it.png" }
+        val files = addresses.map { address ->
+            val hash = java.security.MessageDigest.getInstance("SHA-256").digest(address.toByteArray()).joinToString("") { "%02x".format(it) }
+            File(context.cacheDir, "OnlineArtwork/$hash.img")
+        }
+        val bytes = ByteArrayOutputStream().use { output ->
+            val bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply { eraseColor(0xffd84840.toInt()) }
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output); bitmap.recycle(); output.toByteArray()
+        }
+        files.forEach { it.parentFile!!.mkdirs(); it.writeBytes(bytes) }
+        runBlocking(Dispatchers.IO) { addresses.forEach { app.artwork.load(it).source.close() } }
+        val loader = ImageLoader.Builder(context).memoryCache(null).components { add(object : Fetcher.Factory<Uri> {
+            override fun create(data: Uri, options: Options, imageLoader: ImageLoader): Fetcher? = object : Fetcher {
+                override suspend fun fetch(): SourceResult {
+                    release.await()
+                    return SourceResult(ImageSource(Buffer().write(bytes), context), "image/png", DataSource.DISK)
+                }
+            }
+        }) }.build()
+        var path by mutableStateOf(addresses.first())
+        var shown by mutableStateOf(true)
+        Coil.setImageLoader(loader)
+        try {
+            compose.setContent { if (shown) Box(Modifier.size(180.dp).testTag("qa-return-cover")) { Cover(path, "浏览过的唱片", Modifier.size(180.dp)) } }
+            for (address in addresses.asReversed()) {
+                compose.runOnIdle { shown = false }
+                compose.waitForIdle()
+                compose.runOnIdle { path = address; shown = true }
+                val image = compose.onNodeWithTag("qa-return-cover").captureToImage().asAndroidBitmap()
+                val pixel = image.getPixel(image.width / 2, image.height / 2)
+                assertTrue("A seen cover must be visible before the full decoder returns", ((pixel shr 16) and 255) > 180 && (pixel and 255) < 100)
+                assertFalse(release.isCompleted)
+            }
+            screenshot("shelf-seen-preview")
+        } finally {
+            compose.runOnIdle { shown = false }
+            release.complete(Unit); Coil.setImageLoader(original); loader.shutdown()
+            files.forEach { it.delete() }; app.artwork.clearMemory()
         }
     }
 }

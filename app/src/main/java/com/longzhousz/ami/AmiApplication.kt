@@ -40,6 +40,7 @@ class AmiApplication : Application(), ImageLoaderFactory {
     private fun clearOptionalCaches() {
         if (repositoryHolder.isInitialized()) { repository.lyrics.trim(); repository.trimCloud() }
         activeImageLoader?.memoryCache?.clear()
+        artwork.clearMemory()
         com.longzhousz.ami.ui.clearArtworkColorCache()
     }
 }

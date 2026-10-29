@@ -4,16 +4,17 @@
 
 ## 下载与使用
 
-当前版本 **0.1.17**（versionCode 18）。
+当前版本 **0.1.18**（versionCode 19）。
 
 **[下载最新安装包](https://github.com/longzhousz/AMI-Android/releases/latest)** · [使用说明](docs/USER_GUIDE.md)
 
-安装发布页的 `AMI-Android-0.1.17-online-preview.apk`。它与此前云端在线版沿用同一包名、签名，可覆盖 0.1.14～0.1.16 并保留数据；其他包名或本地签名安装的兼容规则见使用说明。
+安装发布页的 `AMI-Android-0.1.18-online-preview.apk`。它与此前云端在线版沿用同一包名、签名，可覆盖 0.1.14～0.1.17 并保留数据；其他包名或本地签名安装的兼容规则见使用说明。
 
 - 「曲库」展示网易云收藏专辑与自建歌单；「我喜欢」展示红心歌曲。下拉或双击导航图标主动刷新。
 - 新选歌曲默认封面页，同一首歌收起重开记住封面／歌词。封面支持连续缩放与下拉交接，歌词可点句跳转。
 - 常听歌曲自动缓存，最近使用的封面按需保留；容量可在设置调整，后台补齐与清理避开前台操作。
 - 翻译按需使用 DeepSeek，可自动跟随最新模型；默认不使用网易云自带译文。
+- 浏览过的封面回滚时立即复用轻量预览；支持真实逐字歌词、私人 FM／每日推荐，以及专辑封面共享转场。见 [本轮体验说明](docs/LISTENING_EXPERIENCE.md)。
 
 ## 文档
 
@@ -23,7 +24,7 @@
 | 手机使用、音质、缓存与本地音乐 | [USER_GUIDE.md](docs/USER_GUIDE.md) |
 | 当前交接与验证范围 | [LOCAL_HANDOFF.md](docs/LOCAL_HANDOFF.md) |
 | 本地构建、签名与 USB 调试 | [LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) |
-| 0.1.17 播放流程与验证证据 | [PLAYBACK_FLOW.md](docs/PLAYBACK_FLOW.md) |
+| 当前播放流程 | [PLAYBACK_FLOW.md](docs/PLAYBACK_FLOW.md) |
 | 历史版本与旧试验 | [docs/archive/](docs/archive/README.md) |
 
 main 维护当前源码与文档，安装包放在 Releases。旧版本说明统一归档，Git 提交历史保留。

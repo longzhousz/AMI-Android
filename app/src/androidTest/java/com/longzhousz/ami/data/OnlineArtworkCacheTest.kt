@@ -12,6 +12,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeout
 import org.junit.*
 import org.junit.Assert.*
 import org.junit.runner.RunWith
@@ -95,5 +97,51 @@ class OnlineArtworkCacheTest {
         cache.cleanup(force = true)
         assertFalse(stale.exists())
         assertEquals(1, dir.listFiles()!!.size)
+    }
+    @Test fun smallSeenPreviewsSurviveFullBitmapEvictionAndNeverCreateAnotherDiskCopy() = runBlocking(Dispatchers.IO) {
+        var downloads = 0
+        val cache = OnlineArtworkCache(context, dir, download = { downloads++; png }, reserve = 0)
+        val loader = ImageLoader.Builder(context).components { add(cache.factory()) }.diskCache(null).build()
+        try {
+            for (index in 0 until 40) {
+                val address = "https://p1.music.126.net/qa-seen-$index.png"
+                assertTrue(loader.execute(ImageRequest.Builder(context).data(address).size(400).build()) is SuccessResult)
+            }
+            loader.memoryCache?.clear()
+            val preview = cache.preview("https://p1.music.126.net/qa-seen-0.png")
+            assertNotNull(preview)
+            assertTrue(preview!!.width <= 96 && preview.height <= 96)
+            assertTrue(cache.previewBytes <= cache.previewLimit)
+            assertTrue(cache.previewLimit <= 16 * 1024 * 1024)
+            assertEquals(40, downloads)
+            assertEquals(40, dir.listFiles()!!.size)
+            assertArrayEquals(png, dir.listFiles()!!.first().readBytes())
+            cache.clearMemory()
+            assertNull(cache.preview("https://p1.music.126.net/qa-seen-0.png"))
+            cache.load("https://p1.music.126.net/qa-seen-0.png").source.close()
+            assertNotNull(cache.preview("https://p1.music.126.net/qa-seen-0.png"))
+            assertEquals(40, downloads)
+        } finally { loader.shutdown(); cache.clearMemory() }
+    }
+    @Test fun anUnrelatedSlowDownloadCannotHoldAnAlreadyCachedCoverBehindItsLock() = runBlocking(Dispatchers.IO) {
+        fun stripe(address: String): Int {
+            val hash = java.security.MessageDigest.getInstance("SHA-256").digest(address.toByteArray()).joinToString("") { "%02x".format(it) }
+            return (hash.hashCode() and Int.MAX_VALUE) % 16
+        }
+        val cold = generateSequence(0) { it + 1 }.map { "https://p1.music.126.net/qa-cold-$it.png" }.first { stripe(it) == stripe(url) }
+        val entered = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        val cache = OnlineArtworkCache(context, dir, download = {
+            if (it == cold) { entered.complete(Unit); release.await() }; png
+        }, reserve = 0)
+        cache.load(url).source.close()
+        val waiting = async { cache.load(cold) }
+        entered.await()
+        try {
+            val warm = withTimeout(3000) { cache.load(url) }
+            assertEquals(DataSource.DISK, warm.dataSource)
+            assertArrayEquals(png, warm.source.source().readByteArray())
+            warm.source.close()
+            assertFalse(release.isCompleted)
+        } finally { release.complete(Unit); waiting.await().source.close(); cache.clearMemory() }
     }
 }
