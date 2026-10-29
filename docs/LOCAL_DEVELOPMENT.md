@@ -80,11 +80,11 @@ Windows PowerShell：
 | Preview | `com.longzhousz.ami.preview` | 压缩版体验、系统媒体接入；不可调试 |
 | Release | `com.longzhousz.ami` | 正式发行；默认产物未签名 |
 | PhonePreview | `com.longzhousz.ami.phonepreview` | 只用手机的网易云随播，`assemblePhonePreview` |
-| MusicPreview | `com.longzhousz.ami.musicpreview` | 在线曲库与高音质试用，`assembleMusicPreview`；与本地签名的 0.1.13 并存 |
-| NeteasePreview | `com.longzhousz.ami.neteasepreview` | AMI 内登录、歌单、搜索和直接播放，`assembleNeteasePreview` |
-| CloudPreview | `com.longzhousz.ami.cloudpreview` | 旧 Windows 连接端试验，`assembleCloudPreview` |
+| MusicPreview | `com.longzhousz.ami.musicpreview` | 当前云端交付的在线版，`assembleMusicPreview` |
+| NeteasePreview | `com.longzhousz.ami.neteasepreview` | 保留旧本地签名安装的构建类型，`assembleNeteasePreview` |
+| CloudPreview | `com.longzhousz.ami.cloudpreview` | 历史 Windows 连接端试验，`assembleCloudPreview` |
 
-当前网易云功能使用独立 NeteasePreview 包，输出为 `app/build/outputs/apk/neteasePreview/app-neteasePreview.apk`。无需电脑服务、局域网权限或通知使用权；官方登录操作由用户在手机上完成，不通过 ADB 输入或导出登录凭据。详细流程与边界见 [应用内播放说明](NETEASE_DIRECT.md)。
+当前云端交付使用 MusicPreview 包，输出为 `app/build/outputs/apk/musicPreview/app-musicPreview.apk`。无需电脑服务、局域网权限或通知使用权；官方登录操作由用户在手机上完成，不通过 ADB 输入或导出登录凭据。详细流程与边界见 [使用说明](USER_GUIDE.md)。其余试验构建类型仍保留源码，历史使用和验证记录统一位于 [archive/](archive/README.md)。
 
 Preview 使用本机开发签名。不同电脑或云端的开发签名通常不同，`adb install -r` 也不能绕过签名检查。Debug 与现有 Preview 包名不同，通常可以并存；如果手机已经有同包名的正式版，也要先核对签名。
 
@@ -125,14 +125,22 @@ Windows 安装 Python 3 后可将 `python3` 替换为 `py -3`。本地开发助�
 
 ## 采集诊断
 
-先在手机播放一首缺封面的歌曲。在仓库根目录为**现有 Preview**采集：
+先在手机播放一首待排查歌曲。在仓库根目录为**当前云端在线包**采集：
 
 ```sh
-python3 .github/scripts/ami-device-check.py --serial YOUR_SERIAL --package com.longzhousz.ami.preview --scenario snapshot --output artifacts/vivo-snapshot
-python3 .github/scripts/ami-device-check.py --serial YOUR_SERIAL --package com.longzhousz.ami.preview --scenario island --output artifacts/vivo-island
+python3 .github/scripts/ami-device-check.py --serial YOUR_SERIAL --package com.longzhousz.ami.musicpreview --scenario snapshot --output artifacts/vivo-snapshot
+python3 .github/scripts/ami-device-check.py --serial YOUR_SERIAL --package com.longzhousz.ami.musicpreview --scenario island --output artifacts/vivo-island
 ```
 
-调试 Debug 时将 `--package` 改为 `com.longzhousz.ami`。脚本只采集状态，不点击、不安装、不清数据、不替用户修改设置。`island` 是证据分类，不会自动判断原子岛成功。
+调试 Debug 时将 `--package` 改为 `com.longzhousz.ami`；其他安装先查实际包名。脚本只采集状态，不点击、不安装、不清数据、不替用户修改设置。`island` 是证据分类，不会自动判断原子岛成功。
+
+熄屏播放采集使用同一包名，先由用户开始播放并熄屏，再运行：
+
+```sh
+python3 .github/scripts/ami-device-check.py --serial YOUR_SERIAL --package com.longzhousz.ami.musicpreview --scenario screen-off --duration 1800 --output artifacts/vivo-screen-off
+```
+
+蓝牙、来电与进程恢复使用 `--scenario bluetooth`、`call`、`recovery`。实际插拔耳机、接听电话或回收操作由用户执行，脚本只保存证据。标准媒体面板、厂商原子岛、真实耳机输出分别记录；USB 供电与调试会影响耗电观察。
 
 针对原子岛的简单日志查看：
 
@@ -154,4 +162,4 @@ JVM 单元测试和 Lint 无需手机。完整 `connectedDebugAndroidTest` 会�
 ./gradlew connectedDebugAndroidTest
 ```
 
-Windows 使用 `gradlew.bat`。CI 另有需要 AOSP userdebug / root 的进程回收夹具，不要直接在零售版 X300 上运行整套 CI 主机脚本。实际手机上的音效、来电、蓝牙、原子岛与熄屏行为参见 [设备验证说明](ANDROID_DEVICE_QA.md)。
+Windows 使用 `gradlew.bat`。CI 另有需要 AOSP userdebug / root 的进程回收夹具，不要直接在零售版 X300 上运行整套 CI 主机脚本。当前自动化结果见 [播放流程](PLAYBACK_FLOW.md)，厂商能力边界见 [OriginOS 兼容性](ORIGINOS_COMPATIBILITY.md)。历史夹具原理见 [旧设备验证记录](archive/ANDROID_DEVICE_QA.md)。

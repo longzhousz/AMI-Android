@@ -1,5 +1,7 @@
 # Android：曲库、连续操作与后台播放验证
 
+> 历史归档：以下版本号、操作入口和验证结论仅对应当时的代码。当前版本请从 [文档索引](../README.md) 开始；归档不代表这些步骤仍是推荐用法。
+
 应用内保持原有入口，不增加性能面板、翻译任务列表或历史界面。翻译在后台完成；按钮保留简单的「翻译／译文」，不展示生成进度。
 
 0.1.9 的连续封面转场、底部排版、局部收藏更新与暂停 CPU/内存采样见 [播放页改版](PLAYER_ARTWORK_MOTION.md)。
@@ -24,7 +26,7 @@ schema 4 将歌曲的歌词正文迁至独立表；升级按最多 128 首分批
 
 声明 Media3 的标准 `MediaButtonReceiver`，让系统可以在进程回收后通过媒体键启动服务。系统播放恢复使用保存队列，不打开主界面。此接入依据 [Media3 播放恢复](https://developer.android.com/media/media3/session/background-playback#resumption)及[媒体内容服务](https://developer.android.com/media/media3/session/serve-content)。
 
-vivo 专属能力仍按 [OriginOS 兼容性记录](ORIGINOS_COMPATIBILITY.md)区分。标准媒体接入不保证原子随身听、原子岛或厂商音效名单已经收录。
+vivo 专属能力仍按 [OriginOS 兼容性记录](../ORIGINOS_COMPATIBILITY.md)区分。标准媒体接入不保证原子随身听、原子岛或厂商音效名单已经收录。
 
 ## 自动验证与证据
 

@@ -1,6 +1,6 @@
 # vivo / OriginOS 音乐兼容性
 
-核对日期：2026-10-25。用户确认目标为 **vivo X300 / OriginOS 7 / 原子岛音乐显示与控制**；完整系统构建号和原子岛组件版本尚未采集。当前工作区没有连接该真机。
+官方文档核对日期：2026-10-25；当前应用 0.1.17 的文档整理日期：2026-10-29。用户确认目标为 **vivo X300 / OriginOS 7 / 原子岛音乐显示与控制**；完整系统构建号和原子岛组件版本尚未采集。当前工作区没有连接该真机，本文不新增原子岛成功结论。
 
 ## 标准音乐应用接入
 
@@ -57,7 +57,7 @@ AMI 使用 Media3，并按 Android 标准提供以下声明和接口：
 3. 在系统提供的播放源列表中检查 AMI 是否可选，确认正式包与预览包的实际包名。
 4. 如果系统仅开放给获准应用，继续依官方渠道确认该具体能力的准入条件，而不是把“允许后台运行”当成音乐分类注册。
 
-目前的预览包名为 `com.longzhousz.ami.preview`，正式包为 `com.longzhousz.ami`。设备上的最终识别结果需以对应包和系统版本验证。
+当前云端在线版包名为 `com.longzhousz.ami.musicpreview`；旧 Preview 为 `com.longzhousz.ami.preview`，正式／Debug 包为 `com.longzhousz.ami`。设备上的最终识别结果需以实际安装包和系统版本验证。
 
 ## Android 官方依据
 
@@ -66,4 +66,4 @@ AMI 使用 Media3，并按 Android 标准提供以下声明和接口：
 - [后台媒体会话](https://developer.android.com/media/media3/session/background-playback)
 - [MediaLibraryService](https://developer.android.com/media/media3/session/serve-content)
 
-0.1.8 / 0.1.9 的自动化场景、证据与真机采集步骤见 [Android 设备验证](ANDROID_DEVICE_QA.md)。
+当前自动化结果见 [播放流程](PLAYBACK_FLOW.md)，真机采集步骤见 [本地开发](LOCAL_DEVELOPMENT.md#采集诊断)。0.1.8 / 0.1.9 的历史自动化与设备记录见 [归档](archive/ANDROID_DEVICE_QA.md)。

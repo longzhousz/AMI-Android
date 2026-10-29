@@ -1,0 +1,16 @@
+# AMI 文档
+
+当前版本 **0.1.17 / versionCode 18**。本目录只保留当前使用与开发说明；旧版交付、旧界面和已退出主流程的试验放入 [archive/](archive/README.md)。
+
+| 需要了解什么 | 文档 |
+| --- | --- |
+| 安装、登录、曲库、歌词、音质、缓存 | [使用说明](USER_GUIDE.md) |
+| 当前代码、安装包身份、验证结果、后续方向 | [当前交接](LOCAL_HANDOFF.md) |
+| Windows／macOS／Linux 构建与真机采集 | [本地开发](LOCAL_DEVELOPMENT.md) |
+| 页面记忆、换歌、歌词跟随与后台调度 | [播放流程](PLAYBACK_FLOW.md) |
+| vivo / OriginOS 的标准接入与原子岛边界 | [系统兼容性](ORIGINOS_COMPATIBILITY.md) |
+| 协议参考与许可证 | [第三方说明](THIRD_PARTY_NOTICES.md) |
+
+下载入口始终是 [GitHub 最新发布](https://github.com/longzhousz/AMI-Android/releases/latest)。本地开发助手先读根目录 [AGENTS.md](../AGENTS.md)，再读当前交接和本地开发说明。
+
+历史文件保留原版本的事实与验证范围，不作为当前版本的使用指引。只有应用代码变动才需要产生新应用版本；整理文档不重新生成安装包。
