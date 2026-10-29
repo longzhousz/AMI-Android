@@ -165,7 +165,13 @@ class OnlineLibraryTest {
                 state = state.copy(library = state.library.copy(collections = shuffledShelf(state.library.collections, state.library.collections)), revision = state.revision + 1)
             }, { _, _ -> }, {}, refreshRequest = request)
         } } } }
-        compose.waitUntil(10000) { visible("红心歌曲 201") }
+        try {
+            compose.waitUntil(10000) { visible("红心歌曲 201") }
+        } catch (failure: Throwable) {
+            android.util.Log.e("AmiCloudQA", "Favorites initial load: configured=${cloud.configured.value}, requests=${requests.map { it.first }}")
+            compose.onRoot(useUnmergedTree = true).printToLog("AmiCloudQA")
+            throw failure
+        }
         val count = requests.count { it.first == "v6/playlist/detail" }
         compose.runOnIdle { request++ }
         compose.waitUntil(10000) { requests.count { it.first == "v6/playlist/detail" } > count }
