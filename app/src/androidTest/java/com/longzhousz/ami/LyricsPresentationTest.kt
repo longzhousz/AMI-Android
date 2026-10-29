@@ -53,9 +53,10 @@ class LyricsPresentationTest {
                 PlayerActions(), lyricPosition = { position.longValue }, preparedLines = document.lines,
                 lyricsPage = remember { mutableStateOf(true) })
         } }
-        compose.onNodeWithTag("word-timed-lyric").assertIsDisplayed()
+        // The clickable lyric row merges descendants for accessibility; inspect the actual text.
+        compose.onNodeWithTag("word-timed-lyric", useUnmergedTree = true).assertIsDisplayed()
         fun brightness(): Double {
-            val image = compose.onNodeWithTag("word-timed-lyric").captureToImage().asAndroidBitmap()
+            val image = compose.onNodeWithTag("word-timed-lyric", useUnmergedTree = true).captureToImage().asAndroidBitmap()
             var sum = 0L; var count = 0
             for (y in 0 until image.height step 2) for (x in 0 until image.width step 2) {
                 val pixel = image.getPixel(x, y)
@@ -71,6 +72,7 @@ class LyricsPresentationTest {
         assertEquals(bounds, compose.onNodeWithTag("lyric-0").fetchSemanticsNode().boundsInRoot)
         compose.mainClock.advanceTimeBy(2000)
         assertEquals("A frozen playback clock must not keep animating words", bright, brightness(), .5)
+        compose.runOnIdle { position.longValue = 4000 }
         screenshot("lyrics-word-timing")
     }
 

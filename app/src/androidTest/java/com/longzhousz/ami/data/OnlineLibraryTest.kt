@@ -237,7 +237,7 @@ class OnlineLibraryTest {
         val neighbor = tracks[1].song()
         assertTrue(cloud.lyrics(neighbor).original.contains("202"))
         assertEquals(cloud.lyrics(neighbor), cloud.lyrics(neighbor))
-        assertEquals(listOf("song/lyric"), requests.map { it.first })
+        assertEquals(listOf("song/lyric/v1"), requests.map { it.first })
         cloud.trim()
         cloud.lyrics(neighbor)
         assertEquals(2, requests.size)
@@ -359,6 +359,7 @@ class OnlineLibraryTest {
         } } }
         compose.onNodeWithContentDescription("发现音乐").performClick()
         compose.onNodeWithText("私人 FM").assertIsDisplayed()
+        screenshot("online-discovery")
         compose.onNodeWithText("每日推荐").performClick()
         compose.runOnIdle { assertEquals("daily", chosen) }
         assertFalse(requests.any { it.first in setOf("v1/radio/get", "v3/discovery/recommend/songs") })
