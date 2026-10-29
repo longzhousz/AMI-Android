@@ -29,6 +29,8 @@ import java.util.concurrent.TimeUnit
 class BackgroundPlaybackTest {
     private val instrumentation get()=InstrumentationRegistry.getInstrumentation()
     private val context get()=instrumentation.targetContext
+    private fun shell(command: String) = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+        instrumentation.uiAutomation.executeShellCommand(command)).use { it.readBytes() }
     private fun await(message: String,predicate: ()->Boolean) {
         val until=System.currentTimeMillis()+30000
         var ready=false
@@ -94,7 +96,7 @@ class BackgroundPlaybackTest {
             instrumentation.runOnMainSync { controller.transportControls.play() }
             await("Playback should begin") { controller.playbackState?.state==PlaybackState.STATE_PLAYING }
             activity.moveToState(Lifecycle.State.CREATED)
-            instrumentation.uiAutomation.executeShellCommand("input keyevent 223").close()
+            shell("input keyevent 223")
             Thread.sleep(2500)
             await("Playback should continue while screen is off") { controller.playbackState?.state==PlaybackState.STATE_PLAYING }
             assertFalse(repo.prefs.contains("sleepAt"))
@@ -108,8 +110,8 @@ class BackgroundPlaybackTest {
             await("Paused playback should remain paused") { controller.playbackState?.state==PlaybackState.STATE_PAUSED }
         } finally {
             instrumentation.runOnMainSync { audio.abandonAudioFocusRequest(focus) }
-            instrumentation.uiAutomation.executeShellCommand("input keyevent 224").close()
-            instrumentation.uiAutomation.executeShellCommand("wm dismiss-keyguard").close()
+            shell("input keyevent 224")
+            shell("wm dismiss-keyguard")
         }
     }
 }

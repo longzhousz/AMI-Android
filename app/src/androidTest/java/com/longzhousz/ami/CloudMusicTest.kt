@@ -91,7 +91,12 @@ class CloudMusicTest {
     @Test fun aCancelledSlowSearchCannotReplaceNewerResults() {
         runBlocking { cloud.connect(backend.address) }
         compose.setContent { AmiTheme("dark") { CloudMusicContent(cloud, { _, _ -> }) } }
-        compose.waitUntil(10000) { visible("晚风收藏") }
+        try { compose.waitUntil(10000) { visible("晚风收藏") } }
+        catch (failure: Throwable) {
+            android.util.Log.e("AmiCloudQA", "initial configured=${cloud.configured.value} paths=${backend.requests.map { it.first }}")
+            runCatching { compose.onRoot().printToLog("AmiCloudQA") }
+            throw failure
+        }
         compose.onNodeWithTag("cloud-search").performTextInput("慢")
         compose.onNodeWithTag("cloud-search").performImeAction()
         compose.waitUntil(5000) { backend.requests.any { it.first == "/v1/search" && it.second.optString("query") == "慢" } }
