@@ -21,7 +21,7 @@
 
 ## GitHub 整理
 
-main 保留当前完整应用源码与文档，不放安装包副本或按版本复制的源码目录。最新 APK 位于 [Releases](https://github.com/longzhousz/AMI-Android/releases/latest)。0.1.3 的发布与三个原附件转为草稿保留，标签 `android-v0.1.3-preview` 仍可用于旧版兼容性追溯。
+main 保留当前完整应用源码与文档，不放安装包副本或按版本复制的源码目录。最新 APK 位于 [Releases](https://github.com/longzhousz/AMI-Android/releases/latest)。旧版 0.1.3、0.1.17 的发布与原附件转为草稿保留，对应标签仍可用于旧版兼容性追溯。当前公开版本为 0.1.18，Git 历史不重写。
 
 下列旧分支的提交都已包含在 main，旧草稿 PR #3～#6 关闭、分支入口删除；Git 提交历史不重写。需要时可从对应提交重新建分支：
 
