@@ -86,3 +86,5 @@ APK SHA-256：7497011bc807b4f85da0747484f3a9935a3c2580fde0445aba0d7f40edd2b0f0
 0.1.17 的同一份签名安装包发布在 [GitHub 最新发布](https://github.com/longzhousz/AMI-Android/releases/latest)，不重新构建或递增版本。当前使用规则统一到 [USER_GUIDE.md](USER_GUIDE.md)，历史交付说明位于 [archive/](archive/README.md)。上方 2026-10-28 的“没有创建 Release”只描述当次开发验证。
 
 用户安装后反馈体验良好；当前工作区仍未连接 X300，不据此增加帧率、耗电、音源或原子岛的测量结论。
+
+[发布附件检查 40823532197](https://github.com/longzhousz/AMI-Android/actions/runs/40823532197) 通过：Android 11／17 直接下载发布页原签名 APK，核对上述 SHA-256 后安装，两次冷启动、图标导航、设置与网易云歌词入口正常。发布脚本从 APK 读取实际包名，不再写死旧 Preview 包名；未重新构建应用。发布页六个附件重新下载后的校验通过，旧版发布保留为归档草稿。
