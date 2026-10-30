@@ -30,6 +30,7 @@ class LibraryRepository(val context: Context) {
         .takeIf { it in OnlineAudioCache.LIMITS } ?: OnlineAudioCache.DEFAULT_BUDGET)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val playback = PlaybackStore(db, prefs, scope)
+    val listeningStats by lazy { ListeningStatsStore(db, scope) }
     val lyrics = LyricStore(db)
     val songs = MutableStateFlow<List<Song>>(emptyList())
     val library = MutableStateFlow(LibrarySnapshot(emptyList()))

@@ -29,7 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable fun SettingsScreen(model: AmiViewModel, onImport: () -> Unit, onNotifications: () -> Unit, onBridgeFolder: () -> Unit, onLyricsFolder: () -> Unit,
-    onLocalLibrary: () -> Unit = {}) {
+    onLocalLibrary: () -> Unit = {}, onListening: () -> Unit = {}) {
     val repo = model.repository
     val songs by repo.songs.collectAsStateWithLifecycle()
     val importState by repo.importState.collectAsStateWithLifecycle()
@@ -61,6 +61,10 @@ import kotlinx.coroutines.withContext
                         if (configured) dialog = "account" else signIn()
                     })
                 }
+            }
+            Spacer(Modifier.height(12.dp))
+            SettingsGroup {
+                SettingRow(Icons.Rounded.Insights, "我的聆听", "周、月、年 · 回看音乐留下的足迹", onListening)
             }
             SectionLabel("歌词与翻译")
             SettingsGroup {

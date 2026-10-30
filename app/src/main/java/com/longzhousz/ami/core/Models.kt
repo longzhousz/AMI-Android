@@ -30,6 +30,9 @@ data class Song(
     val manualLyrics: Boolean = false,
     val lyricsAvailable: Boolean? = null,
     val lyricsVersion: String = "",
+    val primaryArtistId: String? = null,
+    val primaryArtistName: String? = null,
+    val albumId: String? = null,
 ) {
     val hasLyrics: Boolean get() = lyricsAvailable ?: lyrics.isNotBlank()
 }

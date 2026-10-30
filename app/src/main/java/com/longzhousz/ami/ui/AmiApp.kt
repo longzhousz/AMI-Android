@@ -57,6 +57,7 @@ import com.longzhousz.ami.core.Album
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.core.LibrarySnapshot
 import com.longzhousz.ami.core.durationLabel
+import com.longzhousz.ami.core.ListeningScale
 import com.longzhousz.ami.playback.PlaybackState
 import com.longzhousz.ami.playback.PlayerConnection
 
@@ -81,7 +82,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         val message by model.message.collectAsStateWithLifecycle()
         val songsById = library.songsById
         val albumsByKey = library.albumsByKey
-        var page by rememberSaveable { mutableIntStateOf(if (initialPage == 3 && model.cloud.direct) 0 else initialPage.coerceIn(0,5)) }
+        var page by rememberSaveable { mutableIntStateOf(if (initialPage == 3 && model.cloud.direct) 0 else initialPage.coerceIn(0,6)) }
         var albumKey by rememberSaveable { mutableStateOf<String?>(null) }
         var queue by rememberSaveable { mutableStateOf(false) }
         var remove by remember { mutableStateOf<Song?>(null) }
@@ -122,7 +123,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         BackHandler(selectedAlbum != null && !fullPlayer && !queue) { albumKey = null }
         BackHandler(page in 1..2 && selectedAlbum == null && !fullPlayer && !queue) { page = 0 }
         BackHandler(page >= 4 && selectedAlbum == null && !fullPlayer && !queue) { page = 2 }
-        LaunchedEffect(page) { if (page >= 4) model.repository.load() }
+        LaunchedEffect(page) { if (page in 4..5) model.repository.load() }
         Box(Modifier.fillMaxSize()) {
             Scaffold(
                 modifier = if (fullPlayer) Modifier.clearAndSetSemantics {} else Modifier,
@@ -145,8 +146,15 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                         val album = albumsByKey[destination.albumKey]
                         when {
                             album != null -> Box(Modifier.padding(bottom = floatingInset)) { AlbumScreen(album, playback.id, model, { albumKey = null }, { remove = it }) }
-                            destination.page == 2 -> Box(Modifier.padding(bottom = floatingInset)) { SettingsScreen(model, onImport, onNotifications, onBridgeFolder, onLyricsFolder, onLocalLibrary = { page = 4 }) }
-                            destination.page >= 4 -> pageState.SaveableStateProvider("local-${destination.page}") {
+                            destination.page == 2 -> pageState.SaveableStateProvider("settings") {
+                                Box(Modifier.padding(bottom = floatingInset)) { SettingsScreen(model, onImport, onNotifications, onBridgeFolder, onLyricsFolder, onLocalLibrary = { page = 4 }, onListening = { page = 6 }) }
+                            }
+                            destination.page == 6 -> Box(Modifier.padding(bottom = floatingInset)) {
+                                ListeningStatsScreen(model.repository.listeningStats, { page = 2 },
+                                    ListeningScale.entries.firstOrNull { it.name == model.repository.prefs.getString("listeningScale", "MONTH") } ?: ListeningScale.MONTH,
+                                    { model.repository.prefs.edit().putString("listeningScale", it.name).apply() })
+                            }
+                            destination.page in 4..5 -> pageState.SaveableStateProvider("local-${destination.page}") {
                                 Column(Modifier.padding(bottom = floatingInset)) {
                                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                         ActionIcon(Icons.Rounded.ArrowBack, "返回设置", { page = 2 })

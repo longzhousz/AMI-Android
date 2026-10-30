@@ -43,6 +43,19 @@ import java.io.File
 class InterfaceTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
+    @Test fun listeningIsADirectSettingsEntryAndReturnsToSettings() {
+        val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
+        val loading = model.repository.loading.value
+        compose.onNodeWithContentDescription("设置").performClick()
+        compose.onNodeWithText("我的聆听").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("listening-screen").assertIsDisplayed()
+        compose.onNodeWithContentDescription("返回设置").performClick()
+        compose.onNodeWithText("我的聆听").assertIsDisplayed()
+        assertEquals("The report must not request the local library", loading, model.repository.loading.value)
+        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+        File(compose.activity.filesDir, "qa/listening-settings.png").apply { parentFile!!.mkdirs() }.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
     private fun openLocalLibrary() {
         compose.onNodeWithContentDescription("设置").performClick()
         compose.onNodeWithText("浏览本地音乐").performScrollTo().performClick()

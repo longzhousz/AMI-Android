@@ -13,7 +13,7 @@ import org.json.JSONArray
 
 data class ScanRecord(val key: String, val fingerprint: String, val ids: List<String>, val sources: List<String> = emptyList(), val artifacts: List<String> = emptyList())
 
-class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOpenHelper(context, name, null, 4) {
+class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOpenHelper(context, name, null, 5) {
     init { setWriteAheadLoggingEnabled(true) }
     override fun onConfigure(db: SQLiteDatabase) { db.setForeignKeyConstraintsEnabled(true) }
     override fun onCreate(db: SQLiteDatabase) {
@@ -29,6 +29,7 @@ class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOp
         createLyricsTables(db)
         createPerformanceTables(db)
         createLazyLyricsTables(db)
+        createListeningTables(db)
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
@@ -38,6 +39,7 @@ class LibraryDatabase(context: Context, name: String = "ami.sqlite3") : SQLiteOp
         }
         if (oldVersion < 3) createPerformanceTables(db)
         if (oldVersion < 4) createLazyLyricsTables(db)
+        if (oldVersion < 5) createListeningTables(db)
     }
     private fun createPerformanceTables(db: SQLiteDatabase) {
         db.execSQL("CREATE INDEX songs_import_order ON songs(imported_at,id)")

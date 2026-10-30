@@ -180,6 +180,9 @@ internal class NeteaseAccount(context: Context, private val web: NeteaseTranspor
             val artist = (0 until artists.length()).map { artists.getJSONObject(it).optString("name") }.filter { it.isNotBlank() }.joinToString(" / ")
             return JSONObject().put("id", id).put("originalId", id).put("title", row.optString("name").take(200)).put("artist", artist.take(200))
                 .put("album", album?.optString("name").orEmpty().take(200)).put("cover", picture(album?.optString("picUrl").orEmpty()))
+                .put("primaryArtistId", artists.optJSONObject(0)?.optString("id"))
+                .put("primaryArtistName", artists.optJSONObject(0)?.optString("name")?.take(200))
+                .put("albumId", album?.optString("id"))
                 .put("duration", row.optLong("dt", row.optLong("duration")).coerceIn(0, 86_400_000))
                 .put("available", (privilege?.optInt("st", 0) ?: 0) >= 0)
         }

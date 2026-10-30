@@ -31,6 +31,16 @@ class PlaybackIntegrationTest {
         var future: com.google.common.util.concurrent.ListenableFuture<MediaController>? = null
         instrumentation.runOnMainSync { future = MediaController.Builder(context, SessionToken(context, ComponentName(context, PlaybackService::class.java))).buildAsync() }
         val controller = future!!.get(40, TimeUnit.SECONDS)
+        val repo = (context.applicationContext as AmiApplication).repository
+        fun countedMillis(): Long = kotlinx.coroutines.runBlocking {
+            repo.listeningStats.report(com.longzhousz.ami.core.ListeningPeriod(com.longzhousz.ami.core.ListeningScale.MONTH, java.time.LocalDate.now()))
+            synchronized(repo.db) {
+                repo.db.readableDatabase.rawQuery("SELECT SUM(s.millis) FROM listening_song_day s JOIN listening_tracks t ON t.id=s.track WHERE t.music_key IN (?,?)",
+                    arrayOf("local:${com.longzhousz.ami.core.digest("qa-hires")}", "local:${com.longzhousz.ami.core.digest("qa-hires-next")}")).use { it.moveToFirst(); it.getLong(0) }
+            }
+        }
+        val heardBefore = countedMillis()
+        val started = android.os.SystemClock.elapsedRealtime()
         fun await(predicate: () -> Boolean): Boolean {
             val deadline = System.currentTimeMillis() + 20000
             var ready = false
@@ -59,6 +69,10 @@ class PlaybackIntegrationTest {
             assertTrue("The prepared neighbor must play through the same native session", await {
                 controller.currentMediaItem?.mediaId == "qa-hires-next" && controller.isPlaying && controller.playerError == null
             })
+            instrumentation.runOnMainSync { controller.pause() }
+            assertTrue(await { !controller.isPlaying })
+            val heard = countedMillis() - heardBefore
+            assertTrue("Native listening time must follow elapsed playback, including seeks", heard >= 100 && heard <= android.os.SystemClock.elapsedRealtime() - started + 500)
         } finally {
             instrumentation.runOnMainSync { controller.stop(); controller.clearMediaItems(); MediaController.releaseFuture(future!!) }
             source.delete(); activity.close()

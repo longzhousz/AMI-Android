@@ -23,6 +23,16 @@ internal fun legacyLibrary(context: Context, name: String, version: Int, seed: (
             db.execSQL("CREATE TABLE playback_queue (position INTEGER PRIMARY KEY,song_id TEXT NOT NULL)")
             db.execSQL("CREATE TABLE playback_checkpoint (singleton INTEGER PRIMARY KEY CHECK(singleton=1),queue_index INTEGER NOT NULL,position_ms INTEGER NOT NULL,repeat_mode INTEGER NOT NULL,shuffle INTEGER NOT NULL)")
         }
+        if (version >= 4) {
+            db.execSQL("ALTER TABLE songs ADD COLUMN has_lyrics INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE songs ADD COLUMN lyric_revision TEXT NOT NULL DEFAULT ''")
+            db.execSQL("CREATE TABLE song_lyrics(song_id TEXT PRIMARY KEY REFERENCES songs(id) ON DELETE CASCADE,original TEXT NOT NULL,translated TEXT NOT NULL)")
+            for ((table, id) in listOf("netease_lyrics" to "music_id", "lyric_overrides" to "song_id")) {
+                db.execSQL("ALTER TABLE $table ADD COLUMN has_original INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE $table ADD COLUMN revision TEXT NOT NULL DEFAULT ''")
+                db.execSQL("CREATE INDEX ${table}_summary ON $table($id,has_original,revision,name)")
+            }
+        }
         seed(db);db.version=version
     }
 }

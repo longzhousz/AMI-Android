@@ -49,10 +49,12 @@ data class AudioQuality(val id: String, val level: String?, val codec: String, v
     }
 }
 data class CloudTrack(val id: String, val originalId: String, val title: String, val artist: String,
-    val album: String, val duration: Long, val cover: String?, val available: Boolean) {
+    val album: String, val duration: Long, val cover: String?, val available: Boolean,
+    val primaryArtistId: String? = null, val primaryArtistName: String? = null, val albumId: String? = null) {
     fun song() = Song(id = "netease:$id", uri = "ami-cloud://song/$id", folder = "netease-online", title = title,
         artist = artist, album = album, duration = duration, cover = cover, format = "网易云 · 在线", neteaseId = originalId,
-        lyricsAvailable = true, lyricsVersion = "cloud:$id")
+        lyricsAvailable = true, lyricsVersion = "cloud:$id", primaryArtistId = primaryArtistId,
+        primaryArtistName = primaryArtistName, albumId = albumId)
 }
 data class CloudTracks(val tracks: List<CloudTrack>, val nextOffset: Int, val more: Boolean)
 fun Song.isCloudSong() = id.startsWith("netease:") && uri.startsWith("ami-cloud://song/")

@@ -121,7 +121,10 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
     private fun track(row: JSONObject): CloudTrack {
         val original = row.getString("originalId"); require(original.matches(Regex("[0-9]{1,20}")))
         return CloudTrack(id(row.getString("id")), original, row.getString("title").take(200), row.getString("artist").take(200),
-            row.getString("album").take(200), row.getLong("duration").coerceIn(0, 86_400_000), picture(row), row.optBoolean("available"))
+            row.getString("album").take(200), row.getLong("duration").coerceIn(0, 86_400_000), picture(row), row.optBoolean("available"),
+            row.optString("primaryArtistId").takeIf { it.matches(Regex("[1-9][0-9]{0,19}")) },
+            row.optString("primaryArtistName").takeIf { it.isNotBlank() && it != "null" }?.take(200),
+            row.optString("albumId").takeIf { it.matches(Regex("[1-9][0-9]{0,19}")) })
     }
     suspend fun rememberQueue(tracks: List<CloudTrack>, radioToken: String? = null) = withContext(Dispatchers.IO) {
         require(tracks.size in 1..1000)
@@ -131,7 +134,8 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
     private fun writeQueue(tracks: List<CloudTrack>, radioToken: String?) {
         val rows = JSONArray().apply { tracks.forEach { track -> put(JSONObject().put("id", track.id).put("originalId", track.originalId)
             .put("title", track.title).put("artist", track.artist).put("album", track.album).put("duration", track.duration)
-            .put("cover", track.cover).put("available", track.available)) } }
+            .put("cover", track.cover).put("available", track.available)
+            .put("primaryArtistId", track.primaryArtistId).put("primaryArtistName", track.primaryArtistName).put("albumId", track.albumId)) } }
         val saved = JSONObject().put("tracks", rows).put("radio", radioToken)
             .put("radioAccount", if (radioToken == null) null else account.accountKey())
         val bytes = saved.toString().toByteArray(Charsets.UTF_8)

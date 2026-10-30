@@ -24,6 +24,9 @@ import com.longzhousz.ami.MainActivity
 import com.longzhousz.ami.core.PlaybackSnapshot
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.core.ListeningCounter
+import com.longzhousz.ami.core.ListeningTrack
+import com.longzhousz.ami.core.listeningTrack
+import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -34,13 +37,32 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-fun Song.mediaItem(): MediaItem = MediaItem.Builder().setMediaId(id).setUri(uri)
-    .setMediaMetadata(MediaMetadata.Builder().setTitle(title).setArtist(artist).setAlbumTitle(album)
-        .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC).setIsPlayable(true).setIsBrowsable(false)
+fun Song.mediaItem(): MediaItem {
+    val extras = android.os.Bundle().apply {
+        neteaseId?.let { putString("ami.stats.neteaseId", it) }
+        primaryArtistId?.let { putString("ami.stats.artistId", it) }
+        primaryArtistName?.let { putString("ami.stats.artistName", it) }
+        albumId?.let { putString("ami.stats.albumId", it) }
+    }
+    return MediaItem.Builder().setMediaId(id).setUri(uri)
+    .setMediaMetadata(MediaMetadata.Builder().setTitle(title).setArtist(artist).setAlbumTitle(album).setAlbumArtist(albumArtist)
+        .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC).setIsPlayable(true).setIsBrowsable(false).setExtras(extras)
         .setDurationMs(duration.takeIf { it > 0 })
         .setArtworkUri(cover?.let { if (it.startsWith("https://")) android.net.Uri.parse(it) else android.net.Uri.fromFile(java.io.File(it)) }).build())
     .setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setStartPositionMs(start)
         .apply { end?.let { setEndPositionMs(it) } }.build()).build()
+}
+
+private fun MediaItem.listeningIdentity(): ListeningTrack {
+    val meta = mediaMetadata
+    return Song(id = mediaId, uri = "", folder = "", title = meta.title?.toString().orEmpty(),
+        artist = meta.artist?.toString().orEmpty(), album = meta.albumTitle?.toString().orEmpty(),
+        albumArtist = meta.albumArtist?.toString().orEmpty(),
+        cover = meta.artworkUri?.let { if (it.scheme == "file") it.path else it.toString() },
+        neteaseId = meta.extras?.getString("ami.stats.neteaseId") ?: mediaId.removePrefix("netease:").takeIf { mediaId.startsWith("netease:") },
+        primaryArtistId = meta.extras?.getString("ami.stats.artistId"), primaryArtistName = meta.extras?.getString("ami.stats.artistName"),
+        albumId = meta.extras?.getString("ami.stats.albumId")).listeningTrack()
+}
 
 class PlaybackService : MediaLibraryService() {
     private val recentRoot = "ami-recent"
@@ -53,6 +75,9 @@ class PlaybackService : MediaLibraryService() {
     private var queue: List<String> = emptyList()
     private var positionJob: Job? = null
     private val listening = ListeningCounter()
+    private var statsItem: MediaItem? = null
+    private var statsTrack: ListeningTrack? = null
+    private var statsFlushAt = 0L
     private var cacheRetry: Job? = null
     private var cacheRetryId: String? = null
     private lateinit var radio: RadioQueue
@@ -219,6 +244,13 @@ class PlaybackService : MediaLibraryService() {
         repository.playback.publish(PlaybackSnapshot(queue, player.currentMediaItemIndex.coerceAtLeast(0), position, player.repeatMode, player.shuffleModeEnabled))
     }
     private fun updateListening(restart: Boolean = false) {
+        val item = player.currentMediaItem
+        if (statsItem !== item) { statsItem = item; statsTrack = item?.listeningIdentity() }
+        val elapsed = android.os.SystemClock.elapsedRealtime()
+        repository.listeningStats.sample(statsTrack, player.isPlaying, elapsed, System.currentTimeMillis(), ZoneId.systemDefault())
+        if (restart || !player.isPlaying || elapsed - statsFlushAt >= 10_000) {
+            statsFlushAt = elapsed; repository.listeningStats.flushAsync()
+        }
         val id = player.currentMediaItem?.mediaId
         val duration = player.duration.takeIf { it > 0 } ?: player.currentMediaItem?.mediaMetadata?.durationMs ?: 0
         listening.update(id, duration, player.isPlaying, android.os.SystemClock.elapsedRealtime(), restart)?.let { qualified ->
@@ -227,6 +259,8 @@ class PlaybackService : MediaLibraryService() {
     }
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
     override fun onDestroy() {
+        repository.listeningStats.sample(null, false, android.os.SystemClock.elapsedRealtime(), System.currentTimeMillis(), ZoneId.systemDefault())
+        repository.listeningStats.flushAsync()
         listening.update(null, 0, false, android.os.SystemClock.elapsedRealtime())?.let { id -> repository.scope.launch { repository.cloud.recordListen(id) } }
         repository.cloud.protectAudio(null)
         repository.cloud.recoveringAudio = null
