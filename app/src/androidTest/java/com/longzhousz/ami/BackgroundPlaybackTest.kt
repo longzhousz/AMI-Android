@@ -45,8 +45,9 @@ class BackgroundPlaybackTest {
         var browser:MediaBrowser?=null;var controller:MediaController?=null
         var player: PlayerConnection? = null
         try {
-            stopPreviousPlaybackSession()
             if (legacySleep) repo.prefs.edit().putLong("sleepAt",System.currentTimeMillis()+1500).apply()
+            // Seed before any helper-created/rebound service can run the real onCreate migration.
+            stopPreviousPlaybackSession()
             repo.db.upsert(song);repo.playback.publish(PlaybackSnapshot(listOf(id),0,500,1,false))
             val connected=CountDownLatch(1)
             instrumentation.runOnMainSync {

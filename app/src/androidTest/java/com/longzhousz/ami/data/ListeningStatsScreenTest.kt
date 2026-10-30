@@ -95,6 +95,8 @@ class ListeningStatsScreenTest {
 
     @Test fun clearingNeedsConfirmationAndLeavesSourceMusicUntouched() {
         db.upsert(Song("protected", "file:///protected", folder = "qa", title = "保留的本地歌曲", favorite = true))
+        db.toggleFavorite("protected")
+        assertTrue(db.songs().single().favorite)
         compose.setContent { AmiTheme("dark") { Surface { ListeningStatsScreen(store, {}) } } }
         ready()
         compose.onNodeWithContentDescription("聆听选项").performClick()

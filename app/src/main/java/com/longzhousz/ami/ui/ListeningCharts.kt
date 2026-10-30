@@ -115,7 +115,7 @@ internal data class ListeningBar(val label: String, val millis: Long, val record
     val weekdays = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
     Row(Modifier.fillMaxWidth()) {
         Column(Modifier.width(29.dp).height(126.dp), verticalArrangement = Arrangement.SpaceAround) {
-            weekdays.forEach { Text(it, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            weekdays.forEach { Text(it, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         Canvas(Modifier.weight(1f).height(126.dp).semantics {
             contentDescription = "星期几与小时的听歌时长分布"
