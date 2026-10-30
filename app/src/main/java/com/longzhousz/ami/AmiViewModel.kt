@@ -50,6 +50,8 @@ class AmiViewModel internal constructor(app: Application,
     private suspend fun loadLyrics(song: Song) = if (song.isCloudSong()) cloud.lyrics(song) else repository.lyrics.load(song)
     private var cloudPlayJob: kotlinx.coroutines.Job? = null
     private var libraryJob: kotlinx.coroutines.Job? = null
+    private var likesJob: kotlinx.coroutines.Job? = null
+    private var likesSession = -1L
     val onlineLibrary = MutableStateFlow(CloudLibraryState())
     val onlineRefresh = MutableStateFlow<Int?>(null)
     val discovering = MutableStateFlow(false)
@@ -156,6 +158,7 @@ class AmiViewModel internal constructor(app: Application,
     fun resetOnlineLibrary() { libraryJob?.cancel(); cloud.clearPages(); onlineLibrary.value = CloudLibraryState() }
     fun refreshOnlineLibrary() {
         if (!cloud.configured.value || libraryJob?.isActive == true) return
+        refreshCloudLikes(force = true)
         libraryJob = viewModelScope.launch {
             onlineLibrary.value = onlineLibrary.value.copy(refreshing = true, error = null)
             try {
@@ -220,7 +223,35 @@ class AmiViewModel internal constructor(app: Application,
             catch (_: Exception) { message.value = "保存失败，请检查设备存储空间后重试" }
         }
     }
-    fun favorite(song: Song) = persistAction("library.favorite") { repository.favorite(song) }
+    fun refreshCloudLikes(force: Boolean = false) {
+        if (!cloud.direct || !cloud.configured.value || cloud.likes.value.ready && !force) return
+        val session = cloud.likes.value.session
+        if (likesJob?.isActive == true && likesSession == session) return
+        likesJob?.cancel(); likesSession = session
+        likesJob = viewModelScope.launch {
+            try { cloud.refreshLikes(force) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (expired: com.longzhousz.ami.data.NeteaseLoginExpired) { message.value = expired.message }
+            catch (_: Exception) { message.value = "红心状态暂时无法同步，请下拉刷新后重试" }
+        }
+    }
+    private fun changeCloudLike(block: suspend () -> Unit) {
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                block()
+                if (onlineLibrary.value.loaded && onlineLibrary.value.library.liked == null &&
+                    cloud.likes.value.ids.isNotEmpty() && cloud.likes.value.pending.isEmpty()) refreshOnlineLibrary()
+            }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (expired: com.longzhousz.ami.data.NeteaseLoginExpired) { message.value = expired.message }
+            catch (_: Exception) { message.value = "红心未能确认同步，请刷新后重试" }
+        }
+    }
+    fun favoriteCloud(track: CloudTrack) = changeCloudLike { cloud.toggleLike(track) }
+    fun favorite(song: Song) {
+        if (song.isCloudSong()) changeCloudLike { cloud.toggleLike(song) }
+        else persistAction("library.favorite") { repository.favorite(song) }
+    }
     fun reorder(ids: List<String>) = persistAction("album.reorderTracks") { repository.reorder(ids) }
     fun importLyrics(songId: String, uri: Uri) {
         viewModelScope.launch {

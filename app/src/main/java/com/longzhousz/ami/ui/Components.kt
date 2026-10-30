@@ -114,7 +114,9 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
     }
 }
 
-@Composable fun SongRow(song: Song, playing: Boolean, onPlay: () -> Unit, onFavorite: () -> Unit, onRemove: (() -> Unit)? = null, number: Int? = null, modifier: Modifier = Modifier) {
+internal val FavoriteRed = Color(0xFFEE4865)
+
+@Composable fun SongRow(song: Song, playing: Boolean, onPlay: () -> Unit, onFavorite: () -> Unit, onRemove: (() -> Unit)? = null, number: Int? = null, modifier: Modifier = Modifier, favoriteEnabled: Boolean = true) {
     var menu by remember { mutableStateOf(false) }
     val background by animateColorAsState(if (playing) MaterialTheme.colorScheme.primary.copy(alpha = .08f) else Color.Transparent, tween(220), label = "track-highlight")
     Row(modifier.fillMaxWidth().background(background).clickable(onClick = onPlay).padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -127,6 +129,9 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
             Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Text(durationLabel(song.duration), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (song.isCloudSong()) ActionIcon(if (song.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+            "${song.title}：${if (song.favorite) "取消喜欢" else "加入喜欢"}", onFavorite,
+            tint = if (song.favorite) FavoriteRed else MaterialTheme.colorScheme.onSurfaceVariant, enabled = favoriteEnabled)
         if (!song.isCloudSong()) Box {
             ActionIcon(Icons.Rounded.MoreVert, "${song.title}的更多操作", { menu = true })
             DropdownMenu(menu, { menu = false }) {

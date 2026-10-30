@@ -7,9 +7,35 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Read-only account/library access; audio URLs retain the signed-in account's permissions. */
+/** First-party account/library access. Only explicit heart actions write to the signed-in account. */
 internal class NeteaseAccount(context: Context, private val web: NeteaseTransport = NeteaseTransport()) {
     private val secret = SecretStore(context, "netease-account")
+    private val authLock = Any()
+    private var likedPlaylist: String? = null
+    val likes: NeteaseLikes = NeteaseLikes(read = { session ->
+        val auth = likeCredentials(session)
+        val rows = web.post("song/like/get", JSONObject().put("uid", neteaseId(auth.getString("uid"))), auth.getString("cookie"))
+            .optJSONArray("ids") ?: error("红心列表暂时无法读取")
+        require(rows.length() <= 100000) { "红心列表过大，暂时无法读取" }
+        (0 until rows.length()).map { neteaseId(rows.optString(it)) }.toSet()
+    }, write = { session, id, liked ->
+        val auth = likeCredentials(session)
+        val result = web.post("radio/like", JSONObject().put("alg", "itembased").put("trackId", neteaseId(id))
+            .put("like", liked).put("time", "3"), auth.getString("cookie"))
+        synchronized(authLock) {
+            if (likes.state.value.session == session) {
+                result.optString("playlistId").takeIf { it.matches(Regex("[1-9][0-9]{0,19}")) }?.let { likedPlaylist = it }
+                synchronized(lists) { lists["tracks:$likedPlaylist"]?.let { old ->
+                    val ids = (if (liked) listOf(id) else emptyList()) + old.ids.filter { it != id }
+                    lists["tracks:$likedPlaylist"] = PlaylistIds(System.nanoTime(), ids)
+                } }
+            }
+        }
+    })
+    private fun likeCredentials(session: Long): JSONObject = synchronized(authLock) {
+        if (likes.state.value.session != session) throw kotlinx.coroutines.CancellationException("网易云账号已变化")
+        credentials()
+    }
     private data class PlaylistIds(val at: Long, val ids: List<String>)
     private val lists = LinkedHashMap<String, PlaylistIds>(4, .75f, true)
     fun configured() = secret.configured()
@@ -19,14 +45,17 @@ internal class NeteaseAccount(context: Context, private val web: NeteaseTranspor
     suspend fun login(rawCookies: String): String = withContext(Dispatchers.IO) {
         val cookie = neteaseCookies(rawCookies)
         val profile = profile(web.post("w/nuser/account/get", JSONObject(), cookie))
-        secret.save(JSONObject().put("cookie", cookie).put("uid", profile.first).put("nickname", profile.second).toString())
+        synchronized(authLock) {
+            secret.save(JSONObject().put("cookie", cookie).put("uid", profile.first).put("nickname", profile.second).toString())
+            likedPlaylist = null; likes.reset()
+        }
         invalidate()
         profile.second
     }
-    fun logout() { secret.save(""); invalidate() }
+    fun logout() { synchronized(authLock) { secret.save(""); likedPlaylist = null; likes.reset() }; invalidate() }
     fun invalidate() = synchronized(lists) { lists.clear() }
     suspend fun request(path: String, data: JSONObject): JSONObject = withContext(Dispatchers.IO) {
-        val auth = credentials()
+        val (auth, session) = synchronized(authLock) { credentials() to likes.state.value.session }
         val cookie = neteaseCookies(auth.getString("cookie"))
         when (path) {
             "status" -> {
@@ -47,6 +76,9 @@ internal class NeteaseAccount(context: Context, private val web: NeteaseTranspor
                             row.optInt("specialType") == 5 -> "liked"
                             row.optJSONObject("creator")?.optString("userId") == auth.getString("uid") -> "created"
                             else -> "collected"
+                        }
+                        if (kind == "liked") synchronized(authLock) {
+                            if (likes.state.value.session == session) likedPlaylist = neteaseId(row.optString("id"))
                         }
                         all.put(JSONObject().put("id", neteaseId(row.optString("id"))).put("title", row.optString("name").take(200))
                             .put("cover", picture(row.optString("coverImgUrl"))).put("count", row.optInt("trackCount").coerceAtLeast(0)).put("kind", kind))

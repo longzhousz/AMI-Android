@@ -55,6 +55,7 @@ import kotlinx.coroutines.withContext
 import com.longzhousz.ami.AmiViewModel
 import com.longzhousz.ami.core.Album
 import com.longzhousz.ami.core.Song
+import com.longzhousz.ami.core.isCloudSong
 import com.longzhousz.ami.core.LibrarySnapshot
 import com.longzhousz.ami.core.durationLabel
 import com.longzhousz.ami.core.ListeningScale
@@ -75,6 +76,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         val focus = LocalFocusManager.current
         val library by model.repository.library.collectAsStateWithLifecycle()
         val onlineSongs by model.cloud.catalog.collectAsStateWithLifecycle()
+        val onlineLikes by model.cloud.likes.collectAsStateWithLifecycle()
         val loading by model.repository.loading.collectAsStateWithLifecycle()
         val playback by model.player.state.collectAsStateWithLifecycle()
         val selection by model.playerSelection.collectAsStateWithLifecycle()
@@ -221,10 +223,14 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                 Text("播放队列 · ${playback.queue.size}", Modifier.padding(horizontal = 24.dp, vertical = 16.dp), style = MaterialTheme.typography.titleLarge)
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 560.dp).padding(horizontal = 20.dp).navigationBarsPadding()) {
                     itemsIndexed(playback.queue, key = { index, id -> "$index:$id" }) { index, id ->
-                        (songsById[id] ?: onlineSongs[id])?.let { song -> SongRow(song, playback.id == id, {
-                            model.act("player.jump") { model.player.jump(index) }
-                            scope.launch { queueSheet.hide(); queue = false }
-                        }, { model.favorite(song) }, number = index + 1, modifier = Modifier.animateItem()) }
+                        (songsById[id] ?: onlineSongs[id])?.let { original ->
+                            val song = if (original.isCloudSong()) original.copy(favorite = original.neteaseId in onlineLikes.ids) else original
+                            SongRow(song, playback.id == id, {
+                                model.act("player.jump") { model.player.jump(index) }
+                                scope.launch { queueSheet.hide(); queue = false }
+                            }, { model.favorite(song) }, number = index + 1, modifier = Modifier.animateItem(),
+                                favoriteEnabled = !song.isCloudSong() || model.cloud.direct && onlineLikes.ready && song.neteaseId !in onlineLikes.pending)
+                        }
                     }
                 }
             }

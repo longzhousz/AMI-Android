@@ -39,6 +39,8 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
     private val closer = Dispatchers.IO.limitedParallelism(1)
     val configured = MutableStateFlow(if (direct) account.configured() else secret.configured())
     val catalog = MutableStateFlow<Map<String, Song>>(emptyMap())
+    val likes get() = account.likes.state
+    val likesRevision = MutableStateFlow(0L)
     val radio = MutableStateFlow<String?>(null)
     private var queueTracks: List<CloudTrack> = emptyList()
     fun stopRadio() { radio.value = null }
@@ -56,6 +58,28 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
     @Synchronized fun savedPage(favorites: Boolean, key: String): CloudTracks? = pages[if (favorites) 1 else 0]?.takeIf { it.first == key }?.second
     @Synchronized fun savePage(favorites: Boolean, key: String, page: CloudTracks) { pages[if (favorites) 1 else 0] = key to page }
     @Synchronized fun clearPages() { pages.fill(null) }
+
+    suspend fun refreshLikes(force: Boolean = false) {
+        if (direct && configured.value) account.likes.refresh(force)
+    }
+    suspend fun toggleLike(song: Song) {
+        val session = likes.value.session
+        val track = withContext(Dispatchers.IO) { queueLock.withLock { queueTracks.firstOrNull { "netease:${it.id}" == song.id } } }
+            ?: error("歌曲资料尚未就绪，请重试")
+        toggleLike(track, session)
+    }
+    suspend fun toggleLike(track: CloudTrack, session: Long = likes.value.session) {
+        check(direct && configured.value) { "请先登录网易云音乐" }
+        val liked = track.originalId !in likes.value.ids
+        account.likes.set(track.originalId, liked, session) {
+            synchronized(this@CloudMusic) {
+                if (likes.value.session == session) {
+                    pages[1]?.let { pages[1] = it.first to it.second.withLike(track, liked) }
+                    likesRevision.value++
+                }
+            }
+        }
+    }
 
     private fun connection(): CloudConnection {
         val saved = secret.read()?.let(::JSONObject) ?: error("请先连接电脑上的网易云连接端")

@@ -4,6 +4,26 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CloudMusicTest {
+    @Test fun heartChangesPatchTheLoadedFavoritesPrefixWithoutLosingPaginationOrChangingTheQueue() {
+        fun track(id: String) = CloudTrack(id, id, id, "artist", "album", 1000, null, true)
+        val queue = (1..30).map { track(it.toString()) }
+        val original = CloudTracks(queue, 30, true)
+        val added = original.withLike(track("99"), true)
+        assertEquals(listOf("99") + queue.map { it.id }, added.tracks.map { it.id })
+        assertEquals(31, added.nextOffset); assertTrue(added.more)
+        val removed = added.withLike(track("15"), false)
+        assertEquals(30, removed.nextOffset); assertFalse(removed.tracks.any { it.id == "15" })
+        assertEquals(removed, removed.withLike(track("200"), false))
+        assertEquals(30, removed.withLike(track("99"), true).nextOffset)
+        assertSame(queue, original.tracks); assertEquals(30, queue.size)
+        assertEquals((1..30).map(Int::toString), queue.map { it.id })
+    }
+    @Test fun aFullFavoritesPrefixStaysBoundedWhenAnotherSongIsLiked() {
+        val tracks = (1..20000).map { CloudTrack("$it", "$it", "$it", "", "", 0, null, true) }
+        val page = CloudTracks(tracks, 20000, false).withLike(tracks.first().copy(id = "99999", originalId = "99999"), true)
+        assertEquals(20000, page.tracks.size); assertEquals(20000, page.nextOffset)
+        assertEquals("99999", page.tracks.first().id); assertFalse(page.more)
+    }
     @Test fun everyShelfRefreshChangesItsFirstCardAndPreservesAllCards() {
         var cards = (1..12).map { CloudPlaylist("$it", "$it", null, 1, "album") }
         repeat(100) {

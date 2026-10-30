@@ -83,14 +83,17 @@ import kotlinx.coroutines.withContext
     val signIn = rememberNeteaseLogin(model)
     val refresh by model.onlineRefresh.collectAsStateWithLifecycle()
     val discovering by model.discovering.collectAsStateWithLifecycle()
+    val likes by model.cloud.likes.collectAsStateWithLifecycle()
     var request by remember { mutableIntStateOf(0) }
     LaunchedEffect(refresh) { if (model.consumeOnlineRefresh(if (favorites) 1 else 0)) request++ }
     LaunchedEffect(configured) {
         if (!configured) model.resetOnlineLibrary()
         else if (!state.loaded) model.refreshOnlineLibrary()
     }
+    LaunchedEffect(configured, likes.session) { if (configured) model.refreshCloudLikes() }
     OnlineLibraryContent(model.cloud, state, favorites, playback.id, model::refreshOnlineLibrary, model::playCloud, signIn, request, bottomInset,
-        onDiscover = { model.discover(it, onOpenPlayer) }, discovering = discovering)
+        onDiscover = { model.discover(it, onOpenPlayer) }, discovering = discovering,
+        onFavorite = model::favoriteCloud, onRefreshLikes = { model.refreshCloudLikes(force = true) })
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
@@ -99,8 +102,12 @@ import kotlinx.coroutines.withContext
     onRefresh: () -> Unit, onPlay: (List<CloudTrack>, Int) -> Unit, onLogin: () -> Unit,
     refreshRequest: Int = 0, bottomInset: Dp = 24.dp,
     onDiscover: (String) -> Unit = {}, discovering: Boolean = false,
+    onFavorite: (CloudTrack) -> Unit = {}, onRefreshLikes: () -> Unit = {},
 ) {
     val configured by cloud.configured.collectAsStateWithLifecycle()
+    val likes by cloud.likes.collectAsStateWithLifecycle()
+    val likesRevision by cloud.likesRevision.collectAsStateWithLifecycle()
+    var seenLikesRevision by remember { mutableLongStateOf(likesRevision) }
     var query by rememberSaveable { mutableStateOf("") }
     var submitted by rememberSaveable { mutableStateOf("") }
     var searchExpanded by rememberSaveable { mutableStateOf(false) }
@@ -130,6 +137,7 @@ import kotlinx.coroutines.withContext
     fun back() { selectedKey = null; submitted = ""; query = ""; offset = 0; error = null; searchExpanded = false; focus.clearFocus() }
     fun refresh() {
         if (loading || !showingTracks && state.refreshing) return
+        onRefreshLikes()
         if (showingTracks) { cloud.refreshCatalog(); offset = 0; reload++ }
         if (!showingTracks || favorites && collection == null) onRefresh()
     }
@@ -143,9 +151,19 @@ import kotlinx.coroutines.withContext
         if (seenRevision != state.revision) { seenRevision = state.revision; shelf.requestScrollToItem(0) }
     }
     BackHandler(selected != null || searching || searchExpanded) { back() }
-    LaunchedEffect(configured, key, offset, reload) {
+    LaunchedEffect(configured, key, offset, reload, if (favorites) likesRevision else 0L) {
         if (!configured) { tracks = emptyList(); loadedKey = null; offset = 0; loading = false; return@LaunchedEffect }
         if (key == null) { loading = false; return@LaunchedEffect }
+        if (favorites && seenLikesRevision != likesRevision) {
+            seenLikesRevision = likesRevision
+            // Reuse the locally patched prefix without a refresh spinner or scroll reset.
+            // Restart pagination from its new nextOffset on the next near-end event.
+            offset = 0; reload = 0
+            cloud.savedPage(true, key)?.let { saved ->
+                tracks = saved.tracks; loadedKey = key; next = saved.nextOffset; more = saved.more; loading = false
+                return@LaunchedEffect
+            }
+        }
         if (offset == 0 && reload == 0) cloud.savedPage(favorites, key)?.let { saved ->
             tracks = saved.tracks; loadedKey = key; next = saved.nextOffset; more = saved.more; loading = false
             return@LaunchedEffect
@@ -263,9 +281,10 @@ import kotlinx.coroutines.withContext
                                 }
                             }
                             itemsIndexed(pageTracks, key = { _, it -> it.id }) { index, track ->
-                                SongRow(track.song(), currentId == "netease:${track.id}", {
+                                SongRow(track.song().copy(favorite = track.originalId in likes.ids || favorites && !likes.ready), currentId == "netease:${track.id}", {
                                     if (track.available) onPlay(pageTracks, index) else error = "当前账号暂时无法播放这首歌"
-                                }, {}, modifier = Modifier.animateItem().alpha(if (track.available) 1f else .5f))
+                                }, { onFavorite(track) }, modifier = Modifier.animateItem().alpha(if (track.available) 1f else .5f),
+                                    favoriteEnabled = cloud.direct && likes.ready && track.originalId !in likes.pending)
                             }
                             if (more && loadedKey == key) item {
                                 Spacer(Modifier.fillMaxWidth().height(20.dp))

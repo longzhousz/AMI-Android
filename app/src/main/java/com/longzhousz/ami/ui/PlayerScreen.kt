@@ -45,6 +45,7 @@ internal data class PlayerActions(
     val repeat: () -> Unit = {}, val translate: () -> Unit = {}, val retranslate: () -> Unit = translate, val restoreLyrics: () -> Unit = {},
     val external: Boolean = false, val settings: (() -> Unit)? = null,
     val canSeek: Boolean = true, val canPrevious: Boolean = true, val canNext: Boolean = true, val canToggle: Boolean = true,
+    val canFavorite: Boolean = true,
 )
 
 @Composable fun PlayerScreen(song: Song, model: AmiViewModel, onClose: () -> Unit, onQueue: () -> Unit, onLyricFile: () -> Unit,
@@ -52,9 +53,12 @@ internal data class PlayerActions(
     val playback by model.player.state.collectAsStateWithLifecycle()
     val lyrics by model.lyrics.collectAsStateWithLifecycle()
     val qualities by model.cloud.audioQuality.collectAsStateWithLifecycle()
+    val likes by model.cloud.likes.collectAsStateWithLifecycle()
+    LaunchedEffect(song.isCloudSong(), likes.session) { if (song.isCloudSong()) model.refreshCloudLikes() }
     val matched = lyrics.songId == song.id && lyrics.revision == song.lyricsVersion
     val document = lyrics.document.takeIf { matched }
-    val detailed = song.copy(lyrics = document?.original.orEmpty(), lyricTranslation = document?.translated.orEmpty())
+    val detailed = song.copy(lyrics = document?.original.orEmpty(), lyricTranslation = document?.translated.orEmpty(),
+        favorite = if (song.isCloudSong()) song.neteaseId in likes.ids else song.favorite)
     val translation = lyrics.translation.takeIf { matched }
     val translating = matched && lyrics.translating
     val clock = rememberPlaybackClock(model.player, playback)
@@ -68,6 +72,7 @@ internal data class PlayerActions(
         repeat = { model.act("player.repeat") { model.player.repeat() } },
         translate = { model.translate(song) }, retranslate = { model.translate(song, force = true) },
         restoreLyrics = { model.clearLyrics(song) },
+        canFavorite = !song.isCloudSong() || model.cloud.direct && likes.ready && song.neteaseId !in likes.pending,
     ), lyricPosition = { clock.value }, dragHandle = dragHandle, preparedLines = document?.lines, lyricsReady = document != null,
         audioQuality = if (song.isCloudSong()) qualities[song.id]?.label ?: "待确认" else song.format.ifBlank { "待确认" }, lyricsPage = lyricsPage)
 }
@@ -183,9 +188,9 @@ private data class PlayerStage(val song: Song, val translation: List<String>?, v
                             color = Color.White.copy(alpha = .56f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                if (!song.isCloudSong() && !actions.external) ActionIcon(if (song.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                if (!actions.external) ActionIcon(if (song.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     if (song.favorite) "取消喜欢" else "加入喜欢", actions.favorite,
-                    tint = Color.White.copy(alpha = if (song.favorite) 1f else .55f))
+                    tint = if (song.favorite) FavoriteRed else Color.White.copy(alpha = .55f), enabled = actions.canFavorite)
             }
             val duration = playback.duration.takeIf { it > 0 } ?: song.duration
             PlayerTimeline(song.id, duration, playback.buffering, position, actions.seek, actions.canSeek)

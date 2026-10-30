@@ -11,6 +11,10 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.longzhousz.ami.core.*
 import com.longzhousz.ami.ui.AmiTheme
 import com.longzhousz.ami.ui.OnlineLibraryContent
+import com.longzhousz.ami.ui.PlayerContent
+import com.longzhousz.ami.ui.PlayerActions
+import com.longzhousz.ami.playback.PlaybackState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -20,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import com.longzhousz.ami.playback.RadioQueue
 import com.longzhousz.ami.playback.mediaItem
 import androidx.media3.exoplayer.ExoPlayer
@@ -52,6 +57,9 @@ class OnlineLibraryTest {
     @Volatile private var lyricStatus = 200
     @Volatile private var clientAudioCode = 200
     @Volatile private var webAudioCode = 200
+    @Volatile private var likeStatus = 200
+    @Volatile private var likeGate: java.util.concurrent.CountDownLatch? = null
+    private val likedIds = CopyOnWriteArrayList(listOf("201", "202"))
     @Before fun prepare() {
         val web = NeteaseTransport(webForm = { it }, open = { address -> Fixture(address) })
         tone = InstrumentationRegistry.getInstrumentation().context.assets.open("qa-96k-24bit.flac").use { it.readBytes() }
@@ -70,6 +78,7 @@ class OnlineLibraryTest {
     }
     @After fun cleanup() {
         fmGate?.countDown()
+        likeGate?.countDown()
         runBlocking { cloud.disconnect() }
         cache.close(); context.deleteDatabase(File(context.noBackupFilesDir, "$cacheName.db").path)
         File(context.cacheDir, cacheName).deleteRecursively()
@@ -197,6 +206,94 @@ class OnlineLibraryTest {
         val persisted = File(context.noBackupFilesDir, "netease-queue.json").readText()
         assertFalse(persisted.contains("qa-audio")); assertFalse(persisted.contains("qa-only-not-a-real-session"))
         assertFalse(File(context.noBackupFilesDir, "netease-account.enc").readBytes().toString(Charsets.ISO_8859_1).contains("qa-only-not-a-real-session"))
+    }
+
+    @Test fun heartsWriteTheFirstPartyAccountAndAnotherClientReadsTheSameResult() = runBlocking(Dispatchers.IO) {
+        val shelf = cloud.library(); cloud.refreshLikes()
+        val before = cloud.tracks(shelf.liked!!)
+        cloud.savePage(true, shelf.liked!!.key, before)
+        val track = cloud.search("晚风").tracks.single()
+        cloud.rememberQueue(listOf(track)); val queue = cloud.catalog.value
+        cloud.toggleLike(track.song())
+        assertEquals(setOf("201", "202", "301"), cloud.likes.value.ids)
+        val write = requests.single { it.first == "radio/like" }.second
+        assertEquals("301", write.getString("trackId")); assertTrue(write.getBoolean("like"))
+        assertEquals("itembased", write.getString("alg")); assertEquals("3", write.getString("time"))
+        assertEquals(listOf("301", "201", "202"), cloud.savedPage(true, shelf.liked!!.key)!!.tracks.map { it.id })
+        assertEquals(3, cloud.savedPage(true, shelf.liked!!.key)!!.nextOffset)
+        assertSame("Heart changes must not rebuild the playing catalog", queue, cloud.catalog.value)
+        val second = CloudMusic(context, true, NeteaseTransport(webForm = { it }, open = { Fixture(it) }), cache)
+        second.refreshLikes()
+        assertTrue("A fresh client must read the server value", "301" in second.likes.value.ids)
+        second.toggleLike(track)
+        assertFalse("301" in likedIds)
+        cloud.refreshLikes(force = true)
+        assertFalse("301" in cloud.likes.value.ids)
+        assertEquals(listOf(true, false), requests.filter { it.first == "radio/like" }.map { it.second.getBoolean("like") })
+        val revision = cloud.likesRevision.value
+        val saved = cloud.savedPage(true, shelf.liked!!.key)
+        for (status in listOf(403, 401)) {
+            likeStatus = status
+            val failure = runCatching { cloud.toggleLike(track) }.exceptionOrNull()
+            assertTrue(if (status == 401) failure is NeteaseLoginExpired else failure is NeteaseRequestRejected)
+            assertFalse("301" in cloud.likes.value.ids); assertTrue(cloud.likes.value.pending.isEmpty())
+            assertSame(saved, cloud.savedPage(true, shelf.liked!!.key)); assertEquals(revision, cloud.likesRevision.value)
+        }
+    }
+
+    @Test fun searchAndFavoritesHeartsShareStateWithoutRefetchingOrStartingPlayback() {
+        val shelf = library()
+        runBlocking { cloud.refreshLikes(); cloud.rememberQueue(cloud.tracks(shelf.liked!!).tracks) }
+        val queue = cloud.catalog.value
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        var favorites by mutableStateOf(false); val played = mutableListOf<String>()
+        compose.setContent { AmiTheme("light") { Surface { key(favorites) {
+            OnlineLibraryContent(cloud, CloudLibraryState(shelf, loaded = true), favorites, null, {}, { _, _ -> played += "play" }, {},
+                onFavorite = { track -> scope.launch { cloud.toggleLike(track) } })
+        } } } }
+        try {
+            compose.onNodeWithContentDescription("搜索音乐").performClick()
+            compose.onNodeWithTag("online-search").performTextInput("晚风")
+            compose.onNodeWithTag("online-search").performImeAction()
+            compose.waitUntil(10000) { visible("搜索歌曲 301") }
+            likeGate = java.util.concurrent.CountDownLatch(1)
+            compose.onNodeWithContentDescription("搜索歌曲 301：加入喜欢").performClick()
+            compose.waitUntil(10000) { "301" in cloud.likes.value.pending }
+            compose.onNodeWithContentDescription("搜索歌曲 301：取消喜欢").assertIsNotEnabled()
+            likeGate!!.countDown(); likeGate = null
+            compose.waitUntil(10000) { cloud.likes.value.pending.isEmpty() }
+            screenshot("online-heart-search")
+            compose.runOnIdle { favorites = true }
+            compose.waitUntil(10000) { visible("搜索歌曲 301") }
+            val reads = requests.count { it.first in setOf("v6/playlist/detail", "v3/song/detail") }
+            compose.onNodeWithContentDescription("搜索歌曲 301：取消喜欢").performClick()
+            compose.waitUntil(10000) { !visible("搜索歌曲 301") && cloud.likes.value.pending.isEmpty() }
+            compose.runOnIdle {
+                assertTrue(played.isEmpty()); assertSame(queue, cloud.catalog.value)
+                assertEquals(reads, requests.count { it.first in setOf("v6/playlist/detail", "v3/song/detail") })
+            }
+            screenshot("online-heart-favorites")
+        } finally { likeGate?.countDown(); scope.cancel() }
+    }
+
+    @Test fun theOnlinePlayerHasTheSameHeartOnBothCoverAndLyricsPages() {
+        val track = runBlocking { cloud.refreshLikes(); cloud.tracks(library().liked!!).tracks.first().also { cloud.rememberQueue(listOf(it)) } }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        compose.setContent {
+            val likes by cloud.likes.collectAsStateWithLifecycle()
+            AmiTheme("dark") { PlayerContent(track.song().copy(favorite = track.originalId in likes.ids), PlaybackState(), null, false,
+                PlayerActions(favorite = { scope.launch { cloud.toggleLike(track.song()) } }, canFavorite = track.originalId !in likes.pending)) }
+        }
+        try {
+            compose.onNodeWithContentDescription("取消喜欢").performClick()
+            compose.waitUntil(10000) { track.originalId !in cloud.likes.value.ids && cloud.likes.value.pending.isEmpty() }
+            compose.onNodeWithContentDescription("加入喜欢").performClick()
+            compose.waitUntil(10000) { track.originalId in cloud.likes.value.ids && cloud.likes.value.pending.isEmpty() }
+            screenshot("online-heart-player")
+            compose.onNodeWithContentDescription("切换到歌词").performClick()
+            compose.onNodeWithContentDescription("取消喜欢").assertIsDisplayed()
+            screenshot("online-heart-lyrics")
+        } finally { scope.cancel() }
     }
 
     @Test fun clientSessionRefusalUsesTheSameSignedInWebSessionAndReportsRealExpiry() = runBlocking(Dispatchers.IO) {
@@ -434,10 +531,26 @@ class OnlineLibraryTest {
                 "w/nuser/account/get" -> JSONObject().put("profile", JSONObject().put("userId", 42).put("nickname", "AMI QA"))
                 "user/playlist" -> JSONObject().put("playlist", JSONArray()
                     .put(playlist(100, "我喜欢的音乐", 5, 42)).put(playlist(200, "夜里听海", 0, 42)).put(playlist(300, "别人创建的歌单", 0, 99)))
+                "song/like/get" -> {
+                    assertEquals("music.163.com", url.host)
+                    assertEquals("MUSIC_U=qa-only-not-a-real-session", getRequestProperty("Cookie"))
+                    assertEquals("42", body.getString("uid"))
+                    JSONObject().put("ids", JSONArray(likedIds.map(String::toLong)))
+                }
+                "radio/like" -> {
+                    assertEquals("music.163.com", url.host)
+                    assertEquals("MUSIC_U=qa-only-not-a-real-session", getRequestProperty("Cookie"))
+                    likeGate?.await()
+                    if (likeStatus == 200) {
+                        val id = body.getString("trackId"); likedIds.remove(id)
+                        if (body.getBoolean("like")) likedIds.add(0, id)
+                    }
+                    JSONObject().put("playlistId", 100)
+                }
                 "album/sublist" -> JSONObject().put("data", JSONArray().put(album(200, "晚风与回声")).put(album(201, "海边来信")))
                 "v1/album/200", "v1/album/201", "v1/album/1021" -> JSONObject().put("songs", JSONArray((1..35).map(::song)))
                 "v6/playlist/detail" -> JSONObject().put("playlist", JSONObject().put("trackIds", JSONArray(
-                    (if (body.getString("id") == "100") listOf(201, 202) else listOf(105, 101, 104)).map { JSONObject().put("id", it) })))
+                    (if (body.getString("id") == "100") likedIds else listOf("105", "101", "104")).map { JSONObject().put("id", it) })))
                 "v3/song/detail" -> JSONObject().put("songs", JSONArray(JSONArray(body.getString("c")).let { ids ->
                     (0 until ids.length()).map { ids.getJSONObject(it).getInt("id") }.reversed().map(::song)
                 }))
@@ -468,7 +581,11 @@ class OnlineLibraryTest {
         override fun disconnect() = Unit
         override fun usingProxy() = false
         override fun getOutputStream() = output
-        override fun getResponseCode(): Int { response; return if (url.path.endsWith("song/lyric/v1")) lyricStatus else 200 }
+        override fun getResponseCode(): Int { response; return when {
+            url.path.endsWith("song/lyric/v1") -> lyricStatus
+            url.path.endsWith("radio/like") -> likeStatus
+            else -> 200
+        } }
         override fun getInputStream() = ByteArrayInputStream(response)
     }
     private fun playlist(id: Int, title: String, special: Int, owner: Int) = JSONObject().put("id", id).put("name", title)

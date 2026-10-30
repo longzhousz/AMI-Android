@@ -2,6 +2,8 @@ package com.longzhousz.ami.core
 
 import java.net.URI
 import java.util.Locale
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentSetOf
 
 data class CloudConnection(val baseUrl: String, val token: String) {
     companion object {
@@ -57,6 +59,17 @@ data class CloudTrack(val id: String, val originalId: String, val title: String,
         primaryArtistName = primaryArtistName, albumId = albumId)
 }
 data class CloudTracks(val tracks: List<CloudTrack>, val nextOffset: Int, val more: Boolean)
+
+data class CloudLikes(val ids: PersistentSet<String> = persistentSetOf(), val ready: Boolean = false,
+    val pending: PersistentSet<String> = persistentSetOf(), val session: Long = 0)
+
+/** Patch only the cached favorites prefix; the playback queue and other collections keep their order. */
+internal fun CloudTracks.withLike(track: CloudTrack, liked: Boolean): CloudTracks {
+    val present = tracks.any { it.originalId == track.originalId }
+    val next = ((if (liked) listOf(track) else emptyList()) + tracks.filter { it.originalId != track.originalId }).take(20000)
+    val offset = (nextOffset + if (liked && !present) 1 else if (!liked && present) -1 else 0).coerceIn(0, 20000)
+    return CloudTracks(next, offset, more && next.size < 20000)
+}
 fun Song.isCloudSong() = id.startsWith("netease:") && uri.startsWith("ami-cloud://song/")
 
 /** Only official NetEase CDN URLs returned by the authenticated local bridge reach media loaders. */
