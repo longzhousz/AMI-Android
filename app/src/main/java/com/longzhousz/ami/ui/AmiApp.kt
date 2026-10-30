@@ -68,7 +68,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun AmiApp(model: AmiViewModel, onImport: () -> Unit, onNotifications: () -> Unit, onBridgeFolder: () -> Unit,
-    onLyricsFolder: () -> Unit, onLyricFile: (Song) -> Unit, initialPage: Int = 0) {
+    onLyricsFolder: () -> Unit, onLyricFile: (Song) -> Unit, initialPage: Int = 0, onInstallUpdate: () -> Unit = {}) {
     val theme by model.theme.collectAsStateWithLifecycle()
     var fullPlayer by rememberSaveable { mutableStateOf(false) }
     var page by rememberSaveable { mutableIntStateOf(if (initialPage == 3 && model.cloud.direct) 0 else initialPage.coerceIn(0,6)) }
@@ -160,7 +160,9 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                         when {
                             album != null -> AlbumScreen(album, playback.id, model, { albumKey = null }, { remove = it }, floatingInset)
                             destination.page == 2 -> pageState.SaveableStateProvider("settings") {
-                                Box(Modifier.padding(bottom = floatingInset)) { SettingsScreen(model, onImport, onNotifications, onBridgeFolder, onLyricsFolder, onLocalLibrary = { page = 4 }, onListening = { page = 6 }) }
+                                Box(Modifier.padding(bottom = floatingInset)) { SettingsScreen(model, onImport, onNotifications, onBridgeFolder, onLyricsFolder,
+                                    onLocalLibrary = { page = 4 }, onListening = { page = 6 }, onInstallUpdate = onInstallUpdate,
+                                    settingsVisible = page == 2 && !fullPlayer && !queue && selectedAlbum == null && remove == null) }
                             }
                             destination.page == 6 -> Box(Modifier.padding(bottom = floatingInset)) {
                                 ListeningStatsScreen(model.repository.listeningStats, { page = 2 },

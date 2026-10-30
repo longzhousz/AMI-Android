@@ -15,6 +15,7 @@ import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -29,7 +30,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable fun SettingsScreen(model: AmiViewModel, onImport: () -> Unit, onNotifications: () -> Unit, onBridgeFolder: () -> Unit, onLyricsFolder: () -> Unit,
-    onLocalLibrary: () -> Unit = {}, onListening: () -> Unit = {}) {
+    onLocalLibrary: () -> Unit = {}, onListening: () -> Unit = {}, onInstallUpdate: () -> Unit = {}, settingsVisible: Boolean = true) {
     val repo = model.repository
     val songs by repo.songs.collectAsStateWithLifecycle()
     val importState by repo.importState.collectAsStateWithLifecycle()
@@ -47,6 +48,8 @@ import kotlinx.coroutines.withContext
     val audioCacheLimit by repo.audioCacheLimit.collectAsStateWithLifecycle()
     val signIn = rememberNeteaseLogin(model)
     val scope = rememberCoroutineScope()
+    UpdatePrompt((LocalContext.current.applicationContext as com.longzhousz.ami.AmiApplication).updates,
+        settingsVisible && dialog == null, onInstallUpdate)
     LaunchedEffect(importState.running) {
         cache = withContext(Dispatchers.IO) { repo.cacheInfo() }
         lyricCount = withContext(Dispatchers.IO) { repo.db.lyricsCount() }

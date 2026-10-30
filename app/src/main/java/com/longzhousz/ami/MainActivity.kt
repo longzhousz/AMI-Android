@@ -10,11 +10,29 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import com.longzhousz.ami.ui.AmiApp
 
 class MainActivity : ComponentActivity() {
     private val model: AmiViewModel by viewModels()
     private var lyricSongId: String? = null
+    private val updatePermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (packageManager.canRequestPackageInstalls()) installUpdate()
+    }
+    private fun installUpdate() {
+        if (!packageManager.canRequestPackageInstalls()) {
+            updatePermission.launch(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            return
+        }
+        lifecycleScope.launch {
+            try {
+                (application as AmiApplication).updates.installerIntent()?.let { startActivity(it) }
+                    ?: run { model.message.value = "更新安装包尚未就绪，请稍后打开设置" }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { model.message.value = "暂时无法打开安装包，请稍后重试" }
+        }
+    }
     private val lyricFilePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val songId = lyricSongId
         lyricSongId = null
@@ -51,7 +69,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             AmiApp(model, initialPage=intent.getIntExtra("page", 0), onImport = { folderPicker.launch(null) }, onBridgeFolder = { bridgePicker.launch(null) },
                 onLyricsFolder = { lyricFolderPicker.launch(null) },
-                onLyricFile = { song -> lyricSongId = song.id; lyricFilePicker.launch(arrayOf("*/*")) }, onNotifications = {
+                onLyricFile = { song -> lyricSongId = song.id; lyricFilePicker.launch(arrayOf("*/*")) }, onInstallUpdate = ::installUpdate, onNotifications = {
                 if (Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             })
         }
@@ -59,6 +77,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         model.refreshModels()
+        (application as AmiApplication).updates.onStart()
     }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("lyricSongId", lyricSongId)

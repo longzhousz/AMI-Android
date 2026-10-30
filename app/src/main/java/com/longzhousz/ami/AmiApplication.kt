@@ -16,6 +16,7 @@ import android.content.ComponentCallbacks2
 class AmiApplication : Application(), ImageLoaderFactory {
     private val repositoryHolder = lazy { LibraryRepository(this) }
     val repository by repositoryHolder
+    internal val updates by lazy { com.longzhousz.ami.data.AppUpdates(this) }
     private var activeImageLoader: ImageLoader? = null
     internal val artwork by lazy { OnlineArtworkCache(this) }
     internal fun maintainArtworkCache() { artwork.cleanup(active = { repository.canMaintainCaches }) }

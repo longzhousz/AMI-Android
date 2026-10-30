@@ -286,7 +286,7 @@ private data class CollectionScene(val collection: CloudPlaylist?, val visit: In
                                     selectedVisit++; selectedKey = card.key; submitted = ""; offset = 0; reload = 0; error = null; searchExpanded = false; focus.clearFocus()
                                 }.testTag("collection-${card.key}")) {
                                     Cover(card.cover, card.title, Modifier.fillMaxWidth().aspectRatio(1f).then(
-                                        if (card.key in visibleCards) Modifier.sharedElement(rememberSharedContentState("cover:${card.key}:$selectedVisit"),
+                                        if (card.key in visibleCards) Modifier.sharedElement(rememberSharedContentState("cover:${card.key}"),
                                             animatedVisibilityScope = this@AnimatedContent, boundsTransform = { _, _ -> spring(dampingRatio = .9f, stiffness = 320f) }) else Modifier))
                                     Text(card.title, Modifier.padding(top = 10.dp, start = 2.dp),
                                         style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -306,7 +306,7 @@ private data class CollectionScene(val collection: CloudPlaylist?, val visit: In
                             if (destination != null) item(key = "collection-header") {
                                 Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                     Cover(destination.cover, destination.title, Modifier.fillMaxWidth(.68f).widthIn(max = 280.dp).aspectRatio(1f)
-                                        .sharedElement(rememberSharedContentState("cover:${destination.key}:${scene.visit}"), animatedVisibilityScope = this@AnimatedContent,
+                                        .sharedElement(rememberSharedContentState("cover:${destination.key}"), animatedVisibilityScope = this@AnimatedContent,
                                             boundsTransform = { _, _ -> spring(dampingRatio = .9f, stiffness = 320f) }).testTag("collection-cover"))
                                     Text(if (destination.kind == "album") destination.artist else "${destination.count} 首", Modifier.padding(top = 12.dp),
                                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

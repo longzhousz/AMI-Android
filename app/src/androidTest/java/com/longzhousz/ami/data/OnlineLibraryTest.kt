@@ -554,6 +554,62 @@ class OnlineLibraryTest {
         assertFalse(requests.any { it.first in setOf("v1/radio/get", "v3/discovery/recommend/songs") })
     }
 
+    @Test fun albumSharedCoverHasIntermediateFramesOnEveryVisit() {
+        val image = File(context.cacheDir, "qa-album-motion.png")
+        Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply { eraseColor(0xFFE91E63.toInt()) }.let { bitmap ->
+            image.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
+        }
+        val output = File(context.filesDir, "qa/performance").apply { mkdirs() }
+        val frames = JSONArray()
+        fun shell(command: String) = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+            InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)).use { it.readBytes() }
+        fun frame(label: String): android.graphics.Rect {
+            compose.waitForIdle()
+            val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+            var left = bitmap.width; var top = bitmap.height; var right = -1; var bottom = -1
+            for (y in 0 until bitmap.height step 2) for (x in 0 until bitmap.width step 2) {
+                val pixel = bitmap.getPixel(x, y)
+                if (android.graphics.Color.red(pixel) > 220 && android.graphics.Color.green(pixel) < 50 && android.graphics.Color.blue(pixel) in 75..120) {
+                    left = minOf(left, x); top = minOf(top, y); right = maxOf(right, x); bottom = maxOf(bottom, y)
+                }
+            }
+            File(output, "album-$label.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            check(right > left && bottom > top) { "The shared cover disappeared at $label" }
+            return android.graphics.Rect(left, top, right + 1, bottom + 1)
+        }
+        try {
+            val cards = (1..60).map { CloudPlaylist((1000 + it).toString(), "唱片 $it", if (it == 21) image.path else null, 35, "album", "AMI QA") }
+            compose.setContent { AmiTheme("light") { Surface {
+                OnlineLibraryContent(cloud, CloudLibraryState(CloudLibrary(cards), loaded = true), false, null, {}, { _, _ -> }, {})
+            } } }
+            compose.onNodeWithTag("online-shelf").performScrollToIndex(20)
+            compose.waitUntil(10000) { context.imageLoader.memoryCache?.keys?.any { it.key.contains(image.path) } == true }
+            shell("dumpsys gfxinfo ${context.packageName} reset")
+            repeat(2) { visit ->
+                val start = frame("$visit-start")
+                compose.mainClock.autoAdvance = false
+                compose.onNodeWithTag("collection-album:1021").performClick()
+                compose.mainClock.advanceTimeBy(80)
+                val first = frame("$visit-80ms")
+                compose.mainClock.advanceTimeBy(80)
+                val second = frame("$visit-160ms")
+                compose.mainClock.advanceTimeBy(1500)
+                val end = frame("$visit-end")
+                frames.put(JSONObject().put("visit", visit).put("start", start.toShortString()).put("80ms", first.toShortString())
+                    .put("160ms", second.toShortString()).put("end", end.toShortString()).put("phoneFrameBenchmark", false))
+                File(output, "album-transition.json").writeText(frames.toString(2))
+                assertTrue("Cover must grow through intermediate widths: $start -> $first -> $end", first.width() > start.width() + 4 && first.width() < end.width() - 4)
+                assertTrue("Cover must continue growing smoothly: $first -> $second -> $end", second.width() > first.width() && second.width() <= end.width() + 2)
+                compose.mainClock.autoAdvance = true
+                compose.onNodeWithContentDescription("返回曲库").performClick()
+                compose.onNodeWithTag("collection-album:1021").assertIsDisplayed()
+            }
+        } finally {
+            compose.mainClock.autoAdvance = true; image.delete()
+            File(output, "album-gfxinfo.txt").writeBytes(shell("dumpsys gfxinfo ${context.packageName} framestats"))
+        }
+    }
+
     @Test fun albumCoverExpandsAndReturnsToTheSameShelfPositionDuringReversal() {
         val cards = (1..60).map { CloudPlaylist((1000 + it).toString(), "唱片 $it", null, 35, "album", "AMI QA") }
         compose.setContent { AmiTheme("light") { Surface {

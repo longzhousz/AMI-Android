@@ -1,6 +1,6 @@
 # AMI 文档
 
-当前版本 **0.2.2 / versionCode 24**。本目录只保留当前使用与开发说明；旧版交付、旧界面和已退出主流程的试验放入 [archive/](archive/README.md)。
+当前版本 **0.2.3 / versionCode 25**。本目录只保留当前使用与开发说明；旧版交付、旧界面和已退出主流程的试验放入 [archive/](archive/README.md)。
 
 | 需要了解什么 | 文档 |
 | --- | --- |
@@ -17,3 +17,5 @@
 下载入口始终是 [GitHub 最新发布](https://github.com/longzhousz/AMI-Android/releases/latest)。本地开发助手先读根目录 [AGENTS.md](../AGENTS.md)，再读当前交接和本地开发说明。
 
 历史文件保留原版本的事实与验证范围，不作为当前版本的使用指引。只有应用代码变动才需要产生新应用版本；整理文档不重新生成安装包。
+
+- [启动检查与安装更新](APP_UPDATES.md)
