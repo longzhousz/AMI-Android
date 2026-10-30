@@ -13,9 +13,17 @@ deadline = time.monotonic() + 60
 attempt = 0
 while time.monotonic() < deadline:
     attempt += 1
-    subprocess.run(["adb", "shell", "uiautomator", "dump", "/sdcard/ami-window.xml"], check=True, timeout=20)
-    subprocess.run(["adb", "pull", "/sdcard/ami-window.xml", str(destination)], check=True, timeout=10)
-    nodes = list(ET.parse(destination).iter("node"))
+    try:
+        # Android 17 may briefly return exit 0 with a null accessibility root and no XML.
+        # Discard the previous dump so an unsuccessful attempt cannot pass on stale content.
+        subprocess.run(["adb", "shell", "rm", "-f", "/sdcard/ami-window.xml"], check=True, timeout=10)
+        subprocess.run(["adb", "shell", "uiautomator", "dump", "/sdcard/ami-window.xml"], check=True, timeout=20)
+        subprocess.run(["adb", "pull", "/sdcard/ami-window.xml", str(destination)], check=True, timeout=10)
+        nodes = list(ET.parse(destination).iter("node"))
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ET.ParseError, FileNotFoundError):
+        print(f"Waiting for emulator accessibility root, attempt {attempt}", flush=True)
+        time.sleep(2)
+        continue
     system_ui_anr = any(n.get("package") == "android" and n.get("text") == "System UI isn't responding" for n in nodes)
     if system_ui_anr:
         evidence = destination.with_name(f"system-ui-{destination.stem}-{attempt}")
