@@ -10,7 +10,8 @@ import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-internal class NeteaseLoginExpired : IllegalStateException("网易云登录或访问权限已失效，请重新登录")
+internal class NeteaseLoginExpired : IllegalStateException("网易云登录已过期，请在设置中重新登录")
+internal class NeteaseRequestRejected(val code: Int) : IllegalStateException("网易云接口暂时拒绝请求（$code），请稍后重试")
 
 /** Fixed first-party API host. Cookies never reach CDN, redirect, or third-party servers. */
 internal class NeteaseTransport(private val webForm: (String) -> String = { NeteaseForm.encode(it) },
@@ -64,8 +65,8 @@ internal class NeteaseTransport(private val webForm: (String) -> String = { Nete
         val form = if (clientPath == null) webForm(payload.toString()) else NeteaseForm.encodeClient(clientPath, payload.toString())
         http.outputStream.use { it.write(form.toByteArray(Charsets.UTF_8)) }
         val status = http.responseCode
-        if (status in setOf(401, 403)) throw NeteaseLoginExpired()
-        check(status == 200) { "网易云暂时无法连接，请稍后重试（$status）" }
+        if (status == 401) throw NeteaseLoginExpired()
+        if (status != 200) throw NeteaseRequestRejected(status)
         val deadline = System.nanoTime() + 15_000_000_000L
         val text = http.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
             val body = StringBuilder(); val buffer = CharArray(4096)
@@ -81,7 +82,7 @@ internal class NeteaseTransport(private val webForm: (String) -> String = { Nete
         when (result.optInt("code")) {
             200 -> return result
             301, 302, 401 -> throw NeteaseLoginExpired()
-            else -> error("网易云暂时无法完成请求（${result.optInt("code")}）")
+            else -> throw NeteaseRequestRejected(result.optInt("code"))
         }
     }
 }

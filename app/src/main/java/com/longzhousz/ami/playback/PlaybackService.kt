@@ -158,6 +158,7 @@ class PlaybackService : MediaLibraryService() {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 cacheRetry?.cancel(); cacheRetryId = null
                 repository.cloud.recoveringAudio = null
+                repository.cloud.playbackFailure = null
                 updateListening(restart = true)
                 repository.cloud.protectAudio(mediaItem?.mediaId)
                 player.setWakeMode(if (mediaItem?.mediaId?.startsWith("netease:") == true) C.WAKE_MODE_NETWORK else C.WAKE_MODE_LOCAL)
@@ -165,6 +166,11 @@ class PlaybackService : MediaLibraryService() {
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 val id = player.currentMediaItem?.mediaId ?: return
                 if (repository.cloud.audioQuality.value[id]?.cached != true || cacheRetryId == id) {
+                    if (id.startsWith("netease:")) {
+                        repository.cloud.playbackFailure = id to neteasePlaybackError(error)
+                        android.util.Log.w("AmiAudio", "playback_failed code=${error.errorCode} causes=" +
+                            generateSequence(error as Throwable) { it.cause }.take(12).joinToString(",") { it.javaClass.simpleName })
+                    }
                     repository.cloud.recoveringAudio = null; return
                 }
                 cacheRetryId = id
@@ -186,6 +192,7 @@ class PlaybackService : MediaLibraryService() {
                 }
             }
             override fun onEvents(player: Player, events: Player.Events) {
+                if (player.playerError == null) repository.cloud.playbackFailure = null
                 updatePreloading()
                 if (restored) radio.update()
                 repository.setPlaybackBusy(player.playbackState == Player.STATE_BUFFERING, player.isLoading)

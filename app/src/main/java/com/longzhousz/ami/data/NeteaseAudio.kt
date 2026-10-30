@@ -1,8 +1,12 @@
 package com.longzhousz.ami.data
 
 import org.json.JSONObject
+import org.json.JSONArray
+import java.io.IOException
 
 internal val neteaseAudioLevels = listOf("jyeffect", "hires", "lossless", "exhigh")
+internal class NeteaseAudioUnavailable(val trial: Boolean = false) : IllegalStateException(
+    if (trial) "网易云当前只返回了试听片段，未取得完整音源" else "网易云未返回这首歌的可播放音源")
 internal data class NeteaseAudio(val url: String, val level: String?, val codec: String, val bitrate: Int?, val bytes: Long = 0, val md5: String? = null) {
     val rank get() = neteaseAudioLevels.indexOf(level).takeIf { it >= 0 } ?: Int.MAX_VALUE
 }
@@ -28,10 +32,54 @@ internal fun bestNeteaseAudio(id: String, duration: Long, request: (String) -> J
     var unavailable: IllegalStateException? = null
     for ((rank, level) in neteaseAudioLevels.withIndex()) {
         best?.takeIf { it.rank <= rank }?.let { return it }
-        val root = request(level)
-        val candidate = try { neteaseAudio(root, id, duration) }
-        catch (error: IllegalStateException) { unavailable = error; continue }
+        val candidate = try { neteaseAudio(request(level), id, duration) }
+        catch (expired: NeteaseLoginExpired) { throw expired }
+        catch (error: NeteaseAudioUnavailable) {
+            if ((unavailable as? NeteaseAudioUnavailable)?.trial != true) unavailable = error
+            continue
+        }
+        catch (error: NeteaseRequestRejected) {
+            // Quality-specific refusal is not proof that the whole song or account is unusable.
+            if (error.code !in setOf(400, 403, 404)) return best ?: throw error
+            if (unavailable == null) unavailable = error
+            continue
+        }
+        catch (error: IOException) { return best ?: throw error }
         if (best == null || candidate.rank < best.rank) best = candidate
     }
-    return best ?: throw (unavailable ?: IllegalStateException("当前账号无法播放这首歌"))
+    return best ?: throw (unavailable ?: NeteaseAudioUnavailable())
+}
+
+/** A website session can work on weapi even when the client endpoint rejects that session.
+ * Both routes use the same account; never use anonymous, replacement, or trial audio.
+ * Disable the client route after its first failure: at most five v1 requests, then one HQ fallback. */
+internal fun authorizedNeteaseAudio(id: String, duration: Long, client: (JSONObject) -> JSONObject,
+    web: (String, JSONObject) -> JSONObject): NeteaseAudio {
+    var clientAvailable = true
+    val failure = try {
+        return bestNeteaseAudio(id, duration) { level ->
+            val data = JSONObject().put("ids", JSONArray().put(id).toString()).put("level", level).put("encodeType", "flac")
+            if (clientAvailable) {
+                try {
+                    val result = client(data)
+                    neteaseAudio(result, id, duration)
+                    return@bestNeteaseAudio result
+                } catch (_: NeteaseLoginExpired) { clientAvailable = false }
+                catch (_: NeteaseRequestRejected) { clientAvailable = false }
+                catch (_: NeteaseAudioUnavailable) { clientAvailable = false }
+                catch (_: IOException) { clientAvailable = false }
+            }
+            web("song/enhance/player/url/v1", data)
+        }
+    } catch (expired: NeteaseLoginExpired) { throw expired }
+    catch (unavailable: NeteaseAudioUnavailable) { unavailable }
+    catch (rejected: NeteaseRequestRejected) {
+        if (rejected.code !in setOf(400, 403, 404)) throw rejected
+        rejected
+    }
+    return try {
+        neteaseAudio(web("song/enhance/player/url", JSONObject().put("ids", JSONArray().put(id).toString()).put("br", 320000)), id, duration)
+    } catch (unavailable: NeteaseAudioUnavailable) {
+        throw if ((failure as? NeteaseAudioUnavailable)?.trial == true) failure else unavailable
+    }
 }

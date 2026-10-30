@@ -31,6 +31,7 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
     private val authLock = Any()
     @Volatile private var bypassCacheId: String? = null
     @Volatile internal var recoveringAudio: String? = null
+    @Volatile internal var playbackFailure: Pair<String, String>? = null
     private fun cacheAccount(): String = synchronized(authLock) { account.accountKey().also { audioCache.switchAccount(it) } }
     private val secret = SecretStore(context, "netease-connection")
     private val queueFile = AtomicFile(File(context.noBackupFilesDir, "netease-queue.json"))

@@ -46,6 +46,22 @@ class NeteaseTransportTest {
         assertTrue(connection.closed)
         assertTrue(connection.body.toString("UTF-8").matches(Regex("params=[0-9A-F]+")))
     }
+    @Test fun forbiddenEndpointIsNotMisreportedAsExpiredMembershipOrLogin() {
+        for (connection in listOf(Response("{}", 403), Response("{\"code\":403}"))) {
+            try {
+                NeteaseTransport { connection }.blockingPost("song/enhance/player/url/v1", JSONObject(), "MUSIC_U=test")
+                fail("Refusal accepted")
+            } catch (failure: NeteaseRequestRejected) { assertEquals(403, failure.code) }
+            assertTrue(connection.closed)
+        }
+        for (connection in listOf(Response("{}", 401), Response("{\"code\":301}"))) {
+            try {
+                NeteaseTransport { connection }.blockingPost("w/nuser/account/get", JSONObject(), "MUSIC_U=test")
+                fail("Expired session accepted")
+            } catch (_: NeteaseLoginExpired) { }
+            assertTrue(connection.closed)
+        }
+    }
     @Test fun cancellationDisconnectsAwayFromTheCancellingThread() = runBlocking {
         val entered = CountDownLatch(1); val closed = CountDownLatch(1)
         val caller = Thread.currentThread(); val wrongThread = AtomicBoolean(false)

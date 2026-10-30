@@ -50,6 +50,8 @@ class OnlineLibraryTest {
     @Volatile private var fmGate: java.util.concurrent.CountDownLatch? = null
     private val fmGeneration = java.util.concurrent.atomic.AtomicInteger()
     @Volatile private var lyricStatus = 200
+    @Volatile private var clientAudioCode = 200
+    @Volatile private var webAudioCode = 200
     @Before fun prepare() {
         val web = NeteaseTransport(webForm = { it }, open = { address -> Fixture(address) })
         tone = InstrumentationRegistry.getInstrumentation().context.assets.open("qa-96k-24bit.flac").use { it.readBytes() }
@@ -195,6 +197,21 @@ class OnlineLibraryTest {
         val persisted = File(context.noBackupFilesDir, "netease-queue.json").readText()
         assertFalse(persisted.contains("qa-audio")); assertFalse(persisted.contains("qa-only-not-a-real-session"))
         assertFalse(File(context.noBackupFilesDir, "netease-account.enc").readBytes().toString(Charsets.ISO_8859_1).contains("qa-only-not-a-real-session"))
+    }
+
+    @Test fun clientSessionRefusalUsesTheSameSignedInWebSessionAndReportsRealExpiry() = runBlocking(Dispatchers.IO) {
+        val track = cloud.tracks(cloud.library().liked!!).tracks.first()
+        cloud.rememberQueue(listOf(track))
+        for (code in listOf(301, 403)) {
+            clientAudioCode = code; requests.clear()
+            assertEquals("https://m7.music.126.net/qa-audio.flac", cloud.resolve(track.song().uri))
+            assertEquals("Hi-Res", cloud.audioQuality.value[track.song().id]?.label)
+            assertEquals(listOf("client-audio", "song/enhance/player/url/v1"), requests.map { it.first })
+            assertEquals("jyeffect", requests.last().second.getString("level"))
+        }
+        requests.clear(); webAudioCode = 301
+        assertTrue(runCatching { cloud.resolve(track.song().uri) }.exceptionOrNull() is NeteaseLoginExpired)
+        assertEquals(listOf("client-audio", "song/enhance/player/url/v1"), requests.map { it.first })
     }
 
     @Test fun cachedAudioUsesNoStreamApiAndMissingAudioFallsBackWithTheSameLogicalSong() = runBlocking(Dispatchers.IO) {
@@ -425,8 +442,12 @@ class OnlineLibraryTest {
                     (0 until ids.length()).map { ids.getJSONObject(it).getInt("id") }.reversed().map(::song)
                 }))
                 "cloudsearch/pc" -> JSONObject().put("result", JSONObject().put("songs", JSONArray().put(song(301))).put("songCount", 1))
-                "client-audio" -> JSONObject().put("data", JSONArray().put(JSONObject().put("id", 201).put("code", 200).put("time", 180000)
-                    .put("url", "https://m7.music.126.net/qa-audio.flac").put("level", "jyeffect").put("type", "flac").put("br", 1800000).put("size", tone.size)))
+                "client-audio", "song/enhance/player/url/v1" -> {
+                    assertEquals("MUSIC_U=qa-only-not-a-real-session", getRequestProperty("Cookie"))
+                    JSONObject().put("data", JSONArray().put(JSONObject().put("id", 201).put("code", 200).put("time", 180000)
+                        .put("url", "https://m7.music.126.net/qa-audio.flac").put("level", if (client) "jyeffect" else "hires")
+                        .put("type", "flac").put("br", 1800000).put("size", tone.size)))
+                }
                 "song/lyric" -> JSONObject().put("lrc", JSONObject().put("lyric", "[00:00]歌词 ${body.getString("id")}"))
                 "song/lyric/v1" -> JSONObject().put("lrc", JSONObject().put("lyric", "[00:00]歌词 ${body.getString("id")}"))
                     .put("yrc", JSONObject().put("lyric", "[0,2000](0,1000,0)歌词 (1000,1000,0)${body.getString("id")}"))
@@ -437,7 +458,11 @@ class OnlineLibraryTest {
                 "v3/discovery/recommend/songs" -> JSONObject().put("data", JSONObject().put("dailySongs", JSONArray().put(song(501)).put(song(502))))
                 else -> error("Unexpected fixture endpoint: $path")
             }
-            result.put("code", 200).toString().toByteArray()
+            result.put("code", when (path) {
+                "client-audio" -> clientAudioCode
+                "song/enhance/player/url/v1" -> webAudioCode
+                else -> 200
+            }).toString().toByteArray()
         }
         override fun connect() = Unit
         override fun disconnect() = Unit

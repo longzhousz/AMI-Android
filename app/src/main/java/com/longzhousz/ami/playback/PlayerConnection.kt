@@ -40,13 +40,15 @@ class PlayerConnection(private val context: Context) {
             val ids = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }
             if (ids != queue) queue = ids
         }
-        val recovering = c.currentMediaItem?.mediaId?.let { (context.applicationContext as com.longzhousz.ami.AmiApplication).repository.cloud.recoveringAudio == it } == true
+        val cloud = (context.applicationContext as com.longzhousz.ami.AmiApplication).repository.cloud
+        val recovering = c.currentMediaItem?.mediaId?.let { cloud.recoveringAudio == it } == true
         val playRequested = c.playWhenReady && c.playbackState != Player.STATE_ENDED && (c.playerError == null || recovering)
         state.value = PlaybackState(true, c.currentMediaItem?.mediaId, playRequested, c.currentPosition.coerceAtLeast(0),
             c.duration.coerceAtLeast(0), c.playbackState == Player.STATE_BUFFERING || recovering, c.shuffleModeEnabled, c.repeatMode,
             queue,
             c.playerError?.takeUnless { recovering }?.let { if (c.currentMediaItem?.mediaId?.startsWith("netease:") == true)
-                "网易云播放暂不可用，请检查登录、网络和曲目权限" else "无法播放此音频（${it.errorCodeName}），请检查文件授权或格式" }, advancing = c.isPlaying,
+                cloud.playbackFailure?.takeIf { it.first == c.currentMediaItem?.mediaId }?.second ?: "网易云播放失败（${it.errorCode}），请重试"
+                else "无法播放此音频（${it.errorCodeName}），请检查文件授权或格式" }, advancing = c.isPlaying,
             nextId = c.nextMediaItemIndex.takeIf { it >= 0 }?.let { c.getMediaItemAt(it).mediaId })
     }
     fun play(songs: List<Song>, index: Int = 0, radio: Boolean = false) {

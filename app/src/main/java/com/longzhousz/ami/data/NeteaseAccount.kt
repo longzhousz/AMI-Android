@@ -148,18 +148,7 @@ internal class NeteaseAccount(context: Context, private val web: NeteaseTranspor
     /** Media3 loader thread resolves short-lived URLs only when audio is requested. */
     fun stream(id: String, duration: Long): NeteaseAudio {
         val auth = credentials(); val cookie = neteaseCookies(auth.getString("cookie")); neteaseId(id)
-        var clientAvailable = true
-        val audio = try { bestNeteaseAudio(id, duration) { level ->
-            val data = JSONObject().put("ids", JSONArray().put(id).toString()).put("level", level).put("encodeType", "flac")
-            if (clientAvailable) try { web.blockingAudio(data, cookie) }
-            catch (expired: NeteaseLoginExpired) { throw expired }
-            catch (_: Exception) { clientAvailable = false; web.blockingPost("song/enhance/player/url/v1", data, cookie) }
-            else web.blockingPost("song/enhance/player/url/v1", data, cookie)
-        } } catch (expired: NeteaseLoginExpired) { throw expired }
-        catch (unavailable: IllegalStateException) {
-            // Older v1 servers can omit a usable URL; retain the original authorized HQ fallback.
-            neteaseAudio(web.blockingPost("song/enhance/player/url", JSONObject().put("ids", JSONArray().put(id).toString()).put("br", 320000), cookie), id, duration)
-        }
+        val audio = authorizedNeteaseAudio(id, duration, { web.blockingAudio(it, cookie) }, { path, data -> web.blockingPost(path, data, cookie) })
         android.util.Log.i("AmiAudio", "source=netease level=${audio.level ?: "unknown"} codec=${audio.codec} bitrate=${audio.bitrate ?: 0}")
         return audio
     }
@@ -188,11 +177,11 @@ internal class NeteaseAccount(context: Context, private val web: NeteaseTranspor
         }
         private fun hasTrial(row: JSONObject) = !row.isNull("freeTrialInfo") && row.opt("freeTrialInfo")?.toString() != "null"
         internal fun streamUrl(root: JSONObject, id: String, duration: Long): String {
-            val row = root.optJSONArray("data")?.optJSONObject(0) ?: error("这首歌暂时无法播放")
+            val row = root.optJSONArray("data")?.optJSONObject(0) ?: throw NeteaseAudioUnavailable()
             require(row.optString("id") == neteaseId(id)) { "网易云返回了不同歌曲，请重试" }
-            check(!hasTrial(row) && !(row.optLong("time") > 0 && duration > 0 && row.optLong("time") + 5000 < duration)) { "这首歌当前仅提供试听，无法完整播放" }
+            if (hasTrial(row) || row.optLong("time") > 0 && duration > 0 && row.optLong("time") + 5000 < duration) throw NeteaseAudioUnavailable(trial = true)
             val url = row.optString("url")
-            check(row.optInt("code") == 200 && url.isNotBlank() && url != "null") { "当前账号无法播放这首歌，请检查会员、购买或地区权限" }
+            if (row.optInt("code") != 200 || url.isBlank() || url == "null") throw NeteaseAudioUnavailable()
             return cloudMediaUrl(url)
         }
     }
