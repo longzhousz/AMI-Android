@@ -68,6 +68,35 @@ nodes = list(ET.parse('preview-smoke-results/settings.xml').iter('node'))
 assert any(n.get('text') == 'DeepSeek API Key' for n in nodes), 'Settings did not render'
 assert any(n.get('text') == '网易云账号' for n in nodes), 'Account entry is missing from settings'
 PY
+python3 - "$package" <<'PY'
+import re
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+package = sys.argv[1]
+def wait(name, text):
+    path = f'preview-smoke-results/{name}.xml'
+    subprocess.run(['python3', '.github/scripts/android-wait-for-window.py', path, package, text], check=True)
+    return path
+def tap(path, label):
+    node = next(n for n in ET.parse(path).iter('node') if n.get('text') == label)
+    x1, y1, x2, y2 = map(int, re.findall(r'\d+', node.get('bounds')))
+    subprocess.run(['adb', 'shell', 'input', 'tap', str((x1+x2)//2), str((y1+y2)//2)], check=True)
+tap('preview-smoke-results/settings.xml', '我的聆听')
+path = wait('listening-month', '这一月的音乐时光')
+texts = {n.get('text') for n in ET.parse(path).iter('node')}
+assert {'周', '月', '年', '听过的歌', '听歌天数', '最长连续'} <= texts, 'Listening summary did not render'
+for label, title in [('年', '这一年的音乐时光'), ('周', '这一周的音乐时光'), ('月', '这一月的音乐时光')]:
+    tap(path, label)
+    path = wait(f'listening-{label}', title)
+date_label = next(n.get('text') for n in ET.parse(path).iter('node') if re.fullmatch(r'\d{4} 年 \d{1,2} 月', n.get('text', '')))
+tap(path, date_label)
+path = wait('listening-date-picker', '选择日期')
+tap(path, '取消')
+wait('listening-return', '听过的歌')
+subprocess.run(['adb', 'shell', 'input', 'keyevent', '4'], check=True)
+wait('settings', 'DeepSeek API Key')
+PY
 python3 - <<'PY'
 import re
 import subprocess
