@@ -90,7 +90,7 @@ jobs:
       matrix:
         include:
           - api: '33'
-            target: default
+            target: google_apis
           - api: '37.0'
             target: default
     steps:
@@ -124,10 +124,11 @@ jobs:
           target: ${{ matrix.target }}
           arch: x86_64
           profile: pixel_2
-          disk-size: ${{ matrix.api == '37.0' && '8192M' || '2048M' }}
+          disk-size: ${{ matrix.api == '37.0' && '8192M' || '4096M' }}
+          ram-size: ${{ matrix.api == '33' && '4096M' || '' }}
           # Gesture reversals and spring settling are part of the UI contract.
           disable-animations: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect ${{ matrix.api == '33' && '-feature -Vulkan' || '' }} -noaudio -no-boot-anim -no-snapshot -camera-back none
           script: bash .github/scripts/android-device-test.sh
       - uses: actions/upload-artifact@v4
         if: always()
@@ -231,12 +232,13 @@ jobs:
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api }}
-          target: default
+          target: ${{ matrix.api == '33' && 'google_apis' || 'default' }}
           arch: x86_64
           profile: pixel_2
-          disk-size: ${{ matrix.api == '37.0' && '8192M' || '2048M' }}
+          disk-size: ${{ matrix.api == '37.0' && '8192M' || '4096M' }}
+          ram-size: ${{ matrix.api == '33' && '4096M' || '' }}
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect ${{ matrix.api == '33' && '-feature -Vulkan' || '' }} -noaudio -no-boot-anim -no-snapshot -camera-back none
           script: bash .github/scripts/android-preview-smoke.sh
       - uses: actions/upload-artifact@v4
         if: always()

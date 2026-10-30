@@ -37,6 +37,7 @@
 - 工具链：JDK 21、Gradle 9.6.0、AGP 9.4.1、Android SDK 37.0、Build Tools 36.0.0。使用仓库 Wrapper。
 - `core/` 处理纯逻辑，`data/` 处理扫描、SQLite、歌词与网络，`playback/` 处理 Media3，`ui/` 处理 Compose。收藏局部更新、按需歌词与队列恢复已有回归覆盖。
 - 按改动运行必要检查：`./gradlew testDebugUnitTest lintDebug assembleDebug`；Windows 使用 `gradlew.bat`。优化版本使用 `assemblePreview`。
+- CI 的 API 33 使用 Google APIs 镜像、4 GB RAM／userdata 和关闭模拟器 Vulkan 的传输；默认 AOSP 33 镜像曾多次在键盘场景中途断连。此设置不改变应用 AGSL 或玻璃效果，仍保留完整用例。
 - 仪器测试在专用模拟器或测试安装上运行；测试会写入夹具、修改曲库及播放状态，不直接对用户日常使用的数据运行完整套件。
 - 真机性能结论需要真机证据。模拟器截图、软件渲染帧统计和标准 MediaSession 测试不能证明 X300 动效、续航或原子岛已经通过。
 
