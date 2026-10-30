@@ -1,7 +1,9 @@
 package com.longzhousz.ami.data
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.AtomicFile
+import android.util.LruCache
 import com.longzhousz.ami.core.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -53,11 +55,30 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
     }
     private val lyricCache = LinkedHashMap<String, SongLyrics>(8, .75f, true)
     private var lyricBytes = 0
-    // One list per primary tab, not a growing cache for every visited album/search.
+    // Search/playlists keep one page per tab. Stable album metadata has a separate 1 MiB LRU;
+    // it survives visiting other albums, but adds no disk files or background refresh work.
     private val pages = arrayOfNulls<Pair<String, CloudTracks>>(2)
-    @Synchronized fun savedPage(favorites: Boolean, key: String): CloudTracks? = pages[if (favorites) 1 else 0]?.takeIf { it.first == key }?.second
-    @Synchronized fun savePage(favorites: Boolean, key: String, page: CloudTracks) { pages[if (favorites) 1 else 0] = key to page }
-    @Synchronized fun clearPages() { pages.fill(null) }
+    private data class AlbumPage(val page: CloudTracks, val at: Long = SystemClock.elapsedRealtime())
+    private val albumPages = object : LruCache<String, AlbumPage>(1024 * 1024) {
+        override fun sizeOf(key: String, value: AlbumPage) = 128 + key.length * 2 + value.page.tracks.sumOf {
+            384 + 2 * (it.id.length + it.originalId.length + it.title.length + it.artist.length + it.album.length +
+                (it.cover?.length ?: 0) + (it.primaryArtistId?.length ?: 0) + (it.primaryArtistName?.length ?: 0) + (it.albumId?.length ?: 0))
+        }
+    }
+    @Synchronized fun savedPage(favorites: Boolean, key: String): CloudTracks? {
+        if (!favorites && key.startsWith("album:")) {
+            val saved = albumPages.get(key) ?: return null
+            if (SystemClock.elapsedRealtime() - saved.at < 7 * 24 * 60 * 60 * 1000L) return saved.page
+            albumPages.remove(key)
+            return null
+        }
+        return pages[if (favorites) 1 else 0]?.takeIf { it.first == key }?.second
+    }
+    @Synchronized fun savePage(favorites: Boolean, key: String, page: CloudTracks) {
+        if (!favorites && key.startsWith("album:")) albumPages.put(key, AlbumPage(page))
+        else pages[if (favorites) 1 else 0] = key to page
+    }
+    @Synchronized fun clearPages() { pages.fill(null); albumPages.evictAll() }
 
     suspend fun refreshLikes(force: Boolean = false) {
         if (direct && configured.value) account.likes.refresh(force)

@@ -124,11 +124,30 @@ class OnlineLibraryTest {
         compose.onNodeWithText("歌曲").assertDoesNotExist()
         screenshot("online-library")
         compose.onNodeWithTag("collection-album:200").performClick()
+        compose.onNodeWithTag("online-refresh-indicator").assertDoesNotExist()
         compose.waitUntil(10000) { visible("专辑曲目 01") }
         compose.onNodeWithText("专辑曲目 01").performClick()
         compose.onNodeWithTag("online-tracks").performScrollToIndex(28)
         compose.waitUntil(10000) { requests.any { it.first == "v3/song/detail" && it.second.optString("c").contains("31") } }
         compose.onNodeWithContentDescription("返回曲库").performClick()
+        val albumReads = requests.count { it.first.startsWith("v1/album/") || it.first == "v3/song/detail" }
+        compose.onNodeWithTag("collection-album:201").performClick()
+        compose.waitUntil(10000) { visible("专辑曲目 01") }
+        compose.onNodeWithContentDescription("返回曲库").performClick()
+        val afterOtherAlbum = requests.count { it.first.startsWith("v1/album/") || it.first == "v3/song/detail" }
+        assertTrue(afterOtherAlbum > albumReads)
+        compose.onNodeWithTag("collection-album:200").performClick()
+        compose.onNodeWithText("专辑曲目 01").assertIsDisplayed()
+        compose.onNodeWithTag("online-refresh-indicator").assertDoesNotExist()
+        assertEquals("Other albums must not evict this loaded album", afterOtherAlbum,
+            requests.count { it.first.startsWith("v1/album/") || it.first == "v3/song/detail" })
+        compose.onNodeWithTag("online-tracks").performTouchInput { swipeDown() }
+        compose.waitUntil(10000) {
+            requests.count { it.first.startsWith("v1/album/") || it.first == "v3/song/detail" } > afterOtherAlbum
+        }
+        compose.onNodeWithTag("online-refresh-indicator").assertDoesNotExist()
+        compose.onNodeWithContentDescription("返回曲库").performClick()
+        compose.onNodeWithTag("online-refresh-indicator").assertExists()
         val before = state.library.collections.map { it.key }
         compose.onNodeWithTag("online-shelf").performTouchInput { swipeDown() }
         compose.waitUntil(5000) { refreshes > 0 }
@@ -139,6 +158,8 @@ class OnlineLibraryTest {
             assertEquals((1..30).map(Int::toString), plays.single().first.map { it.id })
             assertEquals(0, plays.single().second)
         }
+        runBlocking { cloud.disconnect() }
+        assertNull("Album metadata must be cleared on account change", cloud.savedPage(false, "album:200"))
     }
 
     @Test fun favoritesUseTheRedHeartPlaylistAndSearchRemainsAvailable() {

@@ -3,13 +3,18 @@ set -euo pipefail
 # Read private files as the debug app, avoiding external-storage mount restrictions.
 collect_screenshots() {
   mkdir -p "$GITHUB_WORKSPACE/device-screenshots"
-  adb logcat -d > "$GITHUB_WORKSPACE/device-screenshots/logcat.txt" || true
-  if ! adb exec-out run-as com.longzhousz.ami tar -cf - -C files/qa performance > "$GITHUB_WORKSPACE/device-screenshots/performance.tar"; then
+  if ! timeout 10s adb get-state > /dev/null 2>&1; then
+    echo 'Emulator disconnected; preserving the incomplete test reports without waiting for screenshots.' >&2
+    return
+  fi
+  timeout 15s adb logcat -d > "$GITHUB_WORKSPACE/device-screenshots/logcat.txt" || true
+  if ! timeout 15s adb exec-out run-as com.longzhousz.ami tar -cf - -C files/qa performance > "$GITHUB_WORKSPACE/device-screenshots/performance.tar"; then
     rm -f "$GITHUB_WORKSPACE/device-screenshots/performance.tar"
   fi
   for name in album-reopened-top queue-dark-cover queue-long-list glass-aurora-start glass-aurora-moving glass-aurora-paused glass-aurora-still glass-optics-light glass-optics-dark glass-favorites-wall empty-library library-songs favorites-songs library-albums album-tracks settings-dark lyrics-immersive lyrics-large-font lyrics-untimed lyrics-word-timing lyrics-player-window translation-models player-lyrics-redesign player-artwork-mid player-artwork-expanded player-collapse-handoff player-minibar-corners cloud-connect cloud-playlists cloud-tracks phone-lyrics phone-artwork online-library online-favorites online-discovery online-heart-search online-heart-favorites online-heart-player online-heart-lyrics shelf-album-expanded shelf-seen-preview listening-month listening-year listening-calendar listening-artists listening-hours listening-dark listening-empty listening-settings; do
+    if ! timeout 10s adb get-state > /dev/null 2>&1; then break; fi
     destination="$GITHUB_WORKSPACE/device-screenshots/$name.png"
-    if ! adb exec-out run-as com.longzhousz.ami cat "files/qa/$name.png" > "$destination"; then
+    if ! timeout 15s adb exec-out run-as com.longzhousz.ami cat "files/qa/$name.png" > "$destination"; then
       rm -f "$destination"
     fi
   done

@@ -35,6 +35,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -254,7 +256,14 @@ private data class CollectionScene(val collection: CloudPlaylist?, val visit: In
                 Text(failure, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButton({ if (state.error != null) onRefresh() else { reload++ } }) { Text("重试") }
             }
-            PullToRefreshBox(isRefreshing = state.refreshing || loading && offset == 0, onRefresh = ::refresh,
+            val pullState = rememberPullToRefreshState()
+            val refreshing = state.refreshing || loading && offset == 0
+            PullToRefreshBox(isRefreshing = refreshing, onRefresh = ::refresh, state = pullState,
+                indicator = {
+                    if (favorites || !showingTracks) PullToRefreshDefaults.Indicator(
+                        modifier = Modifier.align(Alignment.TopCenter).testTag("online-refresh-indicator"),
+                        isRefreshing = refreshing, state = pullState)
+                },
                 modifier = Modifier.weight(1f).semantics {
                     customActions = listOf(CustomAccessibilityAction(if (favorites) "刷新我喜欢" else "刷新曲库") { refresh(); true })
                 }) {

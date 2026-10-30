@@ -1,5 +1,7 @@
 # AMI 0.2.2 使用说明
 
+专辑详情优先使用近期已载入的内容：内存缓存按估算 1 MiB 预算淘汰，最长七天，不因切换到另一张专辑就重新请求；进程回收或切换账号后按需重新读取。详情每次进入仍从顶部开始。需要最新内容时可手动下拉，详情页不显示转圈，刷新指示只保留在「曲库」「我喜欢」主页。
+
 ## 安装与登录
 
 从 [最新发布](https://github.com/longzhousz/AMI-Android/releases/latest) 下载 `AMI-Android-0.2.2-online-preview.apk`。最低 Android 13（API 33），包名为 `com.longzhousz.ami.musicpreview`。
