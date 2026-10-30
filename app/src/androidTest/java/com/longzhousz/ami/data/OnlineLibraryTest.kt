@@ -168,7 +168,7 @@ class OnlineLibraryTest {
         assertEquals("晚风", requests.last { it.first == "cloudsearch/pc" }.second.getString("s"))
     }
 
-    @Test fun recentCoverWallUsesOnlyFifteenCachedTracksAndDoesNotBreakPaginationOrLikeUpdates() {
+    @Test fun immersiveCoverWallUsesThirtyCachedTracksAndDoesNotBreakPaginationOrLikeUpdates() {
         likedIds.clear(); likedIds.addAll((201..235).reversed().map(Int::toString))
         val state = CloudLibraryState(library(), loaded = true)
         val liked = state.library.liked!!
@@ -191,13 +191,13 @@ class OnlineLibraryTest {
             val metadataReads = requests.count { it.first == "v3/song/detail" }
             compose.setContent { AmiTheme("light") { OnlineLibraryContent(cloud, state, true, null, {}, { _, _ -> }, {},
                 onFavorite = { runBlocking(Dispatchers.IO) { cloud.toggleLike(it) } }) } }
-            compose.onNodeWithContentDescription("最近喜欢的 15 首歌曲封面").assertIsDisplayed()
+            compose.onNodeWithContentDescription("最近喜欢的 30 首歌曲封面").assertIsDisplayed()
             compose.onNodeWithTag("favorite-wall-235", useUnmergedTree = true).assertExists()
-            compose.onNodeWithTag("favorite-wall-221", useUnmergedTree = true).assertExists()
-            compose.onNodeWithTag("favorite-wall-220", useUnmergedTree = true).assertDoesNotExist()
+            compose.onNodeWithTag("favorite-wall-206", useUnmergedTree = true).assertExists()
+            compose.onNodeWithTag("favorite-wall-205", useUnmergedTree = true).assertDoesNotExist()
             compose.waitUntil(15000) {
                 val keys = context.imageLoader.memoryCache?.keys.orEmpty()
-                cached.tracks.take(15).all { track -> keys.any { it.key.contains(track.cover!!) } }
+                cached.tracks.take(30).all { track -> keys.any { it.key.contains(track.cover!!) } }
             }
             screenshot("glass-favorites-wall")
             assertEquals("The wall reuses the loaded prefix", metadataReads, requests.count { it.first == "v3/song/detail" })
@@ -205,7 +205,7 @@ class OnlineLibraryTest {
             runBlocking(Dispatchers.IO) { cloud.toggleLike(cached.tracks.first()) }
             compose.waitUntil(5000) { "235" !in cloud.likes.value.ids }
             compose.onNodeWithTag("favorite-wall-235", useUnmergedTree = true).assertDoesNotExist()
-            compose.onNodeWithTag("favorite-wall-220", useUnmergedTree = true).assertExists()
+            compose.onNodeWithTag("favorite-wall-206", useUnmergedTree = true).assertExists()
             compose.onNodeWithTag("online-tracks").performScrollToIndex(28)
             compose.waitUntil(10000) { cloud.savedPage(true, liked.key)?.tracks?.size == 34 }
             compose.onNodeWithTag("online-tracks").performScrollToIndex(34)
@@ -546,9 +546,18 @@ class OnlineLibraryTest {
         val enlarged = compose.onNodeWithTag("collection-cover").fetchSemanticsNode().boundsInRoot
         assertTrue(enlarged.width > before.width + 10)
         screenshot("shelf-album-expanded")
+        compose.onNodeWithTag("online-tracks").performScrollToIndex(20)
+        compose.onNodeWithTag("collection-cover").assertIsNotDisplayed()
         compose.onNodeWithContentDescription("返回曲库").performClick()
         val returned = compose.onNodeWithTag("collection-album:1021").fetchSemanticsNode().boundsInRoot
         assertEquals(before.top, returned.top, 2f)
+        card.performClick()
+        compose.onNodeWithTag("collection-cover").assertIsDisplayed()
+        val reopened = compose.onNodeWithTag("collection-cover").fetchSemanticsNode().boundsInRoot
+        assertEquals("Reopening must start from the hero, not the old scroll position", enlarged.top, reopened.top, 2f)
+        assertEquals(enlarged.height, reopened.height, 2f)
+        screenshot("album-reopened-top")
+        compose.onNodeWithContentDescription("返回曲库").performClick()
         compose.mainClock.autoAdvance = false
         compose.onNodeWithTag("collection-album:1021").performClick()
         compose.mainClock.advanceTimeBy(96)

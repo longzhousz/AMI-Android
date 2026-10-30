@@ -29,6 +29,8 @@ private val Dark = darkColorScheme(
     surfaceContainer = Color(0xFF1C2230), surfaceContainerLow = Color(0xFF171C28), surfaceContainerHigh = Color(0xFF293044),
     onSurface = Color(0xFFE8EDFA), onSurfaceVariant = Color(0xFFA0AABE), outlineVariant = Color(0xFF343E52),
 )
+internal val FavoritesColors = PlayerColors.copy(background = Color(0xFF0A0E1C), surface = Color(0xFF0A0E1C),
+    surfaceContainer = Color(0xFF171D30), surfaceContainerHigh = Color(0xFF20273B))
 private val Type = Typography(
     displaySmall = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 34.sp, lineHeight = 44.sp, letterSpacing = (-0.8).sp),
     headlineMedium = TextStyle(fontWeight = FontWeight.Bold, fontSize = 27.sp, lineHeight = 36.sp),

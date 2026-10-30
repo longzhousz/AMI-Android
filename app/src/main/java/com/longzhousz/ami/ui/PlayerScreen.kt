@@ -26,8 +26,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kyant.backdrop.backdrops.LayerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.longzhousz.ami.AmiViewModel
 import com.longzhousz.ami.core.LyricLine
@@ -51,8 +49,7 @@ internal data class PlayerActions(
 )
 
 @Composable fun PlayerScreen(song: Song, model: AmiViewModel, onClose: () -> Unit, onQueue: () -> Unit, onLyricFile: () -> Unit,
-    dragHandle: Modifier = Modifier, lyricsPage: MutableState<Boolean> = rememberSaveable(song.id) { mutableStateOf(false) },
-    backdrop: LayerBackdrop = rememberLayerBackdrop()) {
+    dragHandle: Modifier = Modifier, lyricsPage: MutableState<Boolean> = rememberSaveable(song.id) { mutableStateOf(false) }) {
     val playback by model.player.state.collectAsStateWithLifecycle()
     val lyrics by model.lyrics.collectAsStateWithLifecycle()
     val qualities by model.cloud.audioQuality.collectAsStateWithLifecycle()
@@ -77,10 +74,10 @@ internal data class PlayerActions(
         restoreLyrics = { model.clearLyrics(song) },
         canFavorite = !song.isCloudSong() || model.cloud.direct && likes.ready && song.neteaseId !in likes.pending,
     ), lyricPosition = { clock.value }, dragHandle = dragHandle, preparedLines = document?.lines, lyricsReady = document != null,
-        audioQuality = if (song.isCloudSong()) qualities[song.id]?.label ?: "待确认" else song.format.ifBlank { "待确认" }, lyricsPage = lyricsPage, backdrop = backdrop)
+        audioQuality = if (song.isCloudSong()) qualities[song.id]?.label ?: "待确认" else song.format.ifBlank { "待确认" }, lyricsPage = lyricsPage)
 }
 
-private val PlayerColors = darkColorScheme(
+internal val PlayerColors = darkColorScheme(
     primary = Color.White, onPrimary = Color(0xFF262631), primaryContainer = Color(0xFF424351),
     onPrimaryContainer = Color.White, surface = Color(0xFF252630), onSurface = Color.White,
     onSurfaceVariant = Color(0xFFBFC0C9), surfaceContainer = Color(0xFF30313D),
@@ -94,7 +91,6 @@ private val PlayerColors = darkColorScheme(
     lyricsReady: Boolean = true,
     audioQuality: String = "暂不可知",
     lyricsPage: MutableState<Boolean> = rememberSaveable(song.id) { mutableStateOf(false) },
-    backdrop: LayerBackdrop = rememberLayerBackdrop(),
 ) {
     val latestSongId by rememberUpdatedState(song.id)
     val latestActions by rememberUpdatedState(actions)
@@ -113,7 +109,7 @@ private val PlayerColors = darkColorScheme(
     val seek: (Long) -> Unit = { target -> pendingSeek = SeekPreview(++seekSerial, target); actions.seek(target) }
     LaunchedEffect(song.id) { lyricMenu = false }
     MaterialTheme(colorScheme = PlayerColors) {
-        GlassBackdropHost(Modifier.fillMaxSize().testTag("full-player"), backdrop, background = { PlayerBackdrop(song.cover, dark = true) }) {
+        GlassBackdropHost(Modifier.fillMaxSize().testTag("full-player"), background = { PlayerBackdrop(song.cover, dark = true) }) {
             PlayerArtworkScene(song, lyricsPage, header = {
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("player-header").then(dragHandle)
                     .padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {

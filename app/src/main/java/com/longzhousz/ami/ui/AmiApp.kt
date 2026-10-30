@@ -52,7 +52,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.longzhousz.ami.AmiViewModel
@@ -72,10 +71,12 @@ private data class AppDestination(val page: Int, val albumKey: String?)
     onLyricsFolder: () -> Unit, onLyricFile: (Song) -> Unit, initialPage: Int = 0) {
     val theme by model.theme.collectAsStateWithLifecycle()
     var fullPlayer by rememberSaveable { mutableStateOf(false) }
+    var page by rememberSaveable { mutableIntStateOf(if (initialPage == 3 && model.cloud.direct) 0 else initialPage.coerceIn(0,6)) }
+    val immersiveFavorites = page == 1 && model.cloud.direct
     var playerOverStatusBar by remember { mutableStateOf(false) }
     var playerOverNavigationBar by remember { mutableStateOf(false) }
-    AmiTheme(theme, statusBarImmersive = fullPlayer && playerOverStatusBar,
-        navigationBarImmersive = fullPlayer && playerOverNavigationBar) {
+    AmiTheme(theme, statusBarImmersive = immersiveFavorites || fullPlayer && playerOverStatusBar,
+        navigationBarImmersive = immersiveFavorites || fullPlayer && playerOverNavigationBar) {
         val focus = LocalFocusManager.current
         val library by model.repository.library.collectAsStateWithLifecycle()
         val onlineSongs by model.cloud.catalog.collectAsStateWithLifecycle()
@@ -87,7 +88,6 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         val message by model.message.collectAsStateWithLifecycle()
         val songsById = library.songsById
         val albumsByKey = library.albumsByKey
-        var page by rememberSaveable { mutableIntStateOf(if (initialPage == 3 && model.cloud.direct) 0 else initialPage.coerceIn(0,6)) }
         var albumKey by rememberSaveable { mutableStateOf<String?>(null) }
         var queue by rememberSaveable { mutableStateOf(false) }
         var remove by remember { mutableStateOf<Song?>(null) }
@@ -118,10 +118,8 @@ private data class AppDestination(val page: Int, val albumKey: String?)
             }
         }
         val snackbar = remember { SnackbarHostState() }
-        val queueSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        val scope = rememberCoroutineScope()
         val contentBackdrop = rememberLayerBackdrop()
-        val playerBackdrop = rememberLayerBackdrop()
+        val floatingColors = if (immersiveFavorites) FavoritesColors else MaterialTheme.colorScheme
         LaunchedEffect(current?.id, loading) {
             if (!loading && current == null) { fullPlayer = false; queue = false }
         }
@@ -133,11 +131,14 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         LaunchedEffect(page) { if (page in 4..5) model.repository.load() }
         CompositionLocalProvider(LocalGlassBackdrop provides contentBackdrop) {
         Box(Modifier.fillMaxSize()) {
-            GlassBackdropHost(Modifier.fillMaxSize().layerBackdrop(contentBackdrop)) {
+            GlassBackdropHost(Modifier.fillMaxSize().layerBackdrop(contentBackdrop), background = {
+                MaterialTheme(colorScheme = floatingColors) { GlassCanvas() }
+            }) {
             CompositionLocalProvider(LocalVisualsActive provides !fullPlayer) {
             Scaffold(
                 modifier = if (fullPlayer) Modifier.clearAndSetSemantics {} else Modifier,
                 containerColor = Color.Transparent,
+                contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Bottom),
                 snackbarHost = { GlassSnackbarHost(snackbar, Modifier.padding(bottom = floatingInset)) },
             ) { padding ->
                 Column(Modifier.fillMaxSize().padding(padding)) {
@@ -155,6 +156,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                         AmiMotion.page(if (targetState.page != initialState.page) targetState.page > initialState.page else targetState.albumKey != null)
                     }, label = "app-destination") { destination ->
                         val album = albumsByKey[destination.albumKey]
+                        Box(Modifier.fillMaxSize().then(if (destination.page == 1 && model.cloud.direct && album == null) Modifier else Modifier.statusBarsPadding())) {
                         when {
                             album != null -> AlbumScreen(album, playback.id, model, { albumKey = null }, { remove = it }, floatingInset)
                             destination.page == 2 -> pageState.SaveableStateProvider("settings") {
@@ -183,11 +185,13 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                                 }
                             }
                         }
+                        }
                     }
                 }
             }
             }
             }
+            MaterialTheme(colorScheme = floatingColors) {
             Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
                 .then(if (fullPlayer) Modifier.clearAndSetSemantics {} else Modifier), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (current != null) MiniPlayer(current, playback, model.player, clockEnabled = !fullPlayer,
@@ -222,34 +226,30 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                     }
                 }
             }
+            }
             if (fullPlayer && current != null) PlayerSheet(miniBounds, { fullPlayer = false }, onSystemBars = { status, navigation ->
                 playerOverStatusBar = status; playerOverNavigationBar = navigation
             }, collapsedContent = {
+                MaterialTheme(colorScheme = floatingColors) {
                 MiniPlayer(current, playback, model.player, clockEnabled = false,
                     onOpen = {}, onToggle = {}, onNext = {})
+                }
             }) { close, dragHandle ->
                 Box(Modifier.fillMaxSize()) {
-                    PlayerScreen(current, model, close, { queue = true }, { onLyricFile(current) }, dragHandle, lyricsPage, playerBackdrop)
+                    CompositionLocalProvider(LocalVisualsActive provides !queue) {
+                        PlayerScreen(current, model, close, { queue = true }, { onLyricFile(current) }, dragHandle, lyricsPage)
+                    }
                     GlassSnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 64.dp))
                 }
             }
-            if (queue) ModalBottomSheet({ queue = false }, sheetState = queueSheet, containerColor = Color.Transparent,
-                modifier = Modifier.liquidGlass(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp), prominent = true,
-                    backdrop = if (fullPlayer) playerBackdrop else contentBackdrop)) {
-                Text("播放队列 · ${playback.queue.size}", Modifier.padding(horizontal = 24.dp, vertical = 16.dp), style = MaterialTheme.typography.titleLarge)
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 560.dp).padding(horizontal = 20.dp).navigationBarsPadding()) {
-                    itemsIndexed(playback.queue, key = { index, id -> "$index:$id" }) { index, id ->
-                        (songsById[id] ?: onlineSongs[id])?.let { original ->
-                            val song = if (original.isCloudSong()) original.copy(favorite = original.neteaseId in onlineLikes.ids) else original
-                            SongRow(song, playback.id == id, {
-                                model.act("player.jump") { model.player.jump(index) }
-                                scope.launch { queueSheet.hide(); queue = false }
-                            }, { model.favorite(song) }, number = index + 1, modifier = Modifier.animateItem(),
-                                favoriteEnabled = !song.isCloudSong() || model.cloud.direct && onlineLikes.ready && song.neteaseId !in onlineLikes.pending)
-                        }
-                    }
+            if (queue) PlaybackQueueSheet(playback.queue, playback.id, current?.cover, songFor = { id ->
+                (songsById[id] ?: onlineSongs[id])?.let { song ->
+                    if (song.isCloudSong()) song.copy(favorite = song.neteaseId in onlineLikes.ids) else song
                 }
-            }
+            }, onDismiss = { queue = false }, onPlay = { index -> model.act("player.jump") { model.player.jump(index) } },
+                onFavorite = model::favorite, favoriteEnabled = { song ->
+                    !song.isCloudSong() || model.cloud.direct && onlineLikes.ready && song.neteaseId !in onlineLikes.pending
+                })
             remove?.let { song ->
                 GlassAlertDialog({ remove = null }, title = { Text("从曲库移除？") }, text = { Text("《${song.title}》将从 AMI 曲库和播放队列中移除。原始音频会保留，重新扫描可再次导入。") },
                     confirmButton = { TextButton({ model.remove(song); remove = null }) { Text("移除") } }, dismissButton = { TextButton({ remove = null }) { Text("取消") } })

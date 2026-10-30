@@ -43,6 +43,28 @@ import java.io.File
 class InterfaceTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
+    @Test fun immersiveFavoritesUseLightSystemIconsAndSettingsRestoreTheLightTheme() {
+        val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
+        val previous = model.theme.value
+        try {
+            compose.runOnIdle { model.setTheme("light") }
+            compose.onNodeWithContentDescription("我喜欢").performClick()
+            compose.onNodeWithTag("favorites-hero").assertIsDisplayed()
+            compose.runOnIdle {
+                val bars = androidx.core.view.WindowCompat.getInsetsController(compose.activity.window, compose.activity.window.decorView)
+                assertFalse(bars.isAppearanceLightStatusBars)
+                assertFalse(bars.isAppearanceLightNavigationBars)
+            }
+            compose.onNodeWithContentDescription("设置").performClick()
+            compose.onNodeWithText("我的聆听").assertIsDisplayed()
+            compose.runOnIdle {
+                val bars = androidx.core.view.WindowCompat.getInsetsController(compose.activity.window, compose.activity.window.decorView)
+                assertTrue(bars.isAppearanceLightStatusBars)
+                assertTrue(bars.isAppearanceLightNavigationBars)
+            }
+        } finally { compose.runOnIdle { model.setTheme(previous) } }
+    }
+
     @Test fun listeningIsADirectSettingsEntryAndReturnsToSettings() {
         val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
         val loading = model.repository.loading.value
@@ -254,6 +276,12 @@ class InterfaceTest {
             pressSystemBack()
             compose.waitUntil(10000) { compose.onAllNodesWithText("播放队列 · ${songs.size}").fetchSemanticsNodes().isEmpty() }
             compose.onNodeWithTag("full-player").assertIsDisplayed()
+            compose.onNodeWithContentDescription("播放队列").performClick()
+            compose.onNodeWithContentDescription("关闭播放队列").assertIsDisplayed().performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithText("播放队列 · ${songs.size}").fetchSemanticsNodes().isEmpty() }
+            compose.onNodeWithContentDescription("播放队列").performClick()
+            compose.onNodeWithTag("queue-track-0").performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithText("播放队列 · ${songs.size}").fetchSemanticsNodes().isEmpty() }
             compose.onNodeWithContentDescription("收起播放页").performClick()
             compose.onNodeWithTag("mini-player").assertIsDisplayed()
             val landed = compose.onNodeWithTag("mini-player").fetchSemanticsNode().boundsInRoot
