@@ -8,10 +8,10 @@ android {
     compileSdk = 37
     defaultConfig {
         applicationId = "com.longzhousz.ami"
-        minSdk = 26
+        minSdk = 33
         targetSdk = 37
-        versionCode = 22
-        versionName = "0.1.21"
+        versionCode = 23
+        versionName = "0.2.1"
         testInstrumentationRunner = "com.longzhousz.ami.RecoverySeedInstrumentation"
     }
     buildFeatures { compose = true; buildConfig = true }
@@ -75,7 +75,8 @@ android {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2025.10.01"))
+    implementation(platform("androidx.compose:compose-bom:2026.03.00"))
+    implementation("io.github.kyant0:backdrop:1.0.6")
     implementation("androidx.activity:activity-compose:1.11.0")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
@@ -95,7 +96,7 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:rules:1.7.0")
     androidTestImplementation("androidx.test:core-ktx:1.7.0")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2025.10.01"))
+    androidTestImplementation(platform("androidx.compose:compose-bom:2026.03.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     // Compose's older transitive Espresso uses hidden input APIs removed on API 37.
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")

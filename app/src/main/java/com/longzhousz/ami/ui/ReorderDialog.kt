@@ -49,7 +49,7 @@ import kotlin.math.roundToInt
         val index = currentSongs.indexOfFirst { it.id == floatingId }
         if (abs(distance + (startIndex - index) * rowHeight) < .5f) floatingId = null
     }
-    AlertDialog(onDismiss, title = { Text("调整曲序") }, text = {
+    GlassAlertDialog(onDismiss, title = { Text("调整曲序") }, text = {
         Column {
             Text("长按手柄拖动，也可以点击箭头调整。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             LazyColumn(Modifier.heightIn(max = 420.dp).padding(top = 12.dp)) {

@@ -103,7 +103,7 @@ import kotlinx.coroutines.withContext
     when (dialog) {
         "audioCacheLimit" -> ChoiceDialog("常听歌曲缓存上限", OnlineAudioCache.LIMITS.map { it.toString() to cacheLimitLabel(it) },
             audioCacheLimit.toString(), { repo.setAudioCacheLimit(it.toLong()); dialog = null }, { dialog = null })
-        "account" -> AlertDialog({ dialog = null }, title = { Text("网易云账号") }, text = { Text("可以重新登录或退出当前账号。") },
+        "account" -> GlassAlertDialog({ dialog = null }, title = { Text("网易云账号") }, text = { Text("可以重新登录或退出当前账号。") },
             confirmButton = { TextButton({ dialog = null; signIn() }) { Text("重新登录") } },
             dismissButton = { TextButton({ scope.launch {
                 try {
@@ -113,7 +113,7 @@ import kotlinx.coroutines.withContext
                 } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                 catch (_: Exception) { model.message.value = "退出登录未完成，请重试" }
             } }) { Text("退出登录") } })
-        "neteaseLyrics" -> AlertDialog({ dialog = null }, title = { Text("网易云歌词") }, text = {
+        "neteaseLyrics" -> GlassAlertDialog({ dialog = null }, title = { Text("网易云歌词") }, text = {
             Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
                 Text("将 LrcDownload 文件夹整体导入，数字文件名无需修改。AMI 会读取 NCM 内的歌曲 ID，自动找到对应歌词。", style = MaterialTheme.typography.bodyMedium)
                 Text("网易云原目录", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.labelLarge)
@@ -132,7 +132,7 @@ import kotlinx.coroutines.withContext
             dismissButton = { TextButton({ dialog = null }) { Text("完成") } })
         "key" -> {
             var key by remember { mutableStateOf("") }
-            AlertDialog({ dialog = null }, title = { Text("DeepSeek API Key") }, text = {
+            GlassAlertDialog({ dialog = null }, title = { Text("DeepSeek API Key") }, text = {
                 Column {
                     Text("密钥使用设备密钥加密。AMI 不会显示已保存的密钥。", style = MaterialTheme.typography.bodyMedium)
                     OutlinedTextField(key, { key = it }, Modifier.fillMaxWidth().padding(top = 16.dp), label = { Text("粘贴新的 API Key") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false), singleLine = true)
@@ -145,14 +145,14 @@ import kotlinx.coroutines.withContext
         "theme" -> ChoiceDialog("外观", listOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色"), theme, { model.setTheme(it); dialog = null }, { dialog = null })
         "style" -> {
             var draft by remember { mutableStateOf(style) }
-            AlertDialog({ dialog = null }, title = { Text("翻译风格") }, text = {
+            GlassAlertDialog({ dialog = null }, title = { Text("翻译风格") }, text = {
                 Column { Text("每行一个要求，越靠前优先级越高。修改风格后会生成新的翻译。", style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(draft, { if (it.length <= 3000) draft = it }, Modifier.fillMaxWidth().padding(top = 12.dp), minLines = 6, maxLines = 10)
                     TextButton({ draft = TranslationClient.DEFAULT_STYLE }) { Text("恢复默认风格") }
                 }
             }, confirmButton = { TextButton({ model.setTranslationStyle(draft); dialog = null }, enabled = draft.isNotBlank()) { Text("保存") } }, dismissButton = { TextButton({ dialog = null }) { Text("取消") } })
         }
-        "roots" -> AlertDialog({ dialog = null }, title = { Text("音乐文件夹") }, text = {
+        "roots" -> GlassAlertDialog({ dialog = null }, title = { Text("音乐文件夹") }, text = {
             LazyColumn { if (roots.isEmpty()) item { Text("还没有添加文件夹") }
                 roots.forEach { root -> item { Column(Modifier.padding(vertical = 8.dp)) {
                     Text(Uri.decode(Uri.parse(root).lastPathSegment.orEmpty()), style = MaterialTheme.typography.bodyMedium)
@@ -162,7 +162,7 @@ import kotlinx.coroutines.withContext
             }
         }, confirmButton = { TextButton({ dialog = null; onImport() }) { Text("添加文件夹") } }, dismissButton = { TextButton({ dialog = null }) { Text("完成") } })
         "import" -> InfoDialog("最近导入结果", importState.message + if (importState.errors.isEmpty()) "\n\n没有发现问题。" else "\n\n" + importState.errors.joinToString("\n"), { dialog = null })
-        "cache" -> AlertDialog({ dialog = null }, title = { Text("缓存管理") }, text = { Text("音乐转换与封面缓存：${megabytes(cache.bytes)}\n可安全清理：${megabytes(cache.reclaimable)}\n\n只清理未被曲库引用的应用缓存。正在使用的音频缓存和原始音乐都会保留。") },
+        "cache" -> GlassAlertDialog({ dialog = null }, title = { Text("缓存管理") }, text = { Text("音乐转换与封面缓存：${megabytes(cache.bytes)}\n可安全清理：${megabytes(cache.reclaimable)}\n\n只清理未被曲库引用的应用缓存。正在使用的音频缓存和原始音乐都会保留。") },
             confirmButton = { TextButton({ scope.launch { runCatching { withContext(Dispatchers.IO) { repo.cleanup() } }.onSuccess { model.message.value = "已清理 ${megabytes(it)}" }.onFailure { model.message.value = it.message }; dialog = null } }, enabled = !importState.running && cache.reclaimable > 0) { Text("清理未引用缓存") } }, dismissButton = { TextButton({ dialog = null }) { Text("关闭") } })
         "logs" -> InfoDialog("操作记录", logs.joinToString("\n\n").ifBlank { "还没有操作记录" }, { dialog = null })
         "agent" -> AgentDialog(model, onBridgeFolder, { dialog = null })
@@ -174,7 +174,7 @@ import kotlinx.coroutines.withContext
     val enabled by model.bridgeEnabled.collectAsStateWithLifecycle()
     var token by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    AlertDialog(onDismiss, title = { Text("Agent 与自动化") }, text = {
+    GlassAlertDialog(onDismiss, title = { Text("Agent 与自动化") }, text = {
         Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
             Text("应用在前台时，每 3 秒检查交换文件夹。请求需携带令牌，操作记录仅保存在本机。", style = MaterialTheme.typography.bodySmall)
             Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -199,15 +199,15 @@ import kotlinx.coroutines.withContext
 }
 
 @Composable private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(MaterialTheme.colorScheme.surfaceContainerLow), content = content)
+    Column(Modifier.fillMaxWidth().liquidGlass(RoundedCornerShape(24.dp)), content = content)
 }
 @Composable private fun ChoiceDialog(title: String, choices: List<Pair<String, String>>, selected: String, onChoice: (String) -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(onDismiss, title = { Text(title) }, text = { Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState())) { choices.forEach { (value, label) ->
+    GlassAlertDialog(onDismiss, title = { Text(title) }, text = { Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState())) { choices.forEach { (value, label) ->
         Row(Modifier.fillMaxWidth().clickable { onChoice(value) }.padding(vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { RadioButton(selected == value, { onChoice(value) }); Text(label) }
     } } }, confirmButton = { TextButton(onDismiss) { Text("取消") } })
 }
 @Composable private fun InfoDialog(title: String, text: String, onDismiss: () -> Unit) {
-    AlertDialog(onDismiss, title = { Text(title) }, text = { LazyColumn(Modifier.heightIn(max = 470.dp)) { item { Text(text, style = MaterialTheme.typography.bodyMedium) } } }, confirmButton = { TextButton(onDismiss) { Text("关闭") } })
+    GlassAlertDialog(onDismiss, title = { Text(title) }, text = { LazyColumn(Modifier.heightIn(max = 470.dp)) { item { Text(text, style = MaterialTheme.typography.bodyMedium) } } }, confirmButton = { TextButton(onDismiss) { Text("关闭") } })
 }
 private fun megabytes(bytes: Long) = "%.1f MB".format(bytes / 1048576.0)
 private fun cacheLimitLabel(bytes: Long) = if (bytes >= 1024L * 1024 * 1024) "${bytes / (1024L * 1024 * 1024)} GB" else "${bytes / (1024 * 1024)} MB"

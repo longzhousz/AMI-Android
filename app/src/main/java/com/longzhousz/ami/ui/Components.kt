@@ -101,13 +101,14 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
     }
 }
 
-@Composable fun ActionIcon(icon: ImageVector, label: String, onClick: () -> Unit, tint: Color = MaterialTheme.colorScheme.onSurface, enabled: Boolean = true, modifier: Modifier = Modifier) {
+@Composable fun ActionIcon(icon: ImageVector, label: String, onClick: () -> Unit, tint: Color = MaterialTheme.colorScheme.onSurface, enabled: Boolean = true, modifier: Modifier = Modifier, glass: Boolean = true) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale = animateFloatAsState(if (pressed) .86f else 1f, spring(dampingRatio = .72f, stiffness = 700f), label = "icon-press")
     val color by animateColorAsState(if (enabled) tint else tint.copy(alpha = .38f), tween(180), label = "icon-tint")
-    IconButton(onClick, modifier.size(48.dp), enabled = enabled, interactionSource = interaction) {
-        AnimatedContent(icon to label, Modifier.graphicsLayer { scaleX = scale.value; scaleY = scale.value }, transitionSpec = {
+    IconButton(onClick, modifier.size(48.dp).graphicsLayer { scaleX = scale.value; scaleY = scale.value }
+        .then(if (glass) Modifier.liquidGlass(CircleShape) else Modifier), enabled = enabled, interactionSource = interaction) {
+        AnimatedContent(icon to label, transitionSpec = {
             (fadeIn(tween(140)) + scaleIn(tween(180), initialScale = .8f)) togetherWith
                 (fadeOut(tween(100)) + scaleOut(tween(140), targetScale = .8f))
         }, label = "action-icon") { target -> Icon(target.first, target.second, tint = color) }
@@ -116,7 +117,7 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
 
 internal val FavoriteRed = Color(0xFFEE4865)
 
-@Composable fun SongRow(song: Song, playing: Boolean, onPlay: () -> Unit, onFavorite: () -> Unit, onRemove: (() -> Unit)? = null, number: Int? = null, modifier: Modifier = Modifier, favoriteEnabled: Boolean = true) {
+@Composable fun SongRow(song: Song, playing: Boolean, onPlay: () -> Unit, onFavorite: () -> Unit, onRemove: (() -> Unit)? = null, number: Int? = null, modifier: Modifier = Modifier, favoriteEnabled: Boolean = true, showFavorite: Boolean = true) {
     var menu by remember { mutableStateOf(false) }
     val background by animateColorAsState(if (playing) MaterialTheme.colorScheme.primary.copy(alpha = .08f) else Color.Transparent, tween(220), label = "track-highlight")
     Row(modifier.fillMaxWidth().background(background).clickable(onClick = onPlay).padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -129,12 +130,12 @@ internal val FavoriteRed = Color(0xFFEE4865)
             Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Text(durationLabel(song.duration), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (song.isCloudSong()) ActionIcon(if (song.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+        if (song.isCloudSong() && showFavorite) ActionIcon(if (song.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
             "${song.title}：${if (song.favorite) "取消喜欢" else "加入喜欢"}", onFavorite,
-            tint = if (song.favorite) FavoriteRed else MaterialTheme.colorScheme.onSurfaceVariant, enabled = favoriteEnabled)
+            tint = if (song.favorite) FavoriteRed else MaterialTheme.colorScheme.onSurfaceVariant, enabled = favoriteEnabled, glass = false)
         if (!song.isCloudSong()) Box {
-            ActionIcon(Icons.Rounded.MoreVert, "${song.title}的更多操作", { menu = true })
-            DropdownMenu(menu, { menu = false }) {
+            ActionIcon(Icons.Rounded.MoreVert, "${song.title}的更多操作", { menu = true }, glass = false)
+            GlassDropdownMenu(menu, { menu = false }) {
                 DropdownMenuItem(if (song.favorite) { { Text("取消喜欢") } } else { { Text("加入喜欢") } }, { menu = false; onFavorite() }, leadingIcon = { Icon(if (song.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null) })
                 if (onRemove != null) DropdownMenuItem({ Text("从曲库移除") }, { menu = false; onRemove() }, leadingIcon = { Icon(Icons.Rounded.PlaylistRemove, null) })
             }
@@ -148,7 +149,7 @@ internal val FavoriteRed = Color(0xFFEE4865)
 
 @Composable fun SettingRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit, trailing: @Composable (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(39.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) { Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) }
+        Box(Modifier.size(39.dp).liquidGlass(RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) { Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) { Text(title, style = MaterialTheme.typography.titleMedium); Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         if (trailing != null) trailing() else Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)

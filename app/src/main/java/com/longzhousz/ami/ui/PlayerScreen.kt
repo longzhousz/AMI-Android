@@ -26,6 +26,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.longzhousz.ami.AmiViewModel
 import com.longzhousz.ami.core.LyricLine
@@ -49,7 +51,8 @@ internal data class PlayerActions(
 )
 
 @Composable fun PlayerScreen(song: Song, model: AmiViewModel, onClose: () -> Unit, onQueue: () -> Unit, onLyricFile: () -> Unit,
-    dragHandle: Modifier = Modifier, lyricsPage: MutableState<Boolean> = rememberSaveable(song.id) { mutableStateOf(false) }) {
+    dragHandle: Modifier = Modifier, lyricsPage: MutableState<Boolean> = rememberSaveable(song.id) { mutableStateOf(false) },
+    backdrop: LayerBackdrop = rememberLayerBackdrop()) {
     val playback by model.player.state.collectAsStateWithLifecycle()
     val lyrics by model.lyrics.collectAsStateWithLifecycle()
     val qualities by model.cloud.audioQuality.collectAsStateWithLifecycle()
@@ -74,7 +77,7 @@ internal data class PlayerActions(
         restoreLyrics = { model.clearLyrics(song) },
         canFavorite = !song.isCloudSong() || model.cloud.direct && likes.ready && song.neteaseId !in likes.pending,
     ), lyricPosition = { clock.value }, dragHandle = dragHandle, preparedLines = document?.lines, lyricsReady = document != null,
-        audioQuality = if (song.isCloudSong()) qualities[song.id]?.label ?: "待确认" else song.format.ifBlank { "待确认" }, lyricsPage = lyricsPage)
+        audioQuality = if (song.isCloudSong()) qualities[song.id]?.label ?: "待确认" else song.format.ifBlank { "待确认" }, lyricsPage = lyricsPage, backdrop = backdrop)
 }
 
 private val PlayerColors = darkColorScheme(
@@ -91,6 +94,7 @@ private val PlayerColors = darkColorScheme(
     lyricsReady: Boolean = true,
     audioQuality: String = "暂不可知",
     lyricsPage: MutableState<Boolean> = rememberSaveable(song.id) { mutableStateOf(false) },
+    backdrop: LayerBackdrop = rememberLayerBackdrop(),
 ) {
     val latestSongId by rememberUpdatedState(song.id)
     val latestActions by rememberUpdatedState(actions)
@@ -109,8 +113,7 @@ private val PlayerColors = darkColorScheme(
     val seek: (Long) -> Unit = { target -> pendingSeek = SeekPreview(++seekSerial, target); actions.seek(target) }
     LaunchedEffect(song.id) { lyricMenu = false }
     MaterialTheme(colorScheme = PlayerColors) {
-        Surface(Modifier.fillMaxSize().testTag("full-player"), color = Color.Transparent, contentColor = Color.White) {
-            PlayerBackdrop(song.cover)
+        GlassBackdropHost(Modifier.fillMaxSize().testTag("full-player"), backdrop, background = { PlayerBackdrop(song.cover, dark = true) }) {
             PlayerArtworkScene(song, lyricsPage, header = {
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("player-header").then(dragHandle)
                     .padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -119,7 +122,7 @@ private val PlayerColors = darkColorScheme(
                     actions.settings?.let { ActionIcon(Icons.Rounded.Tune,"设置",it,tint=Color.White.copy(alpha=.7f)) }
                     Box {
                         ActionIcon(Icons.Rounded.MoreHoriz, "歌词选项", { lyricMenu = true }, tint = Color.White.copy(alpha = .7f))
-                        DropdownMenu(lyricMenu, { lyricMenu = false }) {
+                        GlassDropdownMenu(lyricMenu, { lyricMenu = false }) {
                             DropdownMenuItem(text = { Text("当前音质：$audioQuality") }, onClick = {}, enabled = false,
                                 leadingIcon = { Icon(Icons.Rounded.HighQuality, null) },
                                 colors = MenuDefaults.itemColors(disabledTextColor = MaterialTheme.colorScheme.onSurface,
@@ -199,7 +202,8 @@ private data class PlayerStage(val song: Song, val translation: List<String>?, v
                     if (actions.external) Spacer(Modifier.size(iconSize)) else ActionIcon(Icons.Rounded.Shuffle, if (playback.shuffle) "关闭随机播放" else "开启随机播放", actions.shuffle,
                         tint = Color.White.copy(alpha = if (playback.shuffle) 1f else .4f), modifier = Modifier.size(iconSize))
                     ActionIcon(Icons.Rounded.SkipPrevious, "上一首", actions.previous, tint=Color.White.copy(alpha=if(actions.canPrevious)1f else .25f), enabled=actions.canPrevious, modifier = Modifier.size(iconSize))
-                    FilledIconButton(actions.toggle, Modifier.size(if (compact) 66.dp else 72.dp), shape = CircleShape, enabled=actions.canToggle) {
+                    FilledIconButton(actions.toggle, Modifier.size(if (compact) 66.dp else 72.dp).liquidGlass(CircleShape, prominent = true),
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color.Transparent, contentColor = Color.White), shape = CircleShape, enabled=actions.canToggle) {
                         AnimatedContent(playback.playing, transitionSpec = {
                             (fadeIn(tween(140)) + scaleIn(tween(180), initialScale = .8f)) togetherWith
                                 (fadeOut(tween(100)) + scaleOut(tween(140), targetScale = .8f))

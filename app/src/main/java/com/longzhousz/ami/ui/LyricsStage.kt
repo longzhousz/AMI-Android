@@ -140,8 +140,8 @@ import kotlin.math.abs
             exit = fadeOut(tween(120)) + slideOutVertically(tween(180)) { it / 3 }) {
             FilledTonalButton(
                 { following = true },
-                colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color(0xFF393944), contentColor = Color.White),
-                elevation = ButtonDefaults.filledTonalButtonElevation(defaultElevation = 4.dp),
+                modifier = Modifier.liquidGlass(androidx.compose.foundation.shape.CircleShape),
+                colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.Transparent, contentColor = Color.White),
             ) {
                 Icon(Icons.Rounded.MyLocation, null, Modifier.size(16.dp))
                 Spacer(Modifier.width(8.dp)); Text("回到当前句")

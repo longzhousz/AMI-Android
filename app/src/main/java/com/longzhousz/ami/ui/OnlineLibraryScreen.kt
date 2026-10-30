@@ -40,6 +40,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
@@ -48,6 +50,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -184,12 +188,16 @@ import kotlinx.coroutines.withContext
     LaunchedEffect(key, list) {
         snapshotFlow {
             // Wait until layout represents this page; a stale header-only layout looks near its end.
-            val expectedItems = tracks.size + (if (selected != null) 1 else 0) + (if (more && loadedKey == key) 1 else 0)
+            val expectedItems = tracks.size + (if (selected != null) 1 else 0) +
+                (if (favorites && tracks.isNotEmpty()) 1 else 0) + (if (more && loadedKey == key) 1 else 0)
             showingTracks && loadedKey == key && tracks.isNotEmpty() && more && !loading && next > offset &&
                 list.layoutInfo.totalItemsCount == expectedItems && list.layoutInfo.visibleItemsInfo.isNotEmpty() &&
                 (list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1) >= list.layoutInfo.totalItemsCount - 5
         }.collect { nearEnd -> if (nearEnd) offset = next }
     }
+    GlassBackdropHost(Modifier.fillMaxSize(), background = {
+        if (selected != null) PlayerBackdrop(selected.cover) else GlassCanvas()
+    }) {
     Column(Modifier.fillMaxSize().testTag(if (favorites) "online-favorites" else "online-library")) {
         Row(Modifier.fillMaxWidth().padding(start = if (selected != null || searching) 8.dp else 24.dp, end = 24.dp, top = 12.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically) {
@@ -201,7 +209,7 @@ import kotlinx.coroutines.withContext
                 }))
             if (!favorites && selected == null && !searching && configured) Box {
                 ActionIcon(Icons.Rounded.Explore, "发现音乐", { discoveryMenu = true }, enabled = !discovering)
-                DropdownMenu(discoveryMenu, { discoveryMenu = false }) {
+                GlassDropdownMenu(discoveryMenu, { discoveryMenu = false }) {
                     DropdownMenuItem({ Text("私人 FM") }, { discoveryMenu = false; onDiscover("fm") }, leadingIcon = { Icon(Icons.Rounded.Radio, null) })
                     DropdownMenuItem({ Text("每日推荐") }, { discoveryMenu = false; onDiscover("daily") }, leadingIcon = { Icon(Icons.Rounded.WbSunny, null) })
                 }
@@ -216,17 +224,18 @@ import kotlinx.coroutines.withContext
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Icon(if (favorites) Icons.Rounded.FavoriteBorder else Icons.Rounded.LibraryMusic, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
                     Text("登录后，音乐就在这里", style = MaterialTheme.typography.titleMedium)
-                    Button(onLogin) { Text("登录网易云") }
+                    GlassButton(onLogin) { Text("登录网易云") }
                 }
             }
         } else {
             AnimatedVisibility(!favorites && selected == null && searchExpanded, enter = expandVertically(), exit = shrinkVertically()) {
                 OutlinedTextField(query, { query = it },
-                Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 18.dp).focusRequester(searchFocus).testTag("online-search"),
+                Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 18.dp).liquidGlass(RoundedCornerShape(22.dp)).focusRequester(searchFocus).testTag("online-search"),
                 placeholder = { Text("搜索歌曲、艺人") }, leadingIcon = { Icon(Icons.Rounded.Search, null) },
                 trailingIcon = { if (query.isNotEmpty()) ActionIcon(Icons.Rounded.Close, "清空搜索", { query = ""; submitted = ""; offset = 0 }) },
-                singleLine = true, shape = RoundedCornerShape(18.dp),
-                colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
+                singleLine = true, shape = RoundedCornerShape(22.dp),
+                colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = Color.Transparent, focusedBorderColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent, focusedContainerColor = Color.Transparent),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = {
                     focus.clearFocus(); submitted = query.trim(); selectedKey = null; offset = 0; reload++
                 }))
@@ -271,6 +280,9 @@ import kotlinx.coroutines.withContext
                             }
                         } else LazyColumn(state = pageList, modifier = Modifier.fillMaxSize().testTag("online-tracks"),
                             contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = bottomInset)) {
+                            if (favorites && pageTracks.isNotEmpty()) item(key = "favorites-album-wall") {
+                                FavoritesAlbumWall(pageTracks.take(15))
+                            }
                             if (destination != null) item(key = "collection-header") {
                                 Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                     Cover(destination.cover, destination.title, Modifier.fillMaxWidth(.68f).widthIn(max = 280.dp).aspectRatio(1f)
@@ -284,7 +296,7 @@ import kotlinx.coroutines.withContext
                                 SongRow(track.song().copy(favorite = track.originalId in likes.ids || favorites && !likes.ready), currentId == "netease:${track.id}", {
                                     if (track.available) onPlay(pageTracks, index) else error = "当前账号暂时无法播放这首歌"
                                 }, { onFavorite(track) }, modifier = Modifier.animateItem().alpha(if (track.available) 1f else .5f),
-                                    favoriteEnabled = cloud.direct && likes.ready && track.originalId !in likes.pending)
+                                    favoriteEnabled = cloud.direct && likes.ready && track.originalId !in likes.pending, showFavorite = !favorites)
                             }
                             if (more && loadedKey == key) item {
                                 Spacer(Modifier.fillMaxWidth().height(20.dp))
@@ -292,6 +304,29 @@ import kotlinx.coroutines.withContext
                             if (pageTracks.isEmpty() && !loading && !state.refreshing && state.loaded && failure == null) item {
                                 ShelfEmpty(if (favorites) "还没有红心歌曲" else "没有找到歌曲")
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    }
+}
+
+/** Uses the liked playlist's newest-first prefix, not the unordered like-ID snapshot. */
+@Composable private fun FavoritesAlbumWall(tracks: List<CloudTrack>) {
+    GlassSurface(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 18.dp).testTag("favorites-album-wall")
+        .clearAndSetSemantics { contentDescription = "最近喜欢的 ${tracks.size} 首歌曲封面" }, shape = RoundedCornerShape(28.dp)) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val edge = ((maxWidth - 48.dp) / 5).coerceAtMost(68.dp)
+            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                tracks.chunked(5).forEachIndexed { row, covers ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.offset(x = if (row == 1) 3.dp else (-2).dp)) {
+                        covers.forEachIndexed { column, track ->
+                            Cover(track.cover, track.title, Modifier.size(edge).testTag("favorite-wall-${track.id}").graphicsLayer {
+                                rotationZ = ((row * 5 + column) % 5 - 2) * 2f
+                            })
                         }
                     }
                 }

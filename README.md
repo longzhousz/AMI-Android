@@ -1,14 +1,17 @@
 # AMI Android
 
-网易云在线音乐与沉浸式歌词播放器，保留本地音乐支持。运行只需要手机，无需电脑连接端或 root。Kotlin、Jetpack Compose、Media3；最低 Android 8.0（API 26），compile / target API 37。
+网易云在线音乐与沉浸式歌词播放器，保留本地音乐支持。运行只需要手机，无需电脑连接端或 root。Kotlin、Jetpack Compose、Media3；最低 Android 13（API 33），compile / target API 37。
 
 ## 下载与使用
 
-当前版本 **0.1.21**（versionCode 22）。
+当前版本 **0.2.1**（versionCode 23）。
 
 **[下载最新安装包](https://github.com/longzhousz/AMI-Android/releases/latest)** · [使用说明](docs/USER_GUIDE.md)
 
-安装发布页的 `AMI-Android-0.1.21-online-preview.apk`。它与此前云端在线版沿用同一包名、签名，可覆盖 0.1.14～0.1.20 并保留数据；其他包名或本地签名安装的兼容规则见使用说明。
+安装发布页的 `AMI-Android-0.2.1-online-preview.apk`。它与此前云端在线版沿用同一包名、签名，可在 Android 13 及以上覆盖 0.1.14～0.1.21 并保留数据；其他包名或本地签名安装的兼容规则见使用说明。
+
+- 全面采用开源 Backdrop 液态玻璃材质，悬浮栏随页面折射；专辑详情和播放页加入封面取色的流动光晕。
+- 「我喜欢」顶部展示最近 15 首的方形封面墙，歌曲行去掉重复红心。见 [材质与资源说明](docs/LIQUID_GLASS.md)。
 
 - 在线歌曲支持添加／取消网易云红心，播放页、列表与队列共用状态，成功后更新「我喜欢」。
 - 修复已登录账号的部分播放兼容路径，失败时显示具体原因；保持最高音质优先。

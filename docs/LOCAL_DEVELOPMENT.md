@@ -12,7 +12,7 @@ cd AMI-Android
 git branch --show-current
 ```
 
-输出应为 `main`。它包含 0.1.21 及其依赖的全部前序改动，不需要逐个合并 PR。不能使用 Git 时，直接在 GitHub 默认分支选择 Code → Download ZIP。
+输出应为 `main`。它包含 0.2.1 及其依赖的全部前序改动，不需要逐个合并 PR。不能使用 Git 时，直接在 GitHub 默认分支选择 Code → Download ZIP。
 
 已经克隆过且工作区干净时：
 
@@ -31,6 +31,7 @@ git pull --ff-only
 | Android Gradle Plugin | 9.4.1，Android Studio 版本需支持它 |
 | Android SDK Platform | `platforms;android-37.0`，compile / target API 37 |
 | Android Build Tools | `build-tools;36.0.0` |
+| 最低运行系统 | Android 13 / API 33（AGSL 液态玻璃） |
 | 手机连接 | `platform-tools` 中的 ADB |
 | Python | Python 3，仅诊断脚本需要 |
 

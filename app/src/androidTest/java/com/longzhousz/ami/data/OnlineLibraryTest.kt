@@ -167,6 +167,47 @@ class OnlineLibraryTest {
         assertEquals("晚风", requests.last { it.first == "cloudsearch/pc" }.second.getString("s"))
     }
 
+    @Test fun recentCoverWallUsesOnlyFifteenCachedTracksAndDoesNotBreakPaginationOrLikeUpdates() {
+        likedIds.clear(); likedIds.addAll((201..235).reversed().map(Int::toString))
+        val state = CloudLibraryState(library(), loaded = true)
+        val liked = state.library.liked!!
+        val folder = File(context.cacheDir, "qa-wall").apply { mkdirs() }
+        try {
+            val prefix = runBlocking(Dispatchers.IO) { cloud.tracks(liked) }
+            val cached = prefix.copy(tracks = prefix.tracks.mapIndexed { index, track ->
+                val cover = File(folder, "${track.id}.png")
+                val bitmap = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(bitmap)
+                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                paint.color = android.graphics.Color.HSVToColor(floatArrayOf(index * 29f % 360, .6f, .7f)); canvas.drawColor(paint.color)
+                paint.color = android.graphics.Color.HSVToColor(floatArrayOf((index * 29f + 60) % 360, .45f, .95f)); canvas.drawCircle(90f, 38f, 65f, paint)
+                paint.color = android.graphics.Color.WHITE; paint.alpha = 150; paint.textSize = 50f; canvas.drawText("${index + 1}", 12f, 112f, paint)
+                cover.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
+                track.copy(cover = cover.path)
+            })
+            cloud.savePage(true, liked.key, cached)
+            runBlocking(Dispatchers.IO) { cloud.refreshLikes() }
+            val metadataReads = requests.count { it.first == "v3/song/detail" }
+            compose.setContent { AmiTheme("light") { OnlineLibraryContent(cloud, state, true, null, {}, { _, _ -> }, {},
+                onFavorite = { runBlocking(Dispatchers.IO) { cloud.toggleLike(it) } }) } }
+            compose.onNodeWithContentDescription("最近喜欢的 15 首歌曲封面").assertIsDisplayed()
+            compose.onNodeWithTag("favorite-wall-235", useUnmergedTree = true).assertExists()
+            compose.onNodeWithTag("favorite-wall-221", useUnmergedTree = true).assertExists()
+            compose.onNodeWithTag("favorite-wall-220", useUnmergedTree = true).assertDoesNotExist()
+            screenshot("glass-favorites-wall")
+            assertEquals("The wall reuses the loaded prefix", metadataReads, requests.count { it.first == "v3/song/detail" })
+            compose.onNodeWithContentDescription("红心歌曲 235：取消喜欢").assertDoesNotExist()
+            runBlocking(Dispatchers.IO) { cloud.toggleLike(cached.tracks.first()) }
+            compose.waitUntil(5000) { "235" !in cloud.likes.value.ids }
+            compose.onNodeWithTag("favorite-wall-235", useUnmergedTree = true).assertDoesNotExist()
+            compose.onNodeWithTag("favorite-wall-220", useUnmergedTree = true).assertExists()
+            compose.onNodeWithTag("online-tracks").performScrollToIndex(28)
+            compose.waitUntil(10000) { cloud.savedPage(true, liked.key)?.tracks?.size == 34 }
+            compose.onNodeWithTag("online-tracks").performScrollToIndex(34)
+            compose.onNodeWithText("红心歌曲 201").assertIsDisplayed()
+        } finally { folder.deleteRecursively() }
+    }
+
     @Test fun explicitFavoritesRefreshFetchesAgainAndShelfRefreshMovesTheFirstCard() {
         var state by mutableStateOf(CloudLibraryState(library(), loaded = true))
         var request by mutableIntStateOf(0)
@@ -241,7 +282,7 @@ class OnlineLibraryTest {
         }
     }
 
-    @Test fun searchAndFavoritesHeartsShareStateWithoutRefetchingOrStartingPlayback() {
+    @Test fun searchHeartsUpdateTheCleanFavoritesListWithoutRefetchingOrStartingPlayback() {
         val shelf = library()
         runBlocking { cloud.refreshLikes(); cloud.rememberQueue(cloud.tracks(shelf.liked!!).tracks) }
         val queue = cloud.catalog.value
@@ -266,7 +307,8 @@ class OnlineLibraryTest {
             compose.runOnIdle { favorites = true }
             compose.waitUntil(10000) { visible("搜索歌曲 301") }
             val reads = requests.count { it.first in setOf("v6/playlist/detail", "v3/song/detail") }
-            compose.onNodeWithContentDescription("搜索歌曲 301：取消喜欢").performClick()
+            compose.onNodeWithContentDescription("搜索歌曲 301：取消喜欢").assertDoesNotExist()
+            runBlocking(Dispatchers.IO) { cloud.toggleLike(cloud.savedPage(true, shelf.liked!!.key)!!.tracks.first { it.id == "301" }) }
             compose.waitUntil(10000) { !visible("搜索歌曲 301") && cloud.likes.value.pending.isEmpty() }
             compose.runOnIdle {
                 assertTrue(played.isEmpty()); assertSame(queue, cloud.catalog.value)

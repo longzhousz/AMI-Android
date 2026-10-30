@@ -79,14 +79,14 @@ import kotlin.math.roundToInt
             Text("我的聆听", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
             Box {
                 ActionIcon(Icons.Rounded.MoreVert, "聆听选项", { menu = true })
-                DropdownMenu(menu, { menu = false }) {
+                GlassDropdownMenu(menu, { menu = false }) {
                     DropdownMenuItem({ Text("统计说明") }, { menu = false; dialog = "info" })
                     DropdownMenuItem({ Text("清除聆听记录") }, { menu = false; dialog = "clear" })
                 }
             }
         }
         Row(Modifier.padding(horizontal = 24.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            .liquidGlass(RoundedCornerShape(24.dp)), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             ListeningScale.entries.forEach { value ->
                 Box(Modifier.weight(1f).padding(4.dp).clip(RoundedCornerShape(20.dp))
                     .background(if (value == scale) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
@@ -116,7 +116,7 @@ import kotlin.math.roundToInt
                     }
                 }
                 if (visible == null) item {
-                    Surface(Modifier.fillMaxWidth().height(230.dp), shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.primaryContainer) {}
+                    GlassSurface(Modifier.fillMaxWidth().height(230.dp), shape = RoundedCornerShape(28.dp)) {}
                 } else {
                     item(key = "overview") { ListeningOverview(visible) }
                     if (visible.totalMillis == 0L) item {
@@ -190,28 +190,29 @@ import kotlin.math.roundToInt
             yearRange = minOf(first.year, today.year)..today.year, selectableDates = object : SelectableDates {
                 override fun isSelectableDate(utcTimeMillis: Long): Boolean = Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneOffset.UTC).toLocalDate().let { it >= first && it <= today }
             })
-        DatePickerDialog({ dates = false }, confirmButton = { TextButton({
+        DatePickerDialog({ dates = false }, modifier = Modifier.liquidGlass(RoundedCornerShape(28.dp), prominent = true), colors = DatePickerDefaults.colors(containerColor = Color.Transparent), confirmButton = { TextButton({
             picker.selectedDateMillis?.let { anchor = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toEpochDay() }; dates = false
         }, enabled = picker.selectedDateMillis != null) { Text("查看") } }, dismissButton = { TextButton({ dates = false }) { Text("取消") } }) {
-            DatePicker(picker, title = { Text("选择日期", Modifier.padding(24.dp)) }, headline = null, showModeToggle = false)
+            DatePicker(picker, title = { Text("选择日期", Modifier.padding(24.dp)) }, headline = null, showModeToggle = false,
+                colors = DatePickerDefaults.colors(containerColor = Color.Transparent))
         }
     }
-    if (dialog == "info") AlertDialog({ dialog = null }, title = { Text("关于我的聆听") }, text = { Text(
+    if (dialog == "info") GlassAlertDialog({ dialog = null }, title = { Text("关于我的聆听") }, text = { Text(
         "只记录启用新版之后 AMI 内的实际播放时间。暂停、缓冲和拖动进度不计时，倍速播放十分钟仍记十分钟。\n\n在线与缓存播放合并；有可靠标识的本地歌曲也会归到同一首。合作曲优先归首位署名艺人，旧曲目信息不足时保留原署名。\n\n上期对比按已进入的日历天数计算，本期今日仍在累计；记录不足时不作对比。记录仅保存在本机，清缓存不会清除。异常退出可能遗漏最后约十秒。"
     ) }, confirmButton = { TextButton({ dialog = null }) { Text("知道了") } })
-    if (dialog == "clear") AlertDialog({ dialog = null }, title = { Text("清除全部聆听记录？") },
+    if (dialog == "clear") GlassAlertDialog({ dialog = null }, title = { Text("清除全部聆听记录？") },
         text = { Text("周报、月报和年报将从下一次播放重新积累。歌曲、账号、缓存与译文会保留。") },
         confirmButton = { TextButton({ dialog = null; scope.launch {
             try { store.clear(); anchor = today.toEpochDay(); refresh++ } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { error = "聆听记录未能清除，请重试" }
         } }) { Text("清除记录", color = MaterialTheme.colorScheme.error) } }, dismissButton = { TextButton({ dialog = null }) { Text("取消") } })
-    detail?.let { (title, body) -> AlertDialog({ detail = null }, title = { Text(title) }, text = { Text(body) }, confirmButton = { TextButton({ detail = null }) { Text("关闭") } }) }
+    detail?.let { (title, body) -> GlassAlertDialog({ detail = null }, title = { Text(title) }, text = { Text(body) }, confirmButton = { TextButton({ detail = null }) { Text("关闭") } }) }
 }
 
 private val SeenCharts = compositionLocalOf<MutableSet<String>> { mutableSetOf() }
 
 @Composable private fun ListeningOverview(report: ListeningReport) {
-    Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.fillMaxWidth().testTag("listening-overview")) {
+    GlassSurface(shape = RoundedCornerShape(28.dp), prominent = true, modifier = Modifier.fillMaxWidth().testTag("listening-overview")) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("${when (report.period.scale) { ListeningScale.WEEK -> "这一周"; ListeningScale.MONTH -> "这一月"; ListeningScale.YEAR -> "这一年" }}的音乐时光", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
             val hours = report.totalMillis / 3_600_000
@@ -248,7 +249,7 @@ private val SeenCharts = compositionLocalOf<MutableSet<String>> { mutableSetOf()
             if (seen.add(key)) progress.animateTo(1f, tween(360)) else progress.snapTo(1f)
         }
     }
-    Surface(Modifier.fillMaxWidth().testTag("listening-$id"), shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    GlassSurface(Modifier.fillMaxWidth().testTag("listening-$id"), shape = RoundedCornerShape(24.dp)) {
         Column(Modifier.padding(20.dp)) {
             Text(number, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             Text(title, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.titleLarge)

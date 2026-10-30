@@ -29,7 +29,7 @@ internal fun TranslationModelDialog(
     var custom by remember { mutableStateOf(state.selection.takeUnless { it.startsWith("auto:") }.orEmpty()) }
     val selected = if (selection == "custom") custom.trim() else selection
     val resolved = runCatching { TranslationModels.resolve(selected, state.models) }.getOrNull()
-    AlertDialog(dismiss, title = { Text("翻译模型") }, text = {
+    GlassAlertDialog(dismiss, title = { Text("翻译模型") }, text = {
         Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()).testTag("translation-model-dialog")) {
             Text("跟随官方最新模型，无需更新 AMI。已有译文会保留，重新翻译时使用当前模型。", style = MaterialTheme.typography.bodyMedium)
             Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {

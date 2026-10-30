@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,6 +30,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
@@ -117,6 +120,8 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         val snackbar = remember { SnackbarHostState() }
         val queueSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val scope = rememberCoroutineScope()
+        val contentBackdrop = rememberLayerBackdrop()
+        val playerBackdrop = rememberLayerBackdrop()
         LaunchedEffect(current?.id, loading) {
             if (!loading && current == null) { fullPlayer = false; queue = false }
         }
@@ -126,10 +131,14 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         BackHandler(page in 1..2 && selectedAlbum == null && !fullPlayer && !queue) { page = 0 }
         BackHandler(page >= 4 && selectedAlbum == null && !fullPlayer && !queue) { page = 2 }
         LaunchedEffect(page) { if (page in 4..5) model.repository.load() }
+        CompositionLocalProvider(LocalGlassBackdrop provides contentBackdrop) {
         Box(Modifier.fillMaxSize()) {
+            GlassBackdropHost(Modifier.fillMaxSize().layerBackdrop(contentBackdrop)) {
+            CompositionLocalProvider(LocalVisualsActive provides !fullPlayer) {
             Scaffold(
                 modifier = if (fullPlayer) Modifier.clearAndSetSemantics {} else Modifier,
-                snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = floatingInset)) },
+                containerColor = Color.Transparent,
+                snackbarHost = { GlassSnackbarHost(snackbar, Modifier.padding(bottom = floatingInset)) },
             ) { padding ->
                 Column(Modifier.fillMaxSize().padding(padding)) {
                     AnimatedVisibility(importing.running) {
@@ -147,7 +156,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                     }, label = "app-destination") { destination ->
                         val album = albumsByKey[destination.albumKey]
                         when {
-                            album != null -> Box(Modifier.padding(bottom = floatingInset)) { AlbumScreen(album, playback.id, model, { albumKey = null }, { remove = it }) }
+                            album != null -> AlbumScreen(album, playback.id, model, { albumKey = null }, { remove = it }, floatingInset)
                             destination.page == 2 -> pageState.SaveableStateProvider("settings") {
                                 Box(Modifier.padding(bottom = floatingInset)) { SettingsScreen(model, onImport, onNotifications, onBridgeFolder, onLyricsFolder, onLocalLibrary = { page = 4 }, onListening = { page = 6 }) }
                             }
@@ -177,6 +186,8 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                     }
                 }
             }
+            }
+            }
             Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
                 .then(if (fullPlayer) Modifier.clearAndSetSemantics {} else Modifier), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (current != null) MiniPlayer(current, playback, model.player, clockEnabled = !fullPlayer,
@@ -187,7 +198,10 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                         onToggle = { model.act("player.toggle") { model.player.toggle() } },
                         onNext = { model.act("player.next") { model.player.next() } })
                 if (current != null) Spacer(Modifier.height(8.dp))
-                Surface(shape = RoundedCornerShape(32.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 6.dp) {
+                GlassSurface(shape = RoundedCornerShape(32.dp), prominent = true) {
+                    val tab = if (page >= 2) 2 else page
+                    val indicator by animateDpAsState(8.dp + 60.dp * tab, spring(dampingRatio = .78f, stiffness = 450f), label = "glass-tab")
+                    Box(Modifier.offset(x = indicator, y = 4.dp).size(52.dp).liquidGlass(CircleShape))
                     Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(Triple("曲库", Icons.Rounded.LibraryMusic, 0), Triple("我喜欢", Icons.Rounded.FavoriteBorder, 1), Triple("设置", Icons.Rounded.Tune, 2)).forEach { (label, icon, index) ->
                             val active = page == index || index == 2 && page >= 4
@@ -197,12 +211,12 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                                 lastNavPage = if (doubleTap) -1 else index; lastNavTap = now
                                 page = index; albumKey = null; focus.clearFocus()
                                 if (doubleTap && index < 2) model.requestOnlineRefresh(index)
-                            }, modifier = Modifier.size(52.dp).background(if (active) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent, CircleShape)
+                            }, modifier = Modifier.size(52.dp)
                                 .semantics {
                                     selected = active
                                     if (index < 2) customActions = listOf(CustomAccessibilityAction("刷新$label") { model.requestOnlineRefresh(index); true })
                                 }) {
-                                Icon(icon, label, tint = if (active) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+                                Icon(icon, label, tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -215,11 +229,13 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                     onOpen = {}, onToggle = {}, onNext = {})
             }) { close, dragHandle ->
                 Box(Modifier.fillMaxSize()) {
-                    PlayerScreen(current, model, close, { queue = true }, { onLyricFile(current) }, dragHandle, lyricsPage)
-                    SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 64.dp))
+                    PlayerScreen(current, model, close, { queue = true }, { onLyricFile(current) }, dragHandle, lyricsPage, playerBackdrop)
+                    GlassSnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 64.dp))
                 }
             }
-            if (queue) ModalBottomSheet({ queue = false }, sheetState = queueSheet) {
+            if (queue) ModalBottomSheet({ queue = false }, sheetState = queueSheet, containerColor = Color.Transparent,
+                modifier = Modifier.liquidGlass(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp), prominent = true,
+                    backdrop = if (fullPlayer) playerBackdrop else contentBackdrop)) {
                 Text("播放队列 · ${playback.queue.size}", Modifier.padding(horizontal = 24.dp, vertical = 16.dp), style = MaterialTheme.typography.titleLarge)
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 560.dp).padding(horizontal = 20.dp).navigationBarsPadding()) {
                     itemsIndexed(playback.queue, key = { index, id -> "$index:$id" }) { index, id ->
@@ -235,9 +251,10 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                 }
             }
             remove?.let { song ->
-                AlertDialog({ remove = null }, title = { Text("从曲库移除？") }, text = { Text("《${song.title}》将从 AMI 曲库和播放队列中移除。原始音频会保留，重新扫描可再次导入。") },
+                GlassAlertDialog({ remove = null }, title = { Text("从曲库移除？") }, text = { Text("《${song.title}》将从 AMI 曲库和播放队列中移除。原始音频会保留，重新扫描可再次导入。") },
                     confirmButton = { TextButton({ model.remove(song); remove = null }) { Text("移除") } }, dismissButton = { TextButton({ remove = null }) { Text("取消") } })
             }
+        }
         }
     }
 }
@@ -282,7 +299,7 @@ private data class AppDestination(val page: Int, val albumKey: String?)
             Spacer(Modifier.weight(1f))
             Box {
                 ActionIcon(Icons.Rounded.Sort, "排序", { sorting = true }, tint = if (recent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                DropdownMenu(sorting, { sorting = false }) {
+                GlassDropdownMenu(sorting, { sorting = false }) {
                     DropdownMenuItem({ Text("默认排序") }, { recent = false; sorting = false }, trailingIcon = { if (!recent) Icon(Icons.Rounded.Check, null) })
                     DropdownMenuItem({ Text("最近导入") }, { recent = true; sorting = false }, trailingIcon = { if (recent) Icon(Icons.Rounded.Check, null) })
                 }
@@ -330,9 +347,9 @@ private data class AppDestination(val page: Int, val albumKey: String?)
 ) {
     val clock = rememberPlaybackClock(player, playback, clockEnabled)
     val duration = playback.duration.takeIf { it > 0 } ?: song.duration
-    Surface(modifier.fillMaxWidth()
+    GlassSurface(modifier.fillMaxWidth()
         .onGloballyPositioned { onBounds(it.boundsInRoot()) }.testTag("mini-player")
-        .clip(RoundedCornerShape(20.dp)).clickable(onClick = onOpen), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 2.dp) {
+        .clip(RoundedCornerShape(20.dp)).clickable(onClick = onOpen), shape = RoundedCornerShape(20.dp), prominent = true) {
         Column {
             Row(Modifier.padding(start = 9.dp, top = 7.dp, bottom = 7.dp, end = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                 Cover(song.cover, song.album, Modifier.size(46.dp).clip(RoundedCornerShape(9.dp))); Spacer(Modifier.width(12.dp))
@@ -340,23 +357,24 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                     Column { Text(track.first, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(track.second, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
                 }
                 if (playback.buffering) CircularProgressIndicator(Modifier.size(24.dp).padding(4.dp), strokeWidth = 2.dp)
-                ActionIcon(if (playback.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playback.playing) "暂停" else "播放", onToggle)
-                ActionIcon(Icons.Rounded.SkipNext, "下一首", onNext)
+                ActionIcon(if (playback.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playback.playing) "暂停" else "播放", onToggle, glass = false)
+                ActionIcon(Icons.Rounded.SkipNext, "下一首", onNext, glass = false)
             }
             LinearProgressIndicator(progress = { if (duration > 0) (clock.value.toFloat() / duration).coerceIn(0f, 1f) else 0f }, modifier = Modifier.fillMaxWidth().height(2.dp), color = MaterialTheme.colorScheme.primary, trackColor = Color.Transparent, drawStopIndicator = {})
         }
     }
 }
 
-@Composable private fun AlbumScreen(album: Album, currentId: String?, model: AmiViewModel, onBack: () -> Unit, onRemove: (Song) -> Unit) {
+@Composable private fun AlbumScreen(album: Album, currentId: String?, model: AmiViewModel, onBack: () -> Unit, onRemove: (Song) -> Unit, bottomInset: androidx.compose.ui.unit.Dp) {
     var reorder by remember { mutableStateOf(false) }
+    GlassBackdropHost(Modifier.fillMaxSize(), background = { PlayerBackdrop(album.cover) }) {
     Column {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             ActionIcon(Icons.Rounded.ArrowBack, "返回曲库", onBack)
             Spacer(Modifier.weight(1f))
             TextButton({ reorder = true }) { Icon(Icons.Rounded.SwapVert, null, Modifier.size(18.dp)); Text("曲序") }
         }
-        LazyColumn(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)) {
+        LazyColumn(contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 8.dp, bottom = bottomInset)) {
             item {
                 Column(Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -368,8 +386,8 @@ private data class AppDestination(val page: Int, val albumKey: String?)
                         }
                     }
                     Row(Modifier.padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button({ model.play(album.songs) }, Modifier.weight(1f), contentPadding = PaddingValues(14.dp)) { Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("播放") }
-                        FilledTonalButton({ model.play(album.songs.shuffled()) }, Modifier.weight(1f), contentPadding = PaddingValues(14.dp)) { Icon(Icons.Rounded.Shuffle, null); Spacer(Modifier.width(6.dp)); Text("随机播放") }
+                        Button({ model.play(album.songs) }, Modifier.weight(1f).liquidGlass(CircleShape), colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.primary), contentPadding = PaddingValues(14.dp)) { Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("播放") }
+                        FilledTonalButton({ model.play(album.songs.shuffled()) }, Modifier.weight(1f).liquidGlass(CircleShape), colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.Transparent), contentPadding = PaddingValues(14.dp)) { Icon(Icons.Rounded.Shuffle, null); Spacer(Modifier.width(6.dp)); Text("随机播放") }
                     }
                 }
             }
@@ -380,4 +398,5 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         }
     }
     if (reorder) ReorderDialog(album, { reorder = false }, { ids -> model.reorder(ids); reorder = false })
+    }
 }

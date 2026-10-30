@@ -1,6 +1,6 @@
 # AMI 播放流程
 
-当前应用 **0.1.21 / versionCode 22**，沿用单窗口播放页、Media3 服务与原有数据。封面回看、逐字歌词、推荐和专辑共享转场的本轮实现见 [体验说明](LISTENING_EXPERIENCE.md)。
+当前应用 **0.2.1 / versionCode 23**，沿用单窗口播放页、Media3 服务与原有数据。封面回看、逐字歌词、推荐和专辑共享转场的本轮实现见 [体验说明](LISTENING_EXPERIENCE.md)。
 
 ## 页面与时钟
 

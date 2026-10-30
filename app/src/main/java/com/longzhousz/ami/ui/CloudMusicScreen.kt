@@ -105,7 +105,7 @@ import kotlinx.coroutines.launch
                     Icon(Icons.Rounded.CloudQueue, null, Modifier.size(52.dp), tint = MaterialTheme.colorScheme.primary)
                     Text("连接你的网易云音乐", style = MaterialTheme.typography.titleLarge)
                     Text(if (cloud.direct) "登录后，在 AMI 浏览你的歌单并直接播放。" else "在 Windows 连接端完成登录，再将连接地址粘贴到这里。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Button({ if (cloud.direct) signIn() else pairing = true }, Modifier.testTag("cloud-connect")) { Text(if (cloud.direct) "登录网易云" else "连接网易云") }
+                    GlassButton({ if (cloud.direct) signIn() else pairing = true }, Modifier.testTag("cloud-connect")) { Text(if (cloud.direct) "登录网易云" else "连接网易云") }
                 }
             }
         } else {
@@ -163,7 +163,7 @@ import kotlinx.coroutines.launch
         }
     }
     if (pairing && cloud.direct) {
-        AlertDialog(onDismissRequest = { pairing = false }, title = { Text("网易云账号") }, text = { Text(nickname.ifBlank { "登录你的网易云账号，在 AMI 内播放。" }) },
+        GlassAlertDialog(onDismissRequest = { pairing = false }, title = { Text("网易云账号") }, text = { Text(nickname.ifBlank { "登录你的网易云账号，在 AMI 内播放。" }) },
             confirmButton = { TextButton({ pairing = false; signIn() }) { Text("重新登录") } },
             dismissButton = { TextButton({ scope.launch { onDisconnect(); cloud.disconnect(); pairing = false; nickname = "" } }) { Text("退出登录") } })
     }
@@ -182,7 +182,7 @@ import kotlinx.coroutines.launch
             if (granted) connect()
             else { busy = false; pairError = "连接电脑需要局域网权限，请允许附近设备访问后重试" }
         }
-        AlertDialog(onDismissRequest = { if (!busy) pairing = false }, title = { Text("连接网易云") }, text = {
+        GlassAlertDialog(onDismissRequest = { if (!busy) pairing = false }, title = { Text("连接网易云") }, text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("复制 Windows 连接端显示的连接地址。手机和电脑需在同一可信局域网，电脑窗口需保持打开。", style = MaterialTheme.typography.bodyMedium)
                 OutlinedTextField(address, { address = it }, Modifier.testTag("cloud-address"), label = { Text("电脑端连接地址") },
