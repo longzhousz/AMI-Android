@@ -30,9 +30,9 @@ import kotlinx.coroutines.launch
     val close = {
         if (!closing) {
             closing = true
-            scope.launch {
-                try { sheet.hide(); if (!sheet.isVisible) onDismiss() }
-                finally { closing = false }
+            scope.launch { sheet.hide() }.invokeOnCompletion {
+                closing = false
+                if (!sheet.isVisible) onDismiss()
             }
         }
         Unit

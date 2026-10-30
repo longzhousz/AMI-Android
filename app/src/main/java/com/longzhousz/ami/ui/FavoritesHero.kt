@@ -29,7 +29,7 @@ import com.longzhousz.ami.core.CloudTrack
             val columns = when { tracks.size > 18 -> 6; tracks.size > 9 -> 5; tracks.size > 3 -> 4; else -> tracks.size.coerceAtLeast(1) }
             val edge = width / columns * 1.18f
             Column(Modifier.align(Alignment.TopCenter).offset(y = (-24).dp)
-                .requiredWidth(edge * columns).graphicsLayer { rotationZ = -9f }
+                .requiredSize(edge * columns, edge * ((tracks.size + columns - 1) / columns)).graphicsLayer { rotationZ = -9f }
                 .testTag("favorites-album-wall").clearAndSetSemantics { contentDescription = "最近喜欢的 ${tracks.size} 首歌曲封面" },
                 horizontalAlignment = Alignment.CenterHorizontally) {
                 tracks.chunked(columns).forEach { row ->

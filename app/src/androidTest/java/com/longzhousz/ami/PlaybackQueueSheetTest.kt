@@ -92,6 +92,9 @@ class PlaybackQueueSheetTest {
         }
         compose.mainClock.advanceTimeBy(1800)
         compose.mainClock.autoAdvance = true
+        // Native fling resolution may finish dismissal or restore the expanded sheet. Both
+        // must release the interaction lock; a dismissed dialog must also be safe to reopen.
+        compose.runOnIdle { if (!show) show = true }
         compose.onNodeWithContentDescription("关闭播放队列").assertIsDisplayed().performClick()
         compose.onNodeWithTag("queue-surface").assertDoesNotExist()
     }

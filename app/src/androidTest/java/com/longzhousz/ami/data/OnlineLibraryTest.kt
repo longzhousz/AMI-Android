@@ -558,6 +558,7 @@ class OnlineLibraryTest {
         assertEquals(enlarged.height, reopened.height, 2f)
         screenshot("album-reopened-top")
         compose.onNodeWithContentDescription("返回曲库").performClick()
+        compose.onNodeWithTag("collection-album:1021").assertIsDisplayed()
         compose.mainClock.autoAdvance = false
         compose.onNodeWithTag("collection-album:1021").performClick()
         compose.mainClock.advanceTimeBy(96)
