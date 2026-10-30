@@ -4,7 +4,7 @@
 
 ## 下载与使用
 
-当前开发版本 **0.1.19**（versionCode 20）。
+当前版本 **0.1.19**（versionCode 20）。
 
 **[下载最新安装包](https://github.com/longzhousz/AMI-Android/releases/latest)** · [使用说明](docs/USER_GUIDE.md)
 
