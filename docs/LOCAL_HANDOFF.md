@@ -17,8 +17,9 @@
 - 本地 **100 项 JVM** 测试、Lint、Debug、仪器测试及优化 MusicPreview 构建通过。
 - [Android 13／17 完整回归](https://github.com/longzhousz/AMI-Android/actions/runs/41032259727) 各 **130 项**，无失败、错误或跳过，后台播放恢复检查通过；日志中的结果检查器已核验数量。
 - 合成曲目截图已检查玻璃、封面墙、播放页和专辑页；新增测试检查墙的 15 首上限、前缀缓存、红心修补、分页，以及光晕运动与暂停。
-- 原签名 APK 的 Android 13 检查已通过；Android 17 曾在模拟器开机高负载期间触发 FocusEvent 输入超时 ANR。正在 [相同 APK 的独立验证](https://github.com/longzhousz/AMI-Android/actions/runs/41034739772) 中先等待系统负载稳定，再检查启动与导航；不隐藏 AMI 无响应、不放宽应用输入超时。
-- **此时 0.2.1 仍是草稿，尚未替换正式最新发布。** 最终发布须确认上述独立检查两套系统通过并核对附件。
+- [同一份签名 APK 检查](https://github.com/longzhousz/AMI-Android/actions/runs/41034739772) 在 Android 13／17 完成两次启动、导航、设置、周／月／年图鉴与日期选择，未记录 AMI ANR 或崩溃；每套系统的 XML 证据与事件日志均由发布门禁再次校验。
+- Android 17 最初在模拟器开机满载期出现 FocusEvent 超时。最终检查先等待系统 CPU 负载稳定，再使用完全相同的 APK；没有隐藏 AMI 无响应、放宽应用超时或减少玻璃效果。该结果不代替真机启动与帧率测量。
+- [发布校验](https://github.com/longzhousz/AMI-Android/actions/runs/41035691917) 核对两套系统各 130 项、全部签名 UI 证据、无应用 ANR／崩溃、源码后续无应用修改，以及下载附件的大小和 SHA-256；确认通过后发布 **android-v0.2.1-preview** 为最新版本。
 
 没有连接真实手机或网易云账号。模拟器结果不能证明 vivo X300 的实际帧率、续航、耳机输出或原子岛表现。
 
@@ -34,6 +35,8 @@ v2 签名、16 KiB 对齐、嵌入源码及许可资产已核对。证书 SHA-25
 
 Android 13 及以上可以覆盖云端 0.1.14～0.1.21，保留登录、设置、曲库、歌词与聆听记录；不卸载、不清数据。旧版交付见 [0.1.21 归档](archive/LOCAL_HANDOFF_0.1.21.md)。
 
-## 继续交付
+## 交付与后续
 
-当前云端本地执行环境断开，代码及草稿附件已保存到 GitHub；诊断在临时 `release/0.2.1-upload` 分支的 Actions 完成。临时分支包含分发附件和合成截图，不合入 main。完成验证后发布 `android-v0.2.1-preview`、归档旧发布，并清理临时分支。恢复本地环境后，将下载目录旧版 0.1.21 文件移入历史归档，保留并校验原文件；不重新签名或重建已核对的 APK。
+[0.2.1 最新发布](https://github.com/longzhousz/AMI-Android/releases/tag/android-v0.2.1-preview) 已公开，APK、中文说明和校验清单与已验证产物一致；0.1.21 旧发布转为草稿，Git 历史与标签保留。临时 `release/0.2.1-upload` 分支已删除，分发二进制与合成诊断截图没有合入 main。
+
+云端本地执行环境在交付中途断开，后续诊断、验证和发布通过 GitHub Actions 完成。源码与证据以本页链接为准，本地 scratch 状态文件可能停留在中间阶段。恢复该执行环境后，再将下载目录旧版 0.1.21 的三个文件原样移入历史归档并核对原摘要；这不影响 GitHub 当前下载。不要重新签名或重建已核对的 APK。
