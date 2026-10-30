@@ -1,10 +1,10 @@
 # AMI 文档
 
-当前版本 **0.1.20 / versionCode 21**。本目录只保留当前使用与开发说明；旧版交付、旧界面和已退出主流程的试验放入 [archive/](archive/README.md)。
+当前版本 **0.1.21 / versionCode 22**。本目录只保留当前使用与开发说明；旧版交付、旧界面和已退出主流程的试验放入 [archive/](archive/README.md)。
 
 | 需要了解什么 | 文档 |
 | --- | --- |
-| 安装、登录、曲库、歌词、音质、缓存 | [使用说明](USER_GUIDE.md) |
+| 安装、登录、曲库、红心、歌词、音质、缓存 | [使用说明](USER_GUIDE.md) |
 | 当前代码、安装包身份、验证结果、后续方向 | [当前交接](LOCAL_HANDOFF.md) |
 | Windows／macOS／Linux 构建与真机采集 | [本地开发](LOCAL_DEVELOPMENT.md) |
 | 页面记忆、换歌、歌词跟随与后台调度 | [播放流程](PLAYBACK_FLOW.md) |
