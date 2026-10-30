@@ -8,6 +8,24 @@ collect_logs() {
   adb exec-out screencap -p > preview-smoke-results/screen.png
 }
 trap collect_logs EXIT
+# Let the emulator finish boot-time graphics and package work before measuring app startup.
+# Never dismiss AMI ANRs or relax its input timeout.
+python3 - <<'PY'
+import subprocess, time
+def cpu():
+    row=subprocess.check_output(['adb','shell','cat','/proc/stat'],text=True,timeout=10).splitlines()[0].split()
+    values=list(map(int,row[1:]))
+    return sum(values),values[3]+values[4]
+stable=0
+for attempt in range(30):
+    first=cpu();time.sleep(2);second=cpu()
+    total=second[0]-first[0]
+    busy=1-(second[1]-first[1])/max(total,1)
+    print(f'Emulator boot CPU busy={busy:.1%}',flush=True)
+    stable=stable+1 if busy<.60 else 0
+    if stable>=3:break
+else:raise RuntimeError('Emulator did not settle before app startup')
+PY
 apk=$(find preview-apk -name '*.apk' -print -quit)
 test -n "$apk"
 package=$("$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest application-id "$apk")
