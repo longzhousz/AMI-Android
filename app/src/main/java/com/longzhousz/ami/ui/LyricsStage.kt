@@ -71,6 +71,9 @@ import kotlin.math.abs
         val fontSize = when { maxWidth < 360.dp -> 28.sp; maxWidth > 600.dp -> 36.sp; else -> 32.sp }
         LaunchedEffect(songId, lines, active, following, viewport, translation, dragging) {
             if (!following || dragging || !synced) { relocation.snapTo(1f); return@LaunchedEffect }
+            // BoxWithConstraints subcomposes during measurement. Wait for the next frame before
+            // scrollToItem can force another measure pass (Compose 1.10 / Android 17).
+            withFrameNanos { }
             val target = active.coerceAtLeast(0)
             val visible = list.layoutInfo.visibleItemsInfo.any { it.index == target }
             val jump = !initiallyPositioned || !visible

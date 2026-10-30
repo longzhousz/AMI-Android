@@ -39,7 +39,8 @@ internal val ColorScheme.isDark: Boolean get() = surface.luminance() < .5f
 ) {
     Box(modifier) {
         Box(Modifier.matchParentSize().layerBackdrop(backdrop)) { background() }
-        CompositionLocalProvider(LocalGlassBackdrop provides backdrop) { content() }
+        CompositionLocalProvider(LocalGlassBackdrop provides backdrop,
+            LocalContentColor provides MaterialTheme.colorScheme.onSurface) { content() }
     }
 }
 
@@ -86,7 +87,11 @@ private fun Modifier.drawBehindGlassFallback(shape: CornerBasedShape, tint: Colo
     shape: CornerBasedShape = RoundedCornerShape(24.dp),
     prominent: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
-) = Box(modifier.liquidGlass(shape, prominent), content = content)
+) {
+    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+        Box(modifier.liquidGlass(shape, prominent), content = content)
+    }
+}
 
 @Composable internal fun GlassAlertDialog(
     onDismissRequest: () -> Unit,

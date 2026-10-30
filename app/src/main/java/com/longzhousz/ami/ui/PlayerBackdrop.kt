@@ -88,12 +88,16 @@ internal fun clearArtworkColorCache() { ArtworkColorCache.evictAll() }
     val accent = animateColorAsState(colors.accent, tween(AmiMotion.TRACK_MILLIS), label = "artwork-accent")
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val active = LocalVisualsActive.current && lifecycle.isAtLeast(Lifecycle.State.RESUMED)
+    val lastFrame = remember { floatArrayOf(0f) }
+    val startPhase = remember(active) { lastFrame[0] }
     val phase = if (active) rememberInfiniteTransition(label = "artwork-aurora").animateFloat(
-        initialValue = 0f, targetValue = (Math.PI * 2).toFloat(),
+        initialValue = startPhase, targetValue = startPhase + (Math.PI * 2).toFloat(),
         animationSpec = infiniteRepeatable(tween(26000, easing = LinearEasing), RepeatMode.Restart), label = "aurora-phase")
-        else remember { mutableFloatStateOf(0f) }
+        else remember(active) { mutableFloatStateOf(startPhase) }
     Canvas(Modifier.fillMaxSize()) {
         val t = phase.value
+        // Not snapshot state: retain the last rendered angle without scheduling a recomposition.
+        lastFrame[0] = t % (Math.PI * 2).toFloat()
         drawRect(Brush.verticalGradient(if (dark) listOf(top.value, bottom.value)
             else listOf(lerp(Color.White, glow.value, .10f), lerp(Color(0xFFF7F8FC), accent.value, .07f))))
         fun halo(color: Color, x: Float, y: Float, radius: Float, alpha: Float) {

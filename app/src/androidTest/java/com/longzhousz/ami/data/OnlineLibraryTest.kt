@@ -1,6 +1,7 @@
 package com.longzhousz.ami.data
 
 import android.graphics.Bitmap
+import coil.imageLoader
 import androidx.compose.runtime.*
 import androidx.compose.material3.Surface
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -194,6 +195,10 @@ class OnlineLibraryTest {
             compose.onNodeWithTag("favorite-wall-235", useUnmergedTree = true).assertExists()
             compose.onNodeWithTag("favorite-wall-221", useUnmergedTree = true).assertExists()
             compose.onNodeWithTag("favorite-wall-220", useUnmergedTree = true).assertDoesNotExist()
+            compose.waitUntil(15000) {
+                val keys = context.imageLoader.memoryCache?.keys.orEmpty()
+                cached.tracks.take(15).all { track -> keys.any { it.key.contains(track.cover!!) } }
+            }
             screenshot("glass-favorites-wall")
             assertEquals("The wall reuses the loaded prefix", metadataReads, requests.count { it.first == "v3/song/detail" })
             compose.onNodeWithContentDescription("红心歌曲 235：取消喜欢").assertDoesNotExist()
