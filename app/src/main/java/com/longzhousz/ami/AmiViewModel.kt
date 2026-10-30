@@ -231,11 +231,12 @@ class AmiViewModel internal constructor(app: Application,
         likesJob = viewModelScope.launch {
             try { cloud.refreshLikes(force) }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (expired: com.longzhousz.ami.data.NeteaseLoginExpired) { message.value = expired.message }
-            catch (_: Exception) { message.value = "红心状态暂时无法同步，请下拉刷新后重试" }
+            catch (expired: com.longzhousz.ami.data.NeteaseLoginExpired) { if (cloud.likes.value.session == session) message.value = expired.message }
+            catch (_: Exception) { if (cloud.likes.value.session == session) message.value = "红心状态暂时无法同步，请下拉刷新后重试" }
         }
     }
     private fun changeCloudLike(block: suspend () -> Unit) {
+        val session = cloud.likes.value.session
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 block()
@@ -243,8 +244,8 @@ class AmiViewModel internal constructor(app: Application,
                     cloud.likes.value.ids.isNotEmpty() && cloud.likes.value.pending.isEmpty()) refreshOnlineLibrary()
             }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (expired: com.longzhousz.ami.data.NeteaseLoginExpired) { message.value = expired.message }
-            catch (_: Exception) { message.value = "红心未能确认同步，请刷新后重试" }
+            catch (expired: com.longzhousz.ami.data.NeteaseLoginExpired) { if (cloud.likes.value.session == session) message.value = expired.message }
+            catch (_: Exception) { if (cloud.likes.value.session == session) message.value = "红心未能确认同步，请刷新后重试" }
         }
     }
     fun favoriteCloud(track: CloudTrack) = changeCloudLike { cloud.toggleLike(track) }
