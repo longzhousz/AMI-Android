@@ -1,6 +1,6 @@
 # 历史归档
 
-归档日期：2026-10-29。当前版本为 **0.1.19**，请先阅读 [当前文档](../README.md) 和 [当前交接](../LOCAL_HANDOFF.md)。本目录保存旧界面、旧验证结论与不再推荐的试验方式；文中的“当前版本”只指当时的版本。
+归档日期：2026-10-30。当前版本为 **0.1.20**，请先阅读 [当前文档](../README.md) 和 [当前交接](../LOCAL_HANDOFF.md)。本目录保存旧界面、旧验证结论与不再推荐的试验方式；文中的“当前版本”只指当时的版本。
 
 | 历史范围 | 记录 |
 | --- | --- |
@@ -17,12 +17,13 @@
 | 0.1.16 下拉交接与封面缓存 | [PLAYER_HANDOFF.md](PLAYER_HANDOFF.md) |
 | 0.1.17 页面记忆与播放衔接 | [PLAYBACK_FLOW_0.1.17.md](PLAYBACK_FLOW_0.1.17.md) |
 | 0.1.18 封面回显、逐字歌词、发现音乐与交付 | [实现与验证](LISTENING_EXPERIENCE_0.1.18.md)、[交接](LOCAL_HANDOFF_0.1.18.md) |
+| 0.1.19 周／月／年聆听图鉴与交付 | [交接](LOCAL_HANDOFF_0.1.19.md) |
 
 当前实现与证据见 [PLAYBACK_FLOW.md](../PLAYBACK_FLOW.md) 和 [本轮体验说明](../LISTENING_EXPERIENCE.md)，旧文档中的菜单、包名、测试数量和缓存调度说明不覆盖当前规则。
 
 ## GitHub 整理
 
-main 保留当前完整应用源码与文档，不放安装包副本或按版本复制的源码目录。最新 APK 位于 [Releases](https://github.com/longzhousz/AMI-Android/releases/latest)。旧版 0.1.3、0.1.17、0.1.18 的发布与原附件转为草稿保留，对应标签仍可用于旧版兼容性追溯。当前公开版本为 0.1.19，Git 历史不重写。
+main 保留当前完整应用源码与文档，不放安装包副本或按版本复制的源码目录。最新 APK 位于 [Releases](https://github.com/longzhousz/AMI-Android/releases/latest)。旧版 0.1.3、0.1.17、0.1.18、0.1.19 的发布与原附件转为草稿保留，对应标签仍可用于旧版兼容性追溯。当前公开版本为 0.1.20，Git 历史不重写。
 
 下列旧分支的提交都已包含在 main，旧草稿 PR #3～#6 关闭、分支入口删除；Git 提交历史不重写。需要时可从对应提交重新建分支：
 

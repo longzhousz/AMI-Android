@@ -1,6 +1,6 @@
-# 封面、逐字歌词与发现音乐：0.1.19
+# 封面、逐字歌词与发现音乐：0.1.20
 
-应用 0.1.19 / versionCode 20，继续使用 `com.longzhousz.ami.musicpreview`，本地曲库 schema 5，在线音频缓存 schema 1 不变。手机独立运行；保留原有封面、歌词、迷你播放器和数据。
+应用 0.1.20 / versionCode 21，继续使用 `com.longzhousz.ami.musicpreview`，本地曲库 schema 5，在线音频缓存 schema 1 不变。手机独立运行；保留原有封面、歌词、迷你播放器和数据。
 
 ## 曲库封面回看
 
@@ -36,7 +36,7 @@ YRC 按同一段文字及邻近时间匹配原 LRC 行，只附加逐字／词�
 
 ## 验证
 
-0.1.19 保留本页的封面、逐字歌词、FM 与共享转场，新增 [我的聆听](MY_LISTENING.md)。本轮 87 项 JVM、Lint、双系统各 123 项完整回归及实际分发包检查通过；最终源码、安装包身份与执行结果见 [当前交接](LOCAL_HANDOFF.md)。0.1.18 的完整证据保存在 [归档](archive/LISTENING_EXPERIENCE_0.1.18.md)。
+0.1.20 保留本页的封面、逐字歌词、FM、共享转场，以及从 0.1.19 提供的 [我的聆听](MY_LISTENING.md)。本轮 94 项 JVM、Lint、双系统各 124 项完整回归及实际分发包检查通过；最终源码、安装包身份与执行结果见 [当前交接](LOCAL_HANDOFF.md)。0.1.18 的完整证据保存在 [归档](archive/LISTENING_EXPERIENCE_0.1.18.md)。
 
 当前未连接 vivo X300，真实账号、歌曲覆盖率、触感、耳机输出与原子岛仍需手机确认。
 
