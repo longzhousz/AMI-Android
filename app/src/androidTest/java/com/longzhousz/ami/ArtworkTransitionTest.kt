@@ -24,6 +24,9 @@ import com.longzhousz.ami.ui.AmiTheme
 import com.longzhousz.ami.ui.PlayerActions
 import com.longzhousz.ami.ui.PlayerContent
 import com.longzhousz.ami.ui.Cover
+import com.longzhousz.ami.ui.LocalVisualsActive
+import com.longzhousz.ami.ui.preparePlayerArtwork
+import com.longzhousz.ami.ui.clearArtworkColorCache
 import coil.Coil
 import coil.ImageLoader
 import coil.imageLoader
@@ -209,6 +212,76 @@ class ArtworkTransitionTest {
             compose.runOnIdle { shown = false }
             release.complete(Unit); Coil.setImageLoader(original); loader.shutdown()
             files.forEach { it.delete() }; app.artwork.clearMemory()
+        }
+    }
+
+    @Test fun preparedNeighborTransitionsTheCoverTitleAndPaletteThroughIntermediateFrames() {
+        val original = context.imageLoader
+        val red = 0xffd84840.toInt(); val blue = 0xff426fc4.toInt()
+        val prefix = "https://p1.music.126.net/qa-transition-${System.nanoTime()}"
+        val loader = ImageLoader.Builder(context).components { add(object : Fetcher.Factory<Uri> {
+            override fun create(data: Uri, options: Options, imageLoader: ImageLoader): Fetcher? {
+                if (!data.toString().startsWith(prefix)) return null
+                return object : Fetcher {
+                    override suspend fun fetch(): SourceResult {
+                        val bitmap = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888).apply {
+                            eraseColor(if (data.lastPathSegment?.endsWith("red.png") == true) red else blue)
+                        }
+                        val bytes = ByteArrayOutputStream().use { output ->
+                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output); bitmap.recycle(); output.toByteArray()
+                        }
+                        return SourceResult(ImageSource(Buffer().write(bytes), context), "image/png", DataSource.NETWORK)
+                    }
+                }
+            }
+        }) }.build()
+        var song by mutableStateOf(fixture().copy(id = "switch-red", title = "红色唱片", cover = "$prefix-red.png"))
+        var shown by mutableStateOf(true)
+        val output = File(context.filesDir, "qa/performance").apply { mkdirs() }
+        fun rootFrame(name: String): Int {
+            val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+            File(output, "switch-$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            return bitmap.getPixel(8, bitmap.height / 2)
+        }
+        fun coverColor(): Int {
+            val bitmap = compose.onNodeWithTag("player-cover").captureToImage().asAndroidBitmap()
+            return bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)
+        }
+        Coil.setImageLoader(loader)
+        clearArtworkColorCache()
+        try {
+            runBlocking(Dispatchers.IO) { preparePlayerArtwork(context, song.cover) }
+            compose.setContent { if (shown) AmiTheme("dark") {
+                CompositionLocalProvider(LocalVisualsActive provides false) {
+                    PlayerContent(song, PlaybackState(duration = 90000), null, false, PlayerActions())
+                }
+            } }
+            compose.waitUntil(10000) { coverColor() == red }
+            compose.mainClock.advanceTimeBy(1000)
+            val start = rootFrame("start")
+            val next = song.copy(id = "switch-blue", title = "蓝色唱片", cover = "$prefix-blue.png")
+            runBlocking(Dispatchers.IO) { preparePlayerArtwork(context, next.cover) }
+            assertNotNull(loader.memoryCache?.get(coil.memory.MemoryCache.Key(next.cover!!)))
+            compose.mainClock.autoAdvance = false
+            compose.runOnIdle { song = next }
+            compose.mainClock.advanceTimeBy(160)
+            val middle = rootFrame("160ms")
+            compose.mainClock.advanceTimeBy(1000)
+            val end = rootFrame("end")
+            compose.onNodeWithText("蓝色唱片").assertIsDisplayed()
+            compose.onNodeWithText("红色唱片").assertDoesNotExist()
+            assertEquals(blue, coverColor())
+            assertTrue(android.graphics.Color.red(start) > android.graphics.Color.blue(start))
+            assertTrue(android.graphics.Color.blue(end) > android.graphics.Color.red(end))
+            fun distance(a: Int, b: Int) = kotlin.math.abs(android.graphics.Color.red(a) - android.graphics.Color.red(b)) +
+                kotlin.math.abs(android.graphics.Color.blue(a) - android.graphics.Color.blue(b))
+            assertTrue("Palette must have a real intermediate frame", distance(start, middle) > 5 && distance(middle, end) > 5)
+            File(output, "switch-palette.json").writeText(org.json.JSONObject().put("start", start).put("160ms", middle)
+                .put("end", end).put("phoneFrameBenchmark", false).toString(2))
+        } finally {
+            compose.mainClock.autoAdvance = true
+            compose.runOnIdle { shown = false }
+            Coil.setImageLoader(original); loader.shutdown(); clearArtworkColorCache()
         }
     }
 }

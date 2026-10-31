@@ -9,6 +9,22 @@ import androidx.media3.session.SessionToken
 import com.longzhousz.ami.core.Song
 import kotlinx.coroutines.flow.MutableStateFlow
 
+enum class PlayMode(val label: String, val repeat: Int, val shuffle: Boolean = false) {
+    Ordered("顺序播放", Player.REPEAT_MODE_OFF),
+    Loop("列表循环", Player.REPEAT_MODE_ALL),
+    One("单曲循环", Player.REPEAT_MODE_ONE),
+    Shuffle("随机播放", Player.REPEAT_MODE_ALL, true);
+
+    companion object {
+        fun from(shuffle: Boolean, repeat: Int): PlayMode = when {
+            repeat == Player.REPEAT_MODE_ONE -> One
+            shuffle -> Shuffle
+            repeat == Player.REPEAT_MODE_ALL -> Loop
+            else -> Ordered
+        }
+    }
+}
+
 data class PlaybackState(
     val connected: Boolean = false, val id: String? = null, val playing: Boolean = false,
     val position: Long = 0, val duration: Long = 0, val buffering: Boolean = false,
@@ -74,8 +90,7 @@ class PlayerConnection(private val context: Context) {
     fun currentPosition(expectedId: String? = state.value.id): Long = controller?.let {
         if (it.currentMediaItem?.mediaId == expectedId) it.currentPosition.coerceAtLeast(0) else 0L
     } ?: state.value.position.takeIf { state.value.id == expectedId } ?: 0L
-    fun shuffle() { controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }
-    fun repeat() { controller?.let { it.repeatMode = when (it.repeatMode) { Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL; Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE; else -> Player.REPEAT_MODE_OFF } } }
+    fun mode(mode: PlayMode) { controller?.let { it.repeatMode = mode.repeat; it.shuffleModeEnabled = mode.shuffle } }
     fun jump(index: Int) { controller?.let { it.seekTo(index, 0); it.play() } }
     fun remove(id: String) {
         controller?.let { c -> (c.mediaItemCount - 1 downTo 0).filter { c.getMediaItemAt(it).mediaId == id }.forEach { c.removeMediaItem(it) } }

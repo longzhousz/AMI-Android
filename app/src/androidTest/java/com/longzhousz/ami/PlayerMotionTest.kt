@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.playback.PlaybackState
+import com.longzhousz.ami.playback.PlayMode
 import com.longzhousz.ami.ui.AmiTheme
 import com.longzhousz.ami.ui.PlayerActions
 import com.longzhousz.ami.ui.PlayerContent
@@ -28,6 +29,32 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class PlayerMotionTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun transportHasOneModeMenuWithFourNamedChoicesAndOneQueueEntry() {
+        var playback by mutableStateOf(PlaybackState())
+        var queues = 0
+        val song = Song("transport", "file:///unused", folder = "qa", title = "控制与留白", duration = 90000)
+        compose.setContent {
+            AmiTheme("dark") { PlayerContent(song, playback, null, false,
+                PlayerActions(mode = { playback = playback.copy(repeat = it.repeat, shuffle = it.shuffle) }, queue = { queues++ })) }
+        }
+        compose.onAllNodesWithContentDescription("播放队列").assertCountEquals(1)
+        compose.onNodeWithContentDescription("开启随机播放").assertDoesNotExist()
+        for (mode in PlayMode.entries) {
+            val current = PlayMode.from(playback.shuffle, playback.repeat)
+            compose.onNodeWithContentDescription("播放模式：${current.label}").performClick()
+            PlayMode.entries.forEach { compose.onNodeWithText(it.label).assertIsDisplayed() }
+            compose.onNodeWithText("播完队列后停止").assertIsDisplayed()
+            compose.onNodeWithText("播完队列后从头继续").assertIsDisplayed()
+            compose.onNodeWithText(mode.label).performClick()
+            compose.onNodeWithContentDescription("播放模式：${mode.label}").assertIsDisplayed()
+        }
+        val play = compose.onNodeWithContentDescription("播放").fetchSemanticsNode().boundsInRoot
+        val row = compose.onNodeWithTag("player-transport").fetchSemanticsNode().boundsInRoot
+        assertEquals("Primary playback control remains centered", row.center.x, play.center.x, 2f)
+        compose.onNodeWithContentDescription("播放队列").performClick()
+        compose.runOnIdle { assertEquals(1, queues) }
+    }
 
     private fun sheet(visible: MutableState<Boolean>, onDismiss: () -> Unit = {}) {
         compose.setContent {

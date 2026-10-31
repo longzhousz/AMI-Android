@@ -103,7 +103,7 @@ class AmiViewModel internal constructor(app: Application,
             }
         }
         viewModelScope.launch {
-            combine(player.state.map { Triple(it.id, it.nextId, it.advancing) }.distinctUntilChanged(), songSources,
+            combine(player.state.map { Triple(it.id, it.nextId, it.advancing && it.repeat != androidx.media3.common.Player.REPEAT_MODE_ONE) }.distinctUntilChanged(), songSources,
                 translationModels.state.map { it.selection }.distinctUntilChanged(), translationStyle, uiActive) { playback, library, selection, style, active ->
                 val song=library.first.songsById[playback.first] ?: library.second[playback.first]
                 val next=library.first.songsById[playback.second] ?: library.second[playback.second]
@@ -138,7 +138,16 @@ class AmiViewModel internal constructor(app: Application,
                 try {
                     if (request.prefetch) {
                         delay(700) // Let the current song and opening animation settle first.
-                        request.next?.takeIf { it.id != song.id }?.let { loadLyrics(it) }
+                        request.next?.takeIf { it.id != song.id }?.let { next ->
+                            kotlinx.coroutines.coroutineScope {
+                                launch {
+                                    try { com.longzhousz.ami.ui.preparePlayerArtwork(getApplication(), next.cover) }
+                                    catch (cancelled: CancellationException) { throw cancelled }
+                                    catch (_: Exception) { /* Optional artwork cannot affect audio/lyrics. */ }
+                                }
+                                loadLyrics(next)
+                            }
+                        }
                     }
                 }
                 catch (cancelled: CancellationException) { throw cancelled }

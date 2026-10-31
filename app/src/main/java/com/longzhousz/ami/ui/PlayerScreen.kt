@@ -7,8 +7,14 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -21,10 +27,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.longzhousz.ami.AmiViewModel
@@ -34,6 +43,7 @@ import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.core.isCloudSong
 import com.longzhousz.ami.core.durationLabel
 import com.longzhousz.ami.playback.PlaybackState
+import com.longzhousz.ami.playback.PlayMode
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
@@ -41,8 +51,8 @@ import kotlin.math.abs
 internal data class PlayerActions(
     val close: () -> Unit = {}, val queue: () -> Unit = {}, val lyricFile: () -> Unit = {},
     val favorite: () -> Unit = {}, val seek: (Long) -> Unit = {}, val toggle: () -> Unit = {},
-    val previous: () -> Unit = {}, val next: () -> Unit = {}, val shuffle: () -> Unit = {},
-    val repeat: () -> Unit = {}, val translate: () -> Unit = {}, val retranslate: () -> Unit = translate, val restoreLyrics: () -> Unit = {},
+    val previous: () -> Unit = {}, val next: () -> Unit = {}, val mode: (PlayMode) -> Unit = {},
+    val translate: () -> Unit = {}, val retranslate: () -> Unit = translate, val restoreLyrics: () -> Unit = {},
     val external: Boolean = false, val settings: (() -> Unit)? = null,
     val canSeek: Boolean = true, val canPrevious: Boolean = true, val canNext: Boolean = true, val canToggle: Boolean = true,
     val canFavorite: Boolean = true,
@@ -68,8 +78,7 @@ internal data class PlayerActions(
         toggle = { model.act("player.toggle") { model.player.toggle() } },
         previous = { model.act("player.previous") { model.player.previous() } },
         next = { model.act("player.next") { model.player.next() } },
-        shuffle = { model.act("player.shuffle") { model.player.shuffle() } },
-        repeat = { model.act("player.repeat") { model.player.repeat() } },
+        mode = { mode -> model.act("player.mode") { model.player.mode(mode) } },
         translate = { model.translate(song) }, retranslate = { model.translate(song, force = true) },
         restoreLyrics = { model.clearLyrics(song) },
         canFavorite = !song.isCloudSong() || model.cloud.direct && likes.ready && song.neteaseId !in likes.pending,
@@ -170,9 +179,10 @@ private data class PlayerStage(val song: Song, val translation: List<String>?, v
     onLyrics: () -> Unit, position: () -> Long, modifier: Modifier,
 ) {
     BoxWithConstraints(modifier) {
-        val horizontal = if (maxWidth < 300.dp) 16.dp else 28.dp
-        val compact = maxWidth - horizontal * 2 < 264.dp
-        val iconSize = if (compact) 40.dp else 48.dp
+        val horizontal = if (maxWidth < 360.dp) 16.dp else 28.dp
+        val compact = maxWidth - horizontal * 2 < 300.dp
+        var modeMenu by remember { mutableStateOf(false) }
+        val mode = PlayMode.from(playback.shuffle, playback.repeat)
         Column(Modifier.fillMaxWidth().padding(horizontal = horizontal).padding(bottom = 6.dp)) {
             Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(thumbnail)
@@ -189,40 +199,76 @@ private data class PlayerStage(val song: Song, val translation: List<String>?, v
                 }
                 if (!actions.external) ActionIcon(if (song.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     if (song.favorite) "取消喜欢" else "加入喜欢", actions.favorite,
-                    tint = if (song.favorite) FavoriteRed else Color.White.copy(alpha = .55f), enabled = actions.canFavorite)
+                    tint = if (song.favorite) FavoriteRed else Color.White.copy(alpha = .55f), enabled = actions.canFavorite, glass = false)
             }
             val duration = playback.duration.takeIf { it > 0 } ?: song.duration
             PlayerTimeline(song.id, duration, playback.buffering, position, actions.seek, actions.canSeek)
-            CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides iconSize) {
-                Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    if (actions.external) Spacer(Modifier.size(iconSize)) else ActionIcon(Icons.Rounded.Shuffle, if (playback.shuffle) "关闭随机播放" else "开启随机播放", actions.shuffle,
-                        tint = Color.White.copy(alpha = if (playback.shuffle) 1f else .4f), modifier = Modifier.size(iconSize))
-                    ActionIcon(Icons.Rounded.SkipPrevious, "上一首", actions.previous, tint=Color.White.copy(alpha=if(actions.canPrevious)1f else .25f), enabled=actions.canPrevious, modifier = Modifier.size(iconSize))
-                    FilledIconButton(actions.toggle, Modifier.size(if (compact) 66.dp else 72.dp).liquidGlass(CircleShape, prominent = true),
-                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color.Transparent, contentColor = Color.White), shape = CircleShape, enabled=actions.canToggle) {
-                        AnimatedContent(playback.playing, transitionSpec = {
-                            (fadeIn(tween(140)) + scaleIn(tween(180), initialScale = .8f)) togetherWith
-                                (fadeOut(tween(100)) + scaleOut(tween(140), targetScale = .8f))
-                        }, label = "transport-toggle") { playing ->
-                            Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "暂停" else "播放", Modifier.size(36.dp))
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 10.dp).testTag("player-transport"),
+                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                if (actions.external) Spacer(Modifier.size(48.dp)) else Box {
+                    TransportButton(mode.icon(), "播放模式：${mode.label}", { modeMenu = true }, tint = Color.White.copy(alpha = .65f))
+                    GlassDropdownMenu(modeMenu, { modeMenu = false }) {
+                        PlayMode.entries.forEach { option ->
+                            DropdownMenuItem(text = {
+                                Column {
+                                    Text(option.label)
+                                    if (option == PlayMode.Ordered || option == PlayMode.Loop) Text(
+                                        if (option == PlayMode.Ordered) "播完队列后停止" else "播完队列后从头继续", fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }, leadingIcon = { Icon(option.icon(), null) },
+                                trailingIcon = { if (mode == option) Icon(Icons.Rounded.Check, "当前模式") },
+                                onClick = { modeMenu = false; actions.mode(option) })
                         }
                     }
-                    ActionIcon(Icons.Rounded.SkipNext, "下一首", actions.next, tint=Color.White.copy(alpha=if(actions.canNext)1f else .25f), enabled=actions.canNext, modifier = Modifier.size(iconSize))
-                    if (actions.external) Spacer(Modifier.size(iconSize)) else ActionIcon(if (playback.repeat == 1) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                        when (playback.repeat) { 1 -> "单曲循环"; 2 -> "列表循环"; else -> "顺序播放" }, actions.repeat,
-                        tint = Color.White.copy(alpha = if (playback.repeat > 0) 1f else .4f), modifier = Modifier.size(iconSize))
                 }
+                TransportButton(Icons.Rounded.SkipPrevious, "上一首", actions.previous, enabled = actions.canPrevious,
+                    size = if (compact) 48.dp else 56.dp, iconSize = 34.dp)
+                TransportButton(if (playback.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    if (playback.playing) "暂停" else "播放", actions.toggle, enabled = actions.canToggle,
+                    primary = true, size = if (compact) 72.dp else 80.dp, iconSize = 40.dp)
+                TransportButton(Icons.Rounded.SkipNext, "下一首", actions.next, enabled = actions.canNext,
+                    size = if (compact) 48.dp else 56.dp, iconSize = 34.dp)
+                TransportButton(if (actions.external) Icons.Rounded.OpenInNew else Icons.Rounded.QueueMusic,
+                    if (actions.external) "打开网易云音乐" else "播放队列", actions.queue, tint = Color.White.copy(alpha = .65f))
             }
-            Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(32.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
                 ActionIcon(if (showLyrics) Icons.Rounded.Album else Icons.Rounded.Lyrics,
-                    if (showLyrics) "切换到封面" else "切换到歌词", onLyrics, tint = Color.White.copy(alpha = .85f))
-                if (showLyrics && song.lyrics.isNotBlank()) ActionIcon(Icons.Rounded.Translate,
+                    if (showLyrics) "切换到封面" else "切换到歌词", onLyrics, tint = Color.White.copy(alpha = .65f), glass = false)
+                ActionIcon(Icons.Rounded.Translate,
                     if (translated) if (showTranslation) "隐藏译文" else "显示译文" else "翻译歌词", onTranslation,
-                    enabled = !translating, tint = Color.White.copy(alpha = if (translated && !showTranslation) .45f else .85f))
-                else Spacer(Modifier.size(48.dp))
-                ActionIcon(if (actions.external) Icons.Rounded.OpenInNew else Icons.Rounded.QueueMusic,
-                    if (actions.external) "打开网易云音乐" else "播放队列", actions.queue, tint = Color.White.copy(alpha = .85f))
+                    enabled = !translating && song.lyrics.isNotBlank(), tint = Color.White.copy(alpha = if (translated && !showTranslation) .35f else .65f), glass = false)
             }
+        }
+    }
+}
+
+private fun PlayMode.icon(): ImageVector = when (this) {
+    PlayMode.Ordered -> Icons.Rounded.ArrowForward
+    PlayMode.Loop -> Icons.Rounded.Repeat
+    PlayMode.One -> Icons.Rounded.RepeatOne
+    PlayMode.Shuffle -> Icons.Rounded.Shuffle
+}
+
+/** A single solid primary button; the four supporting controls have no individual frames. */
+@Composable private fun TransportButton(icon: ImageVector, label: String, onClick: () -> Unit,
+    enabled: Boolean = true, primary: Boolean = false, size: Dp = 48.dp, iconSize: Dp = 24.dp,
+    tint: Color = Color.White,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale = animateFloatAsState(if (pressed) .92f else 1f, spring(dampingRatio = .75f, stiffness = 600f), label = "transport-press")
+    val surface = if (primary) Modifier.shadow(14.dp, CircleShape, ambientColor = Color.Black.copy(alpha = .14f), spotColor = Color.Black.copy(alpha = .20f))
+        .background(Color.White.copy(alpha = if (enabled) .94f else .30f), CircleShape) else Modifier
+    IconButton(onClick, Modifier.size(size).graphicsLayer { scaleX = scale.value; scaleY = scale.value }.then(surface),
+        enabled = enabled, interactionSource = interaction) {
+        AnimatedContent(icon to label, transitionSpec = {
+            (fadeIn(tween(140)) + scaleIn(tween(180), initialScale = .85f)) togetherWith
+                (fadeOut(tween(100)) + scaleOut(tween(140), targetScale = .85f))
+        }, label = "transport-icon") { target ->
+            Icon(target.first, target.second, Modifier.size(iconSize),
+                tint = (if (primary) Color(0xFF202431) else tint).copy(alpha = if (enabled) (if (primary) 1f else tint.alpha) else .28f))
         }
     }
 }
@@ -233,6 +279,11 @@ private data class SeekPreview(val serial: Int, val position: Long)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun PlayerTimeline(songId: String, duration: Long, buffering: Boolean, position: () -> Long, onSeek: (Long) -> Unit, seekEnabled: Boolean = true) {
     var seeking by remember(songId) { mutableStateOf<Float?>(null) }
+    val interaction = remember { MutableInteractionSource() }
+    val dragged by interaction.collectIsDraggedAsState()
+    val pressed by interaction.collectIsPressedAsState()
+    val thumbSize by animateDpAsState(if (dragged || pressed) 13.dp else 6.dp, spring(dampingRatio = .9f, stiffness = 500f), label = "seek-thumb")
+    val trackSize by animateDpAsState(if (dragged || pressed) 5.dp else 3.dp, spring(dampingRatio = .9f, stiffness = 500f), label = "seek-track")
     val displayed = (seeking ?: position().toFloat()).coerceIn(0f, duration.coerceAtLeast(1).toFloat())
     val colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White.copy(alpha = .8f), inactiveTrackColor = Color.White.copy(alpha = .15f))
     Column {
@@ -241,13 +292,13 @@ private data class SeekPreview(val serial: Int, val position: Long)
                 seeking?.toLong()?.let(onSeek)
                 seeking = null
             },
-            valueRange = 0f..duration.coerceAtLeast(1).toFloat(), enabled = duration > 0 && seekEnabled, colors = colors,
+            valueRange = 0f..duration.coerceAtLeast(1).toFloat(), enabled = duration > 0 && seekEnabled, colors = colors, interactionSource = interaction,
             thumb = {
-                Box(Modifier.width(8.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(8.dp).background(Color.White.copy(alpha = if (duration > 0) 1f else .3f), CircleShape))
+                Box(Modifier.width(16.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(thumbSize).background(Color.White.copy(alpha = if (duration > 0) 1f else .3f), CircleShape))
                 }
             },
-            track = { SliderDefaults.Track(it, Modifier.height(3.dp), enabled = duration > 0 && seekEnabled, colors = colors,
+            track = { SliderDefaults.Track(it, Modifier.height(trackSize), enabled = duration > 0 && seekEnabled, colors = colors,
                 drawStopIndicator = null, thumbTrackGapSize = 0.dp, trackInsideCornerSize = 0.dp) },
             modifier = Modifier.fillMaxWidth().height(40.dp).testTag("playback-seek"))
         Row(Modifier.fillMaxWidth()) {

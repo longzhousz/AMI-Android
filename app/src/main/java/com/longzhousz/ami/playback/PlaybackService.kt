@@ -10,6 +10,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import com.longzhousz.ami.core.isCloudSong
@@ -26,6 +27,8 @@ import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.core.ListeningCounter
 import com.longzhousz.ami.core.ListeningTrack
 import com.longzhousz.ami.core.listeningTrack
+import com.longzhousz.ami.core.ShuffleTrack
+import com.longzhousz.ami.core.balancedShuffle
 import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
@@ -73,6 +76,9 @@ class PlaybackService : MediaLibraryService() {
     private var restored = false
     private val restoration = CompletableDeferred<Unit>()
     private var queue: List<String> = emptyList()
+    private var shuffledQueue: List<String>? = null
+    private var shuffleFirst = -1
+    private val recentTracks = ArrayDeque<String>()
     private var positionJob: Job? = null
     private val listening = ListeningCounter()
     private var statsItem: MediaItem? = null
@@ -142,8 +148,9 @@ class PlaybackService : MediaLibraryService() {
             setAudioAttributes(AudioAttributes.Builder().setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).setUsage(C.USAGE_MEDIA).build(), true)
             setHandleAudioBecomingNoisy(true)
             setWakeMode(C.WAKE_MODE_LOCAL)
-            repeatMode = repository.prefs.getInt("repeat", Player.REPEAT_MODE_ALL)
-            shuffleModeEnabled = repository.prefs.getBoolean("shuffle", false)
+            val mode = PlayMode.from(repository.prefs.getBoolean("shuffle", false), repository.prefs.getInt("repeat", Player.REPEAT_MODE_ALL))
+            repeatMode = mode.repeat
+            shuffleModeEnabled = mode.shuffle
         }
         radio = RadioQueue(repository.cloud, player, scope)
         session = MediaLibrarySession.Builder(this, player, callback)
@@ -156,6 +163,12 @@ class PlaybackService : MediaLibraryService() {
         })
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                mediaItem?.mediaId?.let { id ->
+                    if (recentTracks.lastOrNull() != id) recentTracks.addLast(id)
+                    while (recentTracks.size > 20) recentTracks.removeFirst()
+                }
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && player.shuffleModeEnabled && player.currentMediaItemIndex == shuffleFirst)
+                    shuffledQueue = null
                 cacheRetry?.cancel(); cacheRetryId = null
                 repository.cloud.recoveringAudio = null
                 repository.cloud.playbackFailure = null
@@ -165,6 +178,7 @@ class PlaybackService : MediaLibraryService() {
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 val id = player.currentMediaItem?.mediaId ?: return
+                repository.cloud.forgetStream(id)
                 if (repository.cloud.audioQuality.value[id]?.cached != true || cacheRetryId == id) {
                     if (id.startsWith("netease:")) {
                         repository.cloud.playbackFailure = id to neteasePlaybackError(error)
@@ -193,6 +207,7 @@ class PlaybackService : MediaLibraryService() {
             }
             override fun onEvents(player: Player, events: Player.Events) {
                 if (player.playerError == null) repository.cloud.playbackFailure = null
+                updateShuffleOrder()
                 updatePreloading()
                 if (restored) radio.update()
                 repository.setPlaybackBusy(player.playbackState == Player.STATE_BUFFERING, player.isLoading)
@@ -212,8 +227,9 @@ class PlaybackService : MediaLibraryService() {
             // Commands received while disk restoration ran take precedence over the old queue.
             if (player.mediaItemCount == 0) {
                 val (items, location) = snapshot.restore(songs)
-                player.repeatMode = snapshot.repeat.coerceIn(Player.REPEAT_MODE_OFF, Player.REPEAT_MODE_ALL)
-                player.shuffleModeEnabled = snapshot.shuffle
+                val mode = PlayMode.from(snapshot.shuffle, snapshot.repeat.coerceIn(Player.REPEAT_MODE_OFF, Player.REPEAT_MODE_ALL))
+                player.repeatMode = mode.repeat
+                player.shuffleModeEnabled = mode.shuffle
                 if (items.isNotEmpty()) {
                     player.setMediaItems(items.map { it.mediaItem() }, location.first, location.second)
                     if (!items[location.first].isCloudSong() && !repository.prefs.getBoolean("phoneFollowing",false)) player.prepare()
@@ -228,10 +244,32 @@ class PlaybackService : MediaLibraryService() {
         }
     }
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun updateShuffleOrder() {
+        if (!player.shuffleModeEnabled) { shuffledQueue = null; return }
+        if (queue.isEmpty() || shuffledQueue == queue) return
+        val tracks = (0 until player.mediaItemCount).map { index ->
+            val item = player.getMediaItemAt(index)
+            val meta = item.mediaMetadata
+            fun normalized(value: String) = value.trim().lowercase(java.util.Locale.ROOT)
+            val artist = meta.extras?.getString("ami.stats.artistId")?.let { "id:$it" }
+                ?: normalized(meta.extras?.getString("ami.stats.artistName") ?: meta.artist?.toString().orEmpty())
+            val album = meta.extras?.getString("ami.stats.albumId")?.let { "id:$it" }
+                ?: normalized(meta.albumTitle?.toString().orEmpty()).takeIf { it.isNotEmpty() }?.let { "$artist:$it" }.orEmpty()
+            ShuffleTrack(item.mediaId, artist, album)
+        }
+        val order = balancedShuffle(tracks, player.currentMediaItemIndex, recentTracks.toList())
+        shuffledQueue = queue
+        shuffleFirst = order.first()
+        player.setShuffleOrder(DefaultShuffleOrder(order, kotlin.random.Random.nextLong()))
+    }
+
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun updatePreloading() {
-        // Media3 preloads one neighboring item only after current loading has priority. Keep
-        // just a small in-memory head start; paused players release the extra preload pool.
-        val target = if (player.isPlaying && player.mediaItemCount > 1 && player.repeatMode != Player.REPEAT_MODE_ONE) 2_000_000L else C.TIME_UNSET
+        // Native preloading gives the current song priority. Grow just the one next item's
+        // memory buffer near the end; reuse the existing ten-second checkpoint, no new timer.
+        val remaining = player.duration.takeIf { it > 0 }?.minus(player.currentPosition)
+        val target = if (player.isPlaying && player.hasNextMediaItem() && player.repeatMode != Player.REPEAT_MODE_ONE)
+            if (remaining != null && remaining <= 40_000) 5_000_000L else 2_000_000L else C.TIME_UNSET
         if (player.preloadConfiguration.targetPreloadDurationUs != target)
             player.preloadConfiguration = ExoPlayer.PreloadConfiguration(target)
     }
@@ -241,7 +279,7 @@ class PlaybackService : MediaLibraryService() {
         positionJob = scope.launch {
             while (player.isPlaying) {
                 delay(10_000)
-                if (player.isPlaying) { updateListening(); checkpoint() }
+                if (player.isPlaying) { updateListening(); updatePreloading(); checkpoint() }
             }
         }
     }

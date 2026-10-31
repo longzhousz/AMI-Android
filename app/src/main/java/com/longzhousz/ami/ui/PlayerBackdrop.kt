@@ -2,13 +2,15 @@ package com.longzhousz.ami.ui
 
 import android.graphics.BitmapFactory
 import android.util.LruCache
-import androidx.compose.animation.animateColorAsState
+import android.content.Context
+import androidx.compose.animation.animateColor
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
@@ -22,6 +24,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import java.io.File
 import androidx.compose.ui.platform.LocalContext
@@ -29,6 +34,7 @@ import android.graphics.drawable.BitmapDrawable
 import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import coil.request.CachePolicy
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -37,55 +43,73 @@ private val FallbackColors = ArtworkColors(Color(0xFF303A62), Color(0xFF111523),
 private val ArtworkColorCache = LruCache<String, ArtworkColors>(32)
 internal fun clearArtworkColorCache() { ArtworkColorCache.evictAll() }
 
+/** Only the imminent neighbor, cancelled when playback/UI stops. Uses the existing bounded caches. */
+internal suspend fun preparePlayerArtwork(context: Context, cover: String?) {
+    if (cover == null) return
+    val remote = cover.startsWith("https://")
+    context.imageLoader.execute(ImageRequest.Builder(context).data(if (remote) cover else File(cover))
+        .size(context.resources.displayMetrics.widthPixels.coerceIn(512, 1280))
+        .apply { if (remote) memoryCacheKey(cover) }.build())
+    currentCoroutineContext().ensureActive()
+    artworkColors(context, cover)
+}
+
+private suspend fun artworkColors(context: Context, cover: String?): ArtworkColors = withContext(Dispatchers.IO) {
+    try {
+        if (cover == null) return@withContext FallbackColors
+        val remote = cover.startsWith("https://")
+        val key = if (remote) cover else "$cover:${File(cover).lastModified()}"
+        ArtworkColorCache.get(key)?.let { return@withContext it }
+        val bitmap = if (remote) {
+            val result = context.imageLoader.execute(ImageRequest.Builder(context).data(cover).size(48).allowHardware(false)
+                // Do not replace the prewarmed full cover's memory entry with a 48 px sample.
+                .memoryCachePolicy(CachePolicy.DISABLED).build()) as? SuccessResult
+            (result?.drawable as? BitmapDrawable)?.bitmap
+        } else {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(cover, bounds)
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 48) sample *= 2
+            BitmapFactory.decodeFile(cover, BitmapFactory.Options().apply { inSampleSize = sample })
+        } ?: return@withContext FallbackColors
+        try {
+            val regions = Array(4) { LongArray(4) }
+            for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) {
+                val pixel = bitmap.getPixel(x, y)
+                if (android.graphics.Color.alpha(pixel) > 128) {
+                    val region = regions[(if (y >= bitmap.height / 2) 2 else 0) + if (x >= bitmap.width / 2) 1 else 0]
+                    region[0] += android.graphics.Color.red(pixel); region[1] += android.graphics.Color.green(pixel)
+                    region[2] += android.graphics.Color.blue(pixel); region[3]++
+                }
+            }
+            val samples = regions.filter { it[3] > 0 }.map { region -> FloatArray(3).also {
+                android.graphics.Color.RGBToHSV((region[0] / region[3]).toInt(), (region[1] / region[3]).toInt(), (region[2] / region[3]).toInt(), it)
+            } }
+            if (samples.isEmpty()) return@withContext FallbackColors
+            val vivid = samples.maxBy { it[1] * it[2] }
+            val alternate = samples.maxBy { minOf(kotlin.math.abs(it[0] - vivid[0]), 360 - kotlin.math.abs(it[0] - vivid[0])) * it[1] }
+            fun tone(hsv: FloatArray, brightness: Float) = Color(android.graphics.Color.HSVToColor(
+                floatArrayOf(hsv[0], hsv[1].coerceIn(.22f, .72f), brightness)))
+            ArtworkColors(tone(vivid, .24f), tone(alternate, .09f), tone(vivid, .72f), tone(alternate, .65f))
+                .also { ArtworkColorCache.put(key, it) }
+        } finally { if (!remote) bitmap.recycle() }
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (_: Exception) { FallbackColors }
+}
+
 /** A 48 px sample shares the artwork cache. Motion only invalidates drawing while visible/resumed. */
 @Composable internal fun PlayerBackdrop(cover: String?, dark: Boolean = MaterialTheme.colorScheme.isDark) {
     val context = LocalContext.current
-    val colors by produceState(FallbackColors, cover) {
-        value = withContext(Dispatchers.IO) {
-            runCatching {
-                if (cover == null) return@runCatching FallbackColors
-                val remote = cover.startsWith("https://")
-                val key = if (remote) cover else "$cover:${File(cover).lastModified()}"
-                ArtworkColorCache.get(key)?.let { return@runCatching it }
-                val bitmap = if (remote) {
-                    val result = context.imageLoader.execute(ImageRequest.Builder(context).data(cover).size(48).allowHardware(false)
-                        .build()) as? SuccessResult
-                    (result?.drawable as? BitmapDrawable)?.bitmap
-                } else {
-                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeFile(cover, bounds)
-                    var sample = 1
-                    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 48) sample *= 2
-                    BitmapFactory.decodeFile(cover, BitmapFactory.Options().apply { inSampleSize = sample })
-                } ?: return@runCatching FallbackColors
-                try {
-                    val regions = Array(4) { LongArray(4) }
-                    for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) {
-                        val pixel = bitmap.getPixel(x, y)
-                        if (android.graphics.Color.alpha(pixel) > 128) {
-                            val region = regions[(if (y >= bitmap.height / 2) 2 else 0) + if (x >= bitmap.width / 2) 1 else 0]
-                            region[0] += android.graphics.Color.red(pixel); region[1] += android.graphics.Color.green(pixel)
-                            region[2] += android.graphics.Color.blue(pixel); region[3]++
-                        }
-                    }
-                    val samples = regions.filter { it[3] > 0 }.map { region -> FloatArray(3).also {
-                        android.graphics.Color.RGBToHSV((region[0] / region[3]).toInt(), (region[1] / region[3]).toInt(), (region[2] / region[3]).toInt(), it)
-                    } }
-                    if (samples.isEmpty()) return@runCatching FallbackColors
-                    val vivid = samples.maxBy { it[1] * it[2] }
-                    val alternate = samples.maxBy { minOf(kotlin.math.abs(it[0] - vivid[0]), 360 - kotlin.math.abs(it[0] - vivid[0])) * it[1] }
-                    fun tone(hsv: FloatArray, brightness: Float) = Color(android.graphics.Color.HSVToColor(
-                        floatArrayOf(hsv[0], hsv[1].coerceIn(.22f, .72f), brightness)))
-                    ArtworkColors(tone(vivid, .24f), tone(alternate, .09f), tone(vivid, .72f), tone(alternate, .65f))
-                        .also { ArtworkColorCache.put(key, it) }
-                } finally { if (!remote) bitmap.recycle() }
-            }.getOrDefault(FallbackColors)
-        }
+    // A prewarmed remote palette is available in the very same frame as the new cover/title.
+    val cached = remember(cover) { cover?.takeIf { it.startsWith("https://") }?.let(ArtworkColorCache::get) }
+    val loaded by produceState(cached ?: FallbackColors, cover) {
+        value = artworkColors(context, cover)
     }
-    val top = animateColorAsState(colors.top, tween(AmiMotion.TRACK_MILLIS), label = "artwork-top")
-    val bottom = animateColorAsState(colors.bottom, tween(AmiMotion.TRACK_MILLIS), label = "artwork-bottom")
-    val glow = animateColorAsState(colors.glow, tween(AmiMotion.TRACK_MILLIS), label = "artwork-glow")
-    val accent = animateColorAsState(colors.accent, tween(AmiMotion.TRACK_MILLIS), label = "artwork-accent")
+    val transition = updateTransition(cached ?: loaded, label = "artwork-palette")
+    val top = transition.animateColor({ tween(AmiMotion.TRACK_MILLIS) }, label = "artwork-top") { it.top }
+    val bottom = transition.animateColor({ tween(AmiMotion.TRACK_MILLIS) }, label = "artwork-bottom") { it.bottom }
+    val glow = transition.animateColor({ tween(AmiMotion.TRACK_MILLIS) }, label = "artwork-glow") { it.glow }
+    val accent = transition.animateColor({ tween(AmiMotion.TRACK_MILLIS) }, label = "artwork-accent") { it.accent }
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val active = LocalVisualsActive.current && lifecycle.isAtLeast(Lifecycle.State.RESUMED)
     val lastFrame = remember { floatArrayOf(0f) }

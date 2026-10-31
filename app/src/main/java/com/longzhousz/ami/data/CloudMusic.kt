@@ -281,6 +281,7 @@ class CloudMusic internal constructor(private val context: Context, val direct: 
         if (direct && configured.value) runCatching { audioCache.invalidate(cacheAccount(), songId.removePrefix("netease:")) }
         synchronized(this@CloudMusic) { audioQuality.value = audioQuality.value - songId }
     }
+    internal fun forgetStream(songId: String) { if (direct && songId.startsWith("netease:")) account.forgetStream(songId.removePrefix("netease:")) }
     internal suspend fun fillAudioCache(expectedAccount: String, idle: () -> Boolean = { true }) = withContext(Dispatchers.IO) {
         if (!direct || !configured.value || runCatching { account.accountKey() }.getOrNull() != expectedAccount || audioCache.scope() != expectedAccount) return@withContext
         if (!idle()) return@withContext

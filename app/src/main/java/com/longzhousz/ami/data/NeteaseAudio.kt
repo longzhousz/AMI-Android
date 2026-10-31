@@ -7,7 +7,8 @@ import java.io.IOException
 internal val neteaseAudioLevels = listOf("jyeffect", "hires", "lossless", "exhigh")
 internal class NeteaseAudioUnavailable(val trial: Boolean = false) : IllegalStateException(
     if (trial) "网易云当前只返回了试听片段，未取得完整音源" else "网易云未返回这首歌的可播放音源")
-internal data class NeteaseAudio(val url: String, val level: String?, val codec: String, val bitrate: Int?, val bytes: Long = 0, val md5: String? = null) {
+internal data class NeteaseAudio(val url: String, val level: String?, val codec: String, val bitrate: Int?, val bytes: Long = 0, val md5: String? = null,
+    val validForSeconds: Long = 0) {
     val rank get() = neteaseAudioLevels.indexOf(level).takeIf { it >= 0 } ?: Int.MAX_VALUE
 }
 
@@ -23,7 +24,7 @@ internal fun neteaseAudio(root: JSONObject, id: String, duration: Long): Netease
         else -> null
     }
     return NeteaseAudio(url, level, codec, row.optInt("br").takeIf { it > 0 }, row.optLong("size").coerceAtLeast(0),
-        row.optString("md5").lowercase().takeIf { it.matches(Regex("[a-f0-9]{32}")) })
+        row.optString("md5").lowercase().takeIf { it.matches(Regex("[a-f0-9]{32}")) }, row.optLong("expi").coerceAtLeast(0))
 }
 
 /** At most four quality probes, stopping once the server has already supplied the next tier. */

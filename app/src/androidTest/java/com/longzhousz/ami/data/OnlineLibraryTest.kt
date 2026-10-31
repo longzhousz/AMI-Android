@@ -26,6 +26,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import com.longzhousz.ami.playback.RadioQueue
 import com.longzhousz.ami.playback.mediaItem
 import androidx.media3.exoplayer.ExoPlayer
@@ -58,6 +59,8 @@ class OnlineLibraryTest {
     @Volatile private var lyricStatus = 200
     @Volatile private var clientAudioCode = 200
     @Volatile private var webAudioCode = 200
+    @Volatile private var streamLifetime = 0L
+    @Volatile private var streamGate: java.util.concurrent.CountDownLatch? = null
     @Volatile private var likeStatus = 200
     @Volatile private var likeGate: java.util.concurrent.CountDownLatch? = null
     private val likedIds = CopyOnWriteArrayList(listOf("201", "202"))
@@ -80,6 +83,7 @@ class OnlineLibraryTest {
     @After fun cleanup() {
         fmGate?.countDown()
         likeGate?.countDown()
+        streamGate?.countDown()
         runBlocking { cloud.disconnect() }
         cache.close(); context.deleteDatabase(File(context.noBackupFilesDir, "$cacheName.db").path)
         File(context.cacheDir, cacheName).deleteRecursively()
@@ -646,6 +650,49 @@ class OnlineLibraryTest {
         compose.onAllNodesWithTag("online-shelf").assertCountEquals(1)
     }
 
+    @Test fun validStreamUrlsAreReusedUntilInvalidatedAndUnspecifiedExpiryIsNeverCached() = runBlocking(Dispatchers.IO) {
+        val song = cloud.tracks("100").tracks.first()
+        cloud.rememberQueue(listOf(song))
+        streamLifetime = 1200
+        repeat(4) { cloud.resolve(song.song().uri, allowCache = false) }
+        assertEquals(1, requests.count { it.first == "client-audio" })
+        cloud.forgetStream(song.song().id)
+        cloud.resolve(song.song().uri, allowCache = false)
+        assertEquals(2, requests.count { it.first == "client-audio" })
+        cloud.login("MUSIC_U=qa-only-not-a-real-session")
+        cloud.resolve(song.song().uri, allowCache = false)
+        assertEquals(3, requests.count { it.first == "client-audio" })
+        cloud.forgetStream(song.song().id)
+        streamLifetime = 0
+        repeat(2) { cloud.resolve(song.song().uri, allowCache = false) }
+        assertEquals(5, requests.count { it.first == "client-audio" })
+        cloud.forgetStream(song.song().id)
+        streamLifetime = 31
+        cloud.resolve(song.song().uri, allowCache = false)
+        delay(1100)
+        cloud.resolve(song.song().uri, allowCache = false)
+        assertEquals(7, requests.count { it.first == "client-audio" })
+    }
+
+    @Test fun audioResolutionFromAnOldLoginCannotBePlayedOrCachedAfterRelogin() = runBlocking(Dispatchers.IO) {
+        val song = cloud.tracks("100").tracks.first()
+        cloud.rememberQueue(listOf(song))
+        streamLifetime = 1200
+        val gate = java.util.concurrent.CountDownLatch(1).also { streamGate = it }
+        val pending = async {
+            runCatching { cloud.resolve(song.song().uri, allowCache = false) }
+        }
+        try {
+            withTimeout(10000) { while (requests.none { it.first == "client-audio" }) delay(10) }
+            cloud.login("MUSIC_U=qa-only-not-a-real-session")
+            gate.countDown(); streamGate = null
+            assertTrue(pending.await().exceptionOrNull() is kotlinx.coroutines.CancellationException)
+            assertTrue(cloud.audioQuality.value.isEmpty())
+            cloud.resolve(song.song().uri, allowCache = false)
+            assertEquals(2, requests.count { it.first == "client-audio" })
+        } finally { gate.countDown(); streamGate = null }
+    }
+
     private inner class Fixture(address: String) : HttpURLConnection(URL(address)) {
         private val output = ByteArrayOutputStream()
         private val response by lazy {
@@ -691,9 +738,10 @@ class OnlineLibraryTest {
                 "cloudsearch/pc" -> JSONObject().put("result", JSONObject().put("songs", JSONArray().put(song(301))).put("songCount", 1))
                 "client-audio", "song/enhance/player/url/v1" -> {
                     assertEquals("MUSIC_U=qa-only-not-a-real-session", getRequestProperty("Cookie"))
+                    streamGate?.await()
                     JSONObject().put("data", JSONArray().put(JSONObject().put("id", 201).put("code", 200).put("time", 180000)
                         .put("url", "https://m7.music.126.net/qa-audio.flac").put("level", if (client) "jyeffect" else "hires")
-                        .put("type", "flac").put("br", 1800000).put("size", tone.size)))
+                        .put("type", "flac").put("br", 1800000).put("size", tone.size).put("expi", streamLifetime)))
                 }
                 "song/lyric" -> JSONObject().put("lrc", JSONObject().put("lyric", "[00:00]歌词 ${body.getString("id")}"))
                 "song/lyric/v1" -> JSONObject().put("lrc", JSONObject().put("lyric", "[00:00]歌词 ${body.getString("id")}"))

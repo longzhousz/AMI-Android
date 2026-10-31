@@ -11,6 +11,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.lifecycle.ViewModelProvider
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.playback.PlaybackService
+import com.longzhousz.ami.playback.PlayMode
 import com.longzhousz.ami.playback.mediaItem
 import org.junit.Assert.*
 import org.junit.Test
@@ -22,6 +23,70 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackIntegrationTest {
+    @Test fun fourPlaybackModesApplyToTheNativePlayerWithoutReorderingTheVisibleQueue() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val activity = ActivityScenario.launch(MainActivity::class.java)
+        val source = File(context.cacheDir, "qa-mode-source.flac")
+        instrumentation.context.assets.open("qa-96k-24bit.flac").use { input -> source.outputStream().use { input.copyTo(it) } }
+        var future: com.google.common.util.concurrent.ListenableFuture<MediaController>? = null
+        lateinit var model: AmiViewModel
+        activity.onActivity { model = ViewModelProvider(it)[AmiViewModel::class.java] }
+        instrumentation.runOnMainSync { future = MediaController.Builder(context, SessionToken(context, ComponentName(context, PlaybackService::class.java))).buildAsync() }
+        val controller = future!!.get(40, TimeUnit.SECONDS)
+        fun await(message: String, predicate: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 15000
+            var done = false
+            while (!done && System.currentTimeMillis() < deadline) {
+                instrumentation.runOnMainSync { done = predicate() }
+                if (!done) Thread.sleep(30)
+            }
+            assertTrue(message, done)
+        }
+        val songs = List(15) { Song("qa-mode-$it", Uri.fromFile(source).toString(), folder = "qa", title = "Mode $it",
+            artist = "Artist ${it / 3}", album = "Album ${it / 3}", duration = 6000) }
+        try {
+            await("UI controller should connect") { model.player.state.value.connected }
+            instrumentation.runOnMainSync {
+                controller.pause(); controller.setMediaItems(songs.map { it.mediaItem() }); controller.prepare()
+                model.player.mode(PlayMode.Shuffle)
+            }
+            await("Random mode should reach the native player") { controller.shuffleModeEnabled && controller.repeatMode == Player.REPEAT_MODE_ALL }
+            await("Balanced next index should reach the controller") { controller.nextMediaItemIndex / 3 != controller.currentMediaItemIndex / 3 }
+            val visited = mutableListOf<Int>()
+            repeat(songs.size) {
+                instrumentation.runOnMainSync { visited += controller.currentMediaItemIndex; controller.seekToNextMediaItem() }
+                // Allow the session's command and state response to settle before observing it.
+                val before = visited.last()
+                await("Random next should move to another track") { controller.currentMediaItemIndex != before }
+            }
+            instrumentation.runOnMainSync {
+                assertEquals(songs.indices.toSet(), visited.toSet())
+                assertEquals(visited.first(), controller.currentMediaItemIndex)
+                assertEquals(songs.map { it.id }, (0 until controller.mediaItemCount).map { controller.getMediaItemAt(it).mediaId })
+                assertTrue("The shuffle should break up groups of the same artist", visited.zipWithNext().count { (a, b) -> a / 3 == b / 3 } <= 3)
+                model.player.mode(PlayMode.Ordered)
+            }
+            await("Ordered mode disables both loop and random") { !controller.shuffleModeEnabled && controller.repeatMode == Player.REPEAT_MODE_OFF }
+            instrumentation.runOnMainSync { controller.seekTo(songs.lastIndex, 5800); controller.play() }
+            await("Ordered mode stops at the queue end") { controller.playbackState == Player.STATE_ENDED }
+            instrumentation.runOnMainSync { model.player.mode(PlayMode.Loop); controller.seekTo(songs.lastIndex, 5800); controller.play() }
+            await("List loop should return to the first track") { controller.currentMediaItemIndex == 0 && controller.isPlaying }
+            instrumentation.runOnMainSync { model.player.mode(PlayMode.One); controller.seekTo(2, 5500) }
+            await("Single loop should restart the same item") { controller.currentMediaItemIndex == 2 && controller.currentPosition in 0..3000 && controller.isPlaying }
+            instrumentation.runOnMainSync {
+                assertFalse(controller.shuffleModeEnabled)
+                assertEquals(Player.REPEAT_MODE_ONE, controller.repeatMode)
+            }
+        } finally {
+            instrumentation.runOnMainSync {
+                controller.stop(); controller.clearMediaItems(); model.player.mode(PlayMode.Loop)
+                MediaController.releaseFuture(future!!)
+            }
+            source.delete(); activity.close()
+        }
+    }
+
     @Test fun highResolutionFlacDecodesSeeksAndAdvancesThroughTheProductionPlayer() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

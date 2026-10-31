@@ -11,6 +11,9 @@ import org.json.JSONObject
 internal class NeteaseAccount(context: Context, private val web: NeteaseTransport = NeteaseTransport()) {
     private val secret = SecretStore(context, "netease-account")
     private val authLock = Any()
+    private data class StreamSource(val audio: NeteaseAudio, val duration: Long, val until: Long)
+    private val streams = LinkedHashMap<String, StreamSource>(3, .75f, true)
+    internal fun forgetStream(id: String) = synchronized(authLock) { streams.remove(id); Unit }
     private var likedPlaylist: String? = null
     val likes: NeteaseLikes = NeteaseLikes(read = { session ->
         val auth = likeCredentials(session)
@@ -47,12 +50,12 @@ internal class NeteaseAccount(context: Context, private val web: NeteaseTranspor
         val profile = profile(web.post("w/nuser/account/get", JSONObject(), cookie))
         synchronized(authLock) {
             secret.save(JSONObject().put("cookie", cookie).put("uid", profile.first).put("nickname", profile.second).toString())
-            likedPlaylist = null; likes.reset()
+            likedPlaylist = null; streams.clear(); likes.reset()
         }
         invalidate()
         profile.second
     }
-    fun logout() { synchronized(authLock) { secret.save(""); likedPlaylist = null; likes.reset() }; invalidate() }
+    fun logout() { synchronized(authLock) { secret.save(""); likedPlaylist = null; streams.clear(); likes.reset() }; invalidate() }
     fun invalidate() = synchronized(lists) { lists.clear() }
     suspend fun request(path: String, data: JSONObject): JSONObject = withContext(Dispatchers.IO) {
         val (auth, session) = synchronized(authLock) { credentials() to likes.state.value.session }
@@ -177,10 +180,24 @@ internal class NeteaseAccount(context: Context, private val web: NeteaseTranspor
             else -> error("不支持的网易云操作")
         }
     }
-    /** Media3 loader thread resolves short-lived URLs only when audio is requested. */
+    /** A few short-lived, account-bound URLs avoid re-resolving every range/seek. Never persisted. */
     fun stream(id: String, duration: Long): NeteaseAudio {
-        val auth = credentials(); val cookie = neteaseCookies(auth.getString("cookie")); neteaseId(id)
+        neteaseId(id)
+        val (auth, session) = synchronized(authLock) {
+            streams[id]?.takeIf { it.duration == duration && it.until > android.os.SystemClock.elapsedRealtime() }?.let { return it.audio }
+            credentials() to likes.state.value.session
+        }
+        val cookie = neteaseCookies(auth.getString("cookie"))
+        val requestedAt = android.os.SystemClock.elapsedRealtime()
         val audio = authorizedNeteaseAudio(id, duration, { web.blockingAudio(it, cookie) }, { path, data -> web.blockingPost(path, data, cookie) })
+        synchronized(authLock) {
+            if (likes.state.value.session != session) throw kotlinx.coroutines.CancellationException("网易云账号已变化")
+            val lifetime = (audio.validForSeconds.coerceAtMost(600) - 30).coerceAtLeast(0) * 1000
+            if (requestedAt + lifetime > android.os.SystemClock.elapsedRealtime()) {
+                streams[id] = StreamSource(audio, duration, requestedAt + lifetime)
+                while (streams.size > 3) streams.remove(streams.keys.first())
+            }
+        }
         android.util.Log.i("AmiAudio", "source=netease level=${audio.level ?: "unknown"} codec=${audio.codec} bitrate=${audio.bitrate ?: 0}")
         return audio
     }
