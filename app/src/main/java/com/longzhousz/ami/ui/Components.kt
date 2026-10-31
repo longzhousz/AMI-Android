@@ -45,6 +45,9 @@ import coil.compose.AsyncImage
 import coil.memory.MemoryCache
 import coil.imageLoader
 import coil.request.ImageRequest
+import coil.request.SuccessResult
+import coil.transition.CrossfadeTransition
+import coil.transition.Transition
 import com.longzhousz.ami.core.isCloudSong
 import androidx.compose.ui.platform.LocalContext
 import com.longzhousz.ami.core.Song
@@ -52,7 +55,7 @@ import com.longzhousz.ami.core.durationLabel
 import java.io.File
 
 private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0xFFB58C82), Color(0xFF8D86A6), Color(0xFF789D9E))
-@Composable internal fun Cover(path: String?, title: String, modifier: Modifier = Modifier) {
+@Composable internal fun Cover(path: String?, title: String, modifier: Modifier = Modifier, animateChanges: Boolean = false) {
     val context = LocalContext.current
     var previousImage by remember { mutableStateOf<MemoryCache.Key?>(null) }
     var previousPainter by remember { mutableStateOf<Painter?>(null) }
@@ -85,10 +88,17 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
             if (retained != null && !failed) Image(retained, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
             // One request and one retained painter. Fade only after decoding succeeds, so a slow
             // request cannot fade the old image into an empty frame; memory hits remain immediate.
-            val request = remember(path, context) { ImageRequest.Builder(context).data(if (path.startsWith("https://")) path else File(path))
+            val request = remember(path, context, animateChanges) { ImageRequest.Builder(context).data(if (path.startsWith("https://")) path else File(path))
                 .apply { if (path.startsWith("https://")) memoryCacheKey(path) }
                 .placeholderMemoryCacheKey(previousImage ?: path.takeIf { it.startsWith("https://") }?.let { MemoryCache.Key(it) })
-                .apply { if (previousPainter != null) crossfade(AmiMotion.TRACK_MILLIS) else crossfade(false) }.build() }
+                .apply {
+                    if (previousPainter != null && animateChanges) transitionFactory { target, result ->
+                        // Coil normally skips cached results. The player's prewarmed next cover
+                        // still needs the same transition; shelf re-entry stays immediate.
+                        if (result is SuccessResult) CrossfadeTransition(target, result, AmiMotion.TRACK_MILLIS)
+                        else Transition.Factory.NONE.create(target, result)
+                    } else if (previousPainter != null) crossfade(AmiMotion.TRACK_MILLIS) else crossfade(false)
+                }.build() }
             // A new painter starts independently; cancellation of a slow old request must not
             // block the current cover. The retained placeholder stays outside this keyed scope.
             key(path) {

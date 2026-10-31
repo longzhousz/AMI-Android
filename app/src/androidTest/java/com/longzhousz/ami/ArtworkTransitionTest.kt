@@ -219,7 +219,18 @@ class ArtworkTransitionTest {
         val original = context.imageLoader
         val red = 0xffd84840.toInt(); val blue = 0xff426fc4.toInt()
         val prefix = "https://p1.music.126.net/qa-transition-${System.nanoTime()}"
-        val loader = ImageLoader.Builder(context).components { add(object : Fetcher.Factory<Uri> {
+        val cachedCoverFades = java.util.concurrent.atomic.AtomicBoolean()
+        val loader = ImageLoader.Builder(context).eventListener(object : coil.EventListener {
+            override fun onSuccess(request: coil.request.ImageRequest, result: coil.request.SuccessResult) {
+                if (request.data.toString() == "$prefix-blue.png" && result.dataSource == DataSource.MEMORY_CACHE && request.placeholderMemoryCacheKey != null) {
+                    val target = object : coil.transition.TransitionTarget {
+                        override val view: android.view.View get() = error("Not used to create a transition")
+                        override val drawable: android.graphics.drawable.Drawable? get() = null
+                    }
+                    cachedCoverFades.set(request.transitionFactory.create(target, result) is coil.transition.CrossfadeTransition)
+                }
+            }
+        }).components { add(object : Fetcher.Factory<Uri> {
             override fun create(data: Uri, options: Options, imageLoader: ImageLoader): Fetcher? {
                 if (!data.toString().startsWith(prefix)) return null
                 return object : Fetcher {
@@ -270,7 +281,11 @@ class ArtworkTransitionTest {
             val end = rootFrame("end")
             compose.onNodeWithText("蓝色唱片").assertIsDisplayed()
             compose.onNodeWithText("红色唱片").assertDoesNotExist()
-            assertEquals(blue, coverColor())
+            // Coil's painter uses Android uptime, independently of the controlled Compose clock.
+            compose.mainClock.autoAdvance = true
+            compose.waitUntil(10000) { coverColor() == blue }
+            assertTrue("A prewarmed cover must still crossfade; Coil's default skips memory hits", cachedCoverFades.get())
+            rootFrame("settled")
             assertTrue(android.graphics.Color.red(start) > android.graphics.Color.blue(start))
             assertTrue(android.graphics.Color.blue(end) > android.graphics.Color.red(end))
             fun distance(a: Int, b: Int) = kotlin.math.abs(android.graphics.Color.red(a) - android.graphics.Color.red(b)) +

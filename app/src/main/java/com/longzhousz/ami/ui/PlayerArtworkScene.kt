@@ -114,7 +114,7 @@ private val ArtworkSpring = spring<Float>(dampingRatio = .88f, stiffness = 230f)
             }.clickable(onClickLabel = if (lyricsMode) "展开专辑封面" else "收起封面，查看歌词", onClick = toggle)
                 .semantics { contentDescription = if (lyricsMode) "展开专辑封面" else "收起封面，查看歌词" }
                 .testTag("player-cover")) {
-                Cover(song.cover, song.album, Modifier.fillMaxSize())
+                Cover(song.cover, song.album, Modifier.fillMaxSize(), animateChanges = true)
             }
         }
         }
