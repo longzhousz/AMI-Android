@@ -12,7 +12,7 @@ cd AMI-Android
 git branch --show-current
 ```
 
-输出应为 `main`。它包含 0.2.3 及其依赖的全部前序改动，不需要逐个合并 PR。不能使用 Git 时，直接在 GitHub 默认分支选择 Code → Download ZIP。
+输出应为 `main`。它包含 0.2.4 及其依赖的全部前序改动，不需要逐个合并 PR。不能使用 Git 时，直接在 GitHub 默认分支选择 Code → Download ZIP。
 
 已经克隆过且工作区干净时：
 

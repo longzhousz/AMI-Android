@@ -39,10 +39,10 @@ if [ -d baseline-apk ]; then
   adb shell am start -W -n "$package/com.longzhousz.ami.MainActivity"
   sleep 3
   adb shell pidof "$package"
-  python3 .github/scripts/android-wait-for-window.py preview-smoke-results/baseline.xml "$package" '导入我的音乐'
+  python3 .github/scripts/android-wait-for-window.py preview-smoke-results/baseline.xml "$package" '登录网易云'
   python3 - <<'PY'
 import xml.etree.ElementTree as ET
-assert any(n.get('text') == '导入我的音乐' for n in ET.parse('preview-smoke-results/baseline.xml').iter('node')), 'Previous database did not finish loading'
+assert any(n.get('text') == '登录网易云' for n in ET.parse('preview-smoke-results/baseline.xml').iter('node')), 'Previous online home did not finish loading'
 PY
   adb shell am force-stop "$package"
 fi

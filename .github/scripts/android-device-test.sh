@@ -3,6 +3,8 @@ set -euo pipefail
 # Read private files as the debug app, avoiding external-storage mount restrictions.
 collect_screenshots() {
   mkdir -p "$GITHUB_WORKSPACE/device-screenshots"
+  free -m > "$GITHUB_WORKSPACE/device-screenshots/host-memory.txt"
+  sudo dmesg | tail -100 > "$GITHUB_WORKSPACE/device-screenshots/host-kernel.txt" || true
   if ! timeout 10s adb get-state > /dev/null 2>&1; then
     echo 'Emulator disconnected; preserving the incomplete test reports without waiting for screenshots.' >&2
     return
