@@ -12,7 +12,7 @@ cd AMI-Android
 git branch --show-current
 ```
 
-输出应为 `main`。它包含 0.2.4 及其依赖的全部前序改动，不需要逐个合并 PR。不能使用 Git 时，直接在 GitHub 默认分支选择 Code → Download ZIP。
+输出应为 `main`。它包含 0.2.5 及其依赖的全部前序改动，不需要逐个合并 PR。不能使用 Git 时，直接在 GitHub 默认分支选择 Code → Download ZIP。
 
 已经克隆过且工作区干净时：
 
@@ -126,6 +126,8 @@ Windows 安装 Python 3 后可将 `python3` 替换为 `py -3`。本地开发助�
 
 ## 采集诊断
 
+在线播放失败优先用手机完成：更新至 0.2.5，重试原歌曲，点击错误提示上的「复制诊断」；提示消失后可在播放页右上角「… → 复制播放诊断」复制。本曲没有音源失败记录时不显示入口。将文字交给开发者并说明官方 App 同账号、同网络是否可完整播放；不需要 ADB 或导出 Cookie。
+
 先在手机播放一首待排查歌曲。在仓库根目录为**当前云端在线包**采集：
 
 ```sh
@@ -149,7 +151,7 @@ python3 .github/scripts/ami-device-check.py --serial YOUR_SERIAL --package com.l
 adb -s YOUR_SERIAL logcat -d -s AmiOriginOS
 ```
 
-现有 Preview 不可使用 `run-as` 读取应用私有数据库。需要看私有封面文件或数据库时，使用独立 Debug 样本安装；不要要求 root 或以清数据换取可调试状态。缺图排查顺序见 [交接文档](LOCAL_HANDOFF.md#缺封面排查)。
+现有 Preview 不可使用 `run-as` 读取应用私有数据库。需要看私有封面文件或数据库时，使用独立 Debug 样本安装；不要要求 root 或以清数据换取可调试状态。缺图排查顺序见 [使用说明](USER_GUIDE.md#本地音乐与数据)。
 
 采集产物放在 Git 已忽略的 `artifacts/`。系统日志可能带曲名、路径或其他应用信息，分享前检查内容。
 
