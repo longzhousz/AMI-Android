@@ -41,10 +41,54 @@ class NeteaseTransportTest {
         var address = ""
         NeteaseTransport { address = it; connection }.blockingAudio(JSONObject().put("level", "jyeffect").put("encodeType", "flac"), "MUSIC_U=test")
         assertEquals("https://interface.music.163.com/eapi/song/enhance/player/url/v1", address)
-        assertEquals("MUSIC_U=test", connection.getRequestProperty("Cookie"))
+        assertTrue(connection.getRequestProperty("Cookie").split("; ").contains("MUSIC_U=test"))
+        assertTrue(connection.getRequestProperty("Cookie").contains("os=android"))
+        assertTrue(connection.getRequestProperty("Cookie").contains("appver=9.5.61"))
+        assertTrue(connection.getRequestProperty("User-Agent").startsWith("NeteaseMusic/9.5.61"))
         assertFalse(connection.instanceFollowRedirects)
         assertTrue(connection.closed)
         assertTrue(connection.body.toString("UTF-8").matches(Regex("params=[0-9A-F]+")))
+    }
+    @Test fun bothClientContextsKeepCookieAndEncryptedHeaderConsistentWithoutUsingAmisVersion() {
+        for (desktop in listOf(false, true)) {
+            val connection = Response("{\"code\":200}")
+            var address = ""
+            NeteaseTransport { address = it; connection }.blockingAudio(JSONObject().put("level", "jyeffect"),
+                "MUSIC_U=a%2Fb+c%3D; __csrf=csrf; NMTID=session", desktop)
+            assertEquals(if (desktop) "interfacepc.music.163.com" else "interface.music.163.com", URL(address).host)
+            val hex = connection.body.toString("UTF-8").removePrefix("params=")
+            val raw = javax.crypto.Cipher.getInstance("AES/ECB/PKCS5Padding").run {
+                init(javax.crypto.Cipher.DECRYPT_MODE, javax.crypto.spec.SecretKeySpec("e82ckenh8dichen8".toByteArray(), "AES"))
+                doFinal(hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()).toString(Charsets.UTF_8)
+            }
+            val payload = JSONObject(raw.split("-36cd479b6b5-")[1])
+            val header = payload.getJSONObject("header")
+            val cookies = connection.getRequestProperty("Cookie").split("; ").associate { it.substringBefore('=') to
+                java.net.URLDecoder.decode(it.substringAfter('='), "UTF-8") }
+            header.keys().forEach { assertEquals(header.getString(it), cookies[it]) }
+            assertEquals("a/b+c=", header.getString("MUSIC_U"))
+            assertEquals(if (desktop) "pc" else "android", header.getString("os"))
+            assertEquals(if (desktop) "3.1.17.204416" else "9.5.61", header.getString("appver"))
+            assertEquals("csrf", payload.getString("csrf_token"))
+            assertFalse(payload.getBoolean("e_r"))
+            assertFalse(connection.getRequestProperty("Cookie").contains("MUSIC_A="))
+        }
+    }
+    @Test fun preheatOnlyAcceptsSessionFieldsFromTheFixedFirstPartyHomepage() {
+        val connection = object : Response("unused HTML") {
+            override fun getHeaderFields(): Map<String, List<String>> = mapOf("Set-Cookie" to listOf(
+                "__csrf=csrf-value; Path=/; Secure", "NMTID=new-session; Path=/", "MUSIC_U=foreign-account; Path=/", "MUSIC_A=anonymous; Path=/"))
+        }
+        var address = ""
+        val result = NeteaseTransport { address = it; connection }.preheat("MUSIC_U=original")
+        assertEquals("https://music.163.com/", address)
+        assertEquals("MUSIC_U=original; __csrf=csrf-value; NMTID=new-session", result)
+        assertFalse(connection.instanceFollowRedirects)
+        assertTrue(connection.closed)
+        assertFalse(connection.opened)
+        val redirected = Response("unused", 302)
+        assertEquals("MUSIC_U=original", NeteaseTransport { redirected }.preheat("MUSIC_U=original"))
+        assertTrue(redirected.closed); assertFalse(redirected.opened)
     }
     @Test fun forbiddenEndpointIsNotMisreportedAsExpiredMembershipOrLogin() {
         for (connection in listOf(Response("{}", 403), Response("{\"code\":403}"))) {

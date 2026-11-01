@@ -158,4 +158,47 @@ class NeteaseAudioTest {
         } catch (_: NeteaseLoginExpired) { }
         assertEquals(2, calls)
     }
+    @Test fun desktopContextRecoversAuthorizedSourcesBeforeUsingWebFallbackAndIsTriedOnlyOnceWhenRefused() {
+        var calls = 0; var desktopCalls = 0; var webCalls = 0
+        val audio = authorizedNeteaseAudio("1234", 180000,
+            { calls++; throw NeteaseRequestRejected(403) },
+            { _, _ -> webCalls++; throw NeteaseAudioUnavailable() },
+            desktop = { desktopCalls++; response("jyeffect") })
+        assertEquals("jyeffect", audio.level)
+        assertEquals(1, calls); assertEquals(1, desktopCalls); assertEquals(0, webCalls)
+        calls = 0; desktopCalls = 0; webCalls = 0
+        try {
+            authorizedNeteaseAudio("1234", 180000,
+                { calls++; throw NeteaseAudioUnavailable() },
+                { _, _ -> webCalls++; response("jyeffect", trial = true) },
+                desktop = { desktopCalls++; throw NeteaseLoginExpired() })
+            fail("Trial accepted")
+        } catch (failure: NeteaseAudioUnavailable) { assertTrue(failure.trial) }
+        assertEquals(1, calls); assertEquals(1, desktopCalls); assertEquals(5, webCalls)
+    }
+    @Test fun objectResponsesAndMissingRowCodesAreAcceptedOnlyWithValidatedIdentityUrlAndFullLength() {
+        val root = response("jyeffect")
+        val row = root.getJSONArray("data").getJSONObject(0)
+        row.remove("code"); root.put("data", row)
+        assertEquals("jyeffect", neteaseAudio(root, "1234", 180000).level)
+        for (change in listOf("identity", "url", "trial", "code", "duration", "root-code")) {
+            val bad = JSONObject(root.toString()); val data = bad.getJSONObject("data")
+            when (change) {
+                "identity" -> data.put("id", 9999)
+                "url" -> data.put("url", "https://foreign.test/PRIVATE")
+                "trial" -> data.put("freeTrialInfo", JSONObject())
+                "code" -> data.put("code", 404)
+                "root-code" -> bad.put("code", 403)
+                else -> data.put("time", 30000)
+            }
+            assertTrue(change, runCatching { neteaseAudio(bad, "1234", 180000) }.isFailure)
+        }
+    }
+    @Test fun copiedAttemptDetailsContainOnlyAllowlistedStatusFields() {
+        val root = response("jyeffect").put("message", "MUSIC_U=PRIVATE; __csrf=PRIVATE")
+        root.getJSONArray("data").getJSONObject(0).put("url", "https://m7.music.126.net/a?token=PRIVATE").put("uid", "PRIVATE")
+        val report = audioAttempt("android", "jyeffect", root)
+        assertEquals("android/jyeffect: api=200 source=200 url=present trial=false fee=-1 reason=-1", report)
+        assertFalse(report.contains("PRIVATE")); assertFalse(report.contains("https://")); assertFalse(report.contains("uid"))
+    }
 }

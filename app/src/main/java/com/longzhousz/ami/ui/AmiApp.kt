@@ -38,6 +38,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -124,7 +125,15 @@ private data class AppDestination(val page: Int, val albumKey: String?)
             if (!loading && current == null) { fullPlayer = false; queue = false }
         }
         LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); if (model.message.value == it) model.message.value = null } }
-        LaunchedEffect(playback.error) { playback.error?.let { snackbar.showSnackbar(it) } }
+        val context = LocalContext.current
+        LaunchedEffect(playback.id, playback.error) {
+            playback.error?.let { error ->
+                val report = playback.id?.let(model.cloud::playbackDiagnostics)
+                val result = snackbar.showSnackbar(error, actionLabel = if (report != null) "复制诊断" else null,
+                    withDismissAction = report != null, duration = if (report != null) SnackbarDuration.Long else SnackbarDuration.Short)
+                if (result == SnackbarResult.ActionPerformed && report != null) copyPlaybackDiagnostics(context, report)
+            }
+        }
         BackHandler(selectedAlbum != null && !fullPlayer && !queue) { albumKey = null }
         BackHandler(page in 1..2 && selectedAlbum == null && !fullPlayer && !queue) { page = 0 }
         BackHandler(page >= 4 && selectedAlbum == null && !fullPlayer && !queue) { page = 2 }

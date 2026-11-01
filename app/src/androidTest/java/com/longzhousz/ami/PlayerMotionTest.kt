@@ -30,6 +30,26 @@ import org.junit.runner.RunWith
 class PlayerMotionTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun playbackDiagnosticsAreOnlyExposedOnFailureAndCopiedAfterExplicitTap() {
+        val report = "song=1234\nandroid/jyeffect: api=200 source=404 url=none trial=false"
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        var failed by mutableStateOf(false)
+        val song = Song("netease:1234", "ami-cloud://song/1234", folder = "qa", title = "音源诊断", duration = 90000)
+        compose.setContent { AmiTheme("dark") { PlayerContent(song, PlaybackState(), null, false,
+            PlayerActions(diagnose = if (failed) { { com.longzhousz.ami.ui.copyPlaybackDiagnostics(context, report) } } else null)) } }
+        compose.onNodeWithContentDescription("歌词选项").performClick()
+        compose.onNodeWithText("复制播放诊断").assertDoesNotExist()
+        androidx.test.espresso.Espresso.pressBack()
+        compose.runOnIdle { failed = true }
+        compose.onNodeWithContentDescription("歌词选项").performClick()
+        compose.onNodeWithText("复制播放诊断").assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            val text = context.getSystemService(android.content.ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString()
+            assertTrue(text.contains(report)); assertTrue(text.contains("AMI ")); assertTrue(text.contains("Android "))
+            assertFalse(text.contains("MUSIC_U")); assertFalse(text.contains("https://"))
+        }
+    }
+
     @Test fun transportHasOneModeMenuWithFourNamedChoicesAndOneQueueEntry() {
         var playback by mutableStateOf(PlaybackState())
         var queues = 0

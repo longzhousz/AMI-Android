@@ -58,6 +58,10 @@ class OnlineLibraryTest {
     private val fmGeneration = java.util.concurrent.atomic.AtomicInteger()
     @Volatile private var lyricStatus = 200
     @Volatile private var clientAudioCode = 200
+    @Volatile private var desktopAudioCode = 403
+    @Volatile private var audioAvailable = true
+    @Volatile private var preheatCookies = false
+    private val homeReads = java.util.concurrent.atomic.AtomicInteger()
     @Volatile private var webAudioCode = 200
     @Volatile private var streamLifetime = 0L
     @Volatile private var streamGate: java.util.concurrent.CountDownLatch? = null
@@ -375,12 +379,12 @@ class OnlineLibraryTest {
             clientAudioCode = code; requests.clear()
             assertEquals("https://m7.music.126.net/qa-audio.flac", cloud.resolve(track.song().uri))
             assertEquals("Hi-Res", cloud.audioQuality.value[track.song().id]?.label)
-            assertEquals(listOf("client-audio", "song/enhance/player/url/v1"), requests.map { it.first })
+            assertEquals(listOf("client-audio", "desktop-audio", "song/enhance/player/url/v1"), requests.map { it.first })
             assertEquals("jyeffect", requests.last().second.getString("level"))
         }
         requests.clear(); webAudioCode = 301
         assertTrue(runCatching { cloud.resolve(track.song().uri) }.exceptionOrNull() is NeteaseLoginExpired)
-        assertEquals(listOf("client-audio", "song/enhance/player/url/v1"), requests.map { it.first })
+        assertEquals(listOf("client-audio", "desktop-audio", "song/enhance/player/url/v1"), requests.map { it.first })
     }
 
     @Test fun cachedAudioUsesNoStreamApiAndMissingAudioFallsBackWithTheSameLogicalSong() = runBlocking(Dispatchers.IO) {
@@ -693,11 +697,46 @@ class OnlineLibraryTest {
         } finally { gate.countDown(); streamGate = null }
     }
 
+    @Test fun desktopPlaybackAndOneSessionPreheatKeepTheSameAccountAndHighestReturnedQuality() = runBlocking(Dispatchers.IO) {
+        val song = cloud.tracks("100").tracks.first(); cloud.rememberQueue(listOf(song))
+        clientAudioCode = 403; desktopAudioCode = 200; webAudioCode = 403; preheatCookies = true
+        repeat(2) { assertEquals("https://m7.music.126.net/qa-audio.flac", cloud.resolve(song.song().uri, allowCache = false)) }
+        assertEquals(1, homeReads.get())
+        assertEquals(listOf("client-audio", "desktop-audio", "client-audio", "desktop-audio"), requests.map { it.first }.filter { it.contains("audio") })
+        assertEquals("高清臻音", cloud.audioQuality.value[song.song().id]?.label)
+        requests.filter { it.first.endsWith("audio") }.forEach { (_, body) ->
+            assertEquals("MUSIC_U=qa-only-not-a-real-session".substringAfter('='), body.getJSONObject("header").getString("MUSIC_U"))
+            assertEquals("qa-csrf", body.getJSONObject("header").getString("__csrf"))
+        }
+        assertNull(cloud.playbackDiagnostics(song.song().id))
+    }
+
+    @Test fun failedPlaybackProducesOnlyBoundedRedactedDiagnosticsAndSuccessOrNewLoginClearsThem() = runBlocking(Dispatchers.IO) {
+        val song = cloud.tracks("100").tracks.first(); cloud.rememberQueue(listOf(song))
+        desktopAudioCode = 200; audioAvailable = false
+        assertTrue(runCatching { cloud.resolve(song.song().uri, allowCache = false) }.exceptionOrNull() is NeteaseAudioUnavailable)
+        val report = requireNotNull(cloud.playbackDiagnostics(song.song().id))
+        assertTrue(report.contains("android/jyeffect: api=200 source=404 url=none"))
+        assertTrue(report.contains("desktop/jyeffect: api=200 source=404 url=none"))
+        assertTrue(report.contains("web-legacy/exhigh"))
+        assertTrue(report.lines().size <= 9)
+        for (private in listOf("https://", "MUSIC_U", "qa-only", "__csrf", "nickname", "uid=")) assertFalse(private, report.contains(private))
+        audioAvailable = true
+        cloud.resolve(song.song().uri, allowCache = false)
+        assertNull(cloud.playbackDiagnostics(song.song().id))
+        audioAvailable = false
+        runCatching { cloud.resolve(song.song().uri, allowCache = false) }
+        assertNotNull(cloud.playbackDiagnostics(song.song().id))
+        cloud.login("MUSIC_U=qa-only-not-a-real-session")
+        assertNull(cloud.playbackDiagnostics(song.song().id))
+    }
+
     private inner class Fixture(address: String) : HttpURLConnection(URL(address)) {
         private val output = ByteArrayOutputStream()
         private val response by lazy {
+            if (url.path == "/") { homeReads.incrementAndGet(); return@lazy "<html></html>".toByteArray() }
             val client = url.path.startsWith("/eapi/")
-            val path = if (client) "client-audio" else url.path.removePrefix("/weapi/")
+            val path = if (client) if (url.host == "interfacepc.music.163.com") "desktop-audio" else "client-audio" else url.path.removePrefix("/weapi/")
             val text = output.toString("UTF-8")
             val body = if (client) {
                 val hex = text.substringAfter("params=")
@@ -736,11 +775,11 @@ class OnlineLibraryTest {
                     (0 until ids.length()).map { ids.getJSONObject(it).getInt("id") }.reversed().map(::song)
                 }))
                 "cloudsearch/pc" -> JSONObject().put("result", JSONObject().put("songs", JSONArray().put(song(301))).put("songCount", 1))
-                "client-audio", "song/enhance/player/url/v1" -> {
-                    assertEquals("MUSIC_U=qa-only-not-a-real-session", getRequestProperty("Cookie"))
+                "client-audio", "desktop-audio", "song/enhance/player/url/v1", "song/enhance/player/url" -> {
+                    assertTrue(getRequestProperty("Cookie").split("; ").contains("MUSIC_U=qa-only-not-a-real-session"))
                     streamGate?.await()
-                    JSONObject().put("data", JSONArray().put(JSONObject().put("id", 201).put("code", 200).put("time", 180000)
-                        .put("url", "https://m7.music.126.net/qa-audio.flac").put("level", if (client) "jyeffect" else "hires")
+                    JSONObject().put("data", JSONArray().put(JSONObject().put("id", 201).put("code", if (audioAvailable) 200 else 404).put("time", 180000)
+                        .put("url", if (audioAvailable) "https://m7.music.126.net/qa-audio.flac" else JSONObject.NULL).put("level", if (client) "jyeffect" else "hires")
                         .put("type", "flac").put("br", 1800000).put("size", tone.size).put("expi", streamLifetime)))
                 }
                 "song/lyric" -> JSONObject().put("lrc", JSONObject().put("lyric", "[00:00]歌词 ${body.getString("id")}"))
@@ -755,7 +794,8 @@ class OnlineLibraryTest {
             }
             result.put("code", when (path) {
                 "client-audio" -> clientAudioCode
-                "song/enhance/player/url/v1" -> webAudioCode
+                "desktop-audio" -> desktopAudioCode
+                "song/enhance/player/url/v1", "song/enhance/player/url" -> webAudioCode
                 else -> 200
             }).toString().toByteArray()
         }
@@ -769,6 +809,8 @@ class OnlineLibraryTest {
             else -> 200
         } }
         override fun getInputStream() = ByteArrayInputStream(response)
+        override fun getHeaderFields(): Map<String, List<String>> = if (url.path == "/" && preheatCookies)
+            mapOf("Set-Cookie" to listOf("__csrf=qa-csrf; Path=/; Secure", "MUSIC_U=must-not-replace-account; Path=/")) else emptyMap()
     }
     private fun playlist(id: Int, title: String, special: Int, owner: Int) = JSONObject().put("id", id).put("name", title)
         .put("trackCount", 3).put("specialType", special).put("creator", JSONObject().put("userId", owner))

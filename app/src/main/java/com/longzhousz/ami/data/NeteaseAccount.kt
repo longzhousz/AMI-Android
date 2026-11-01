@@ -13,6 +13,14 @@ internal class NeteaseAccount(context: Context, private val web: NeteaseTranspor
     private val authLock = Any()
     private data class StreamSource(val audio: NeteaseAudio, val duration: Long, val until: Long)
     private val streams = LinkedHashMap<String, StreamSource>(3, .75f, true)
+    private data class StreamFailure(val session: Long, val report: String)
+    private val failures = LinkedHashMap<String, StreamFailure>()
+    private val warmLock = Any()
+    private var warmedSession = -1L
+    internal fun playbackDiagnostics(id: String): String? = synchronized(authLock) {
+        failures[id]?.takeIf { it.session == likes.state.value.session }?.report
+    }
+    internal fun clearFailure(id: String) { synchronized(authLock) { failures.remove(id) } }
     internal fun forgetStream(id: String) = synchronized(authLock) { streams.remove(id); Unit }
     private var likedPlaylist: String? = null
     val likes: NeteaseLikes = NeteaseLikes(read = { session ->
@@ -50,12 +58,12 @@ internal class NeteaseAccount(context: Context, private val web: NeteaseTranspor
         val profile = profile(web.post("w/nuser/account/get", JSONObject(), cookie))
         synchronized(authLock) {
             secret.save(JSONObject().put("cookie", cookie).put("uid", profile.first).put("nickname", profile.second).toString())
-            likedPlaylist = null; streams.clear(); likes.reset()
+            likedPlaylist = null; streams.clear(); failures.clear(); likes.reset()
         }
         invalidate()
         profile.second
     }
-    fun logout() { synchronized(authLock) { secret.save(""); likedPlaylist = null; streams.clear(); likes.reset() }; invalidate() }
+    fun logout() { synchronized(authLock) { secret.save(""); likedPlaylist = null; streams.clear(); failures.clear(); likes.reset() }; invalidate() }
     fun invalidate() = synchronized(lists) { lists.clear() }
     suspend fun request(path: String, data: JSONObject): JSONObject = withContext(Dispatchers.IO) {
         val (auth, session) = synchronized(authLock) { credentials() to likes.state.value.session }
@@ -187,11 +195,51 @@ internal class NeteaseAccount(context: Context, private val web: NeteaseTranspor
             streams[id]?.takeIf { it.duration == duration && it.until > android.os.SystemClock.elapsedRealtime() }?.let { return it.audio }
             credentials() to likes.state.value.session
         }
-        val cookie = neteaseCookies(auth.getString("cookie"))
+        val originalCookie = neteaseCookies(auth.getString("cookie"))
+        val cookie = if (originalCookie.split(';').any { it.trim().startsWith("__csrf=") }) originalCookie else synchronized(warmLock) {
+            val current = synchronized(authLock) {
+                if (likes.state.value.session != session) throw kotlinx.coroutines.CancellationException("网易云账号已变化")
+                neteaseCookies(credentials().getString("cookie"))
+            }
+            if (current.split(';').any { it.trim().startsWith("__csrf=") } || warmedSession == session) current else {
+                warmedSession = session
+                val fresh = runCatching { web.preheat(current) }.getOrDefault(current)
+                synchronized(authLock) {
+                    if (likes.state.value.session != session) throw kotlinx.coroutines.CancellationException("网易云账号已变化")
+                    if (fresh != current) secret.save(credentials().put("cookie", fresh).toString())
+                }
+                fresh
+            }
+        }
         val requestedAt = android.os.SystemClock.elapsedRealtime()
-        val audio = authorizedNeteaseAudio(id, duration, { web.blockingAudio(it, cookie) }, { path, data -> web.blockingPost(path, data, cookie) })
+        val attempts = ArrayList<String>(8)
+        fun measured(route: String, data: JSONObject, request: () -> JSONObject): JSONObject {
+            try {
+                return request().also { if (attempts.size < 8) attempts += audioAttempt(route, data.optString("level", "exhigh"), it) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                val code = when (failure) { is NeteaseLoginExpired -> "login-expired"; is NeteaseRequestRejected -> "api-${failure.code}"; is java.io.IOException -> "network"; else -> "invalid-response" }
+                if (attempts.size < 8) attempts += "$route/${data.optString("level", "exhigh")}: $code"
+                throw failure
+            }
+        }
+        val audio = try {
+            authorizedNeteaseAudio(id, duration,
+                { data -> measured("android", data) { web.blockingAudio(data, cookie) } },
+                { path, data -> measured(if (path.endsWith("/v1")) "web" else "web-legacy", data) { web.blockingPost(path, data, cookie) } },
+                desktop = { data -> measured("desktop", data) { web.blockingAudio(data, cookie, desktop = true) } })
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            synchronized(authLock) {
+                if (likes.state.value.session != session) throw kotlinx.coroutines.CancellationException("网易云账号已变化")
+                failures[id] = StreamFailure(session, "song=$id csrf=${if (cookie.split(';').any { it.trim().startsWith("__csrf=") }) "present" else "missing"}\n" + attempts.joinToString("\n"))
+                while (failures.size > 3) failures.remove(failures.keys.first())
+            }
+            throw failure
+        }
         synchronized(authLock) {
             if (likes.state.value.session != session) throw kotlinx.coroutines.CancellationException("网易云账号已变化")
+            failures.remove(id)
             val lifetime = (audio.validForSeconds.coerceAtMost(600) - 30).coerceAtLeast(0) * 1000
             if (requestedAt + lifetime > android.os.SystemClock.elapsedRealtime()) {
                 streams[id] = StreamSource(audio, duration, requestedAt + lifetime)
@@ -226,11 +274,17 @@ internal class NeteaseAccount(context: Context, private val web: NeteaseTranspor
         }
         private fun hasTrial(row: JSONObject) = !row.isNull("freeTrialInfo") && row.opt("freeTrialInfo")?.toString() != "null"
         internal fun streamUrl(root: JSONObject, id: String, duration: Long): String {
-            val row = root.optJSONArray("data")?.optJSONObject(0) ?: throw NeteaseAudioUnavailable()
+            when (val code = root.optInt("code")) {
+                200 -> Unit
+                301, 302, 401 -> throw NeteaseLoginExpired()
+                else -> throw NeteaseRequestRejected(code)
+            }
+            val row = audioRow(root) ?: throw NeteaseAudioUnavailable(serverCode = root.optInt("code"))
             require(row.optString("id") == neteaseId(id)) { "网易云返回了不同歌曲，请重试" }
             if (hasTrial(row) || row.optLong("time") > 0 && duration > 0 && row.optLong("time") + 5000 < duration) throw NeteaseAudioUnavailable(trial = true)
             val url = row.optString("url")
-            if (row.optInt("code") != 200 || url.isBlank() || url == "null") throw NeteaseAudioUnavailable()
+            val code = row.optInt("code", root.optInt("code"))
+            if (code != 200 || url.isBlank() || url == "null") throw NeteaseAudioUnavailable(serverCode = code)
             return cloudMediaUrl(url)
         }
     }

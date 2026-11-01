@@ -56,6 +56,7 @@ internal data class PlayerActions(
     val external: Boolean = false, val settings: (() -> Unit)? = null,
     val canSeek: Boolean = true, val canPrevious: Boolean = true, val canNext: Boolean = true, val canToggle: Boolean = true,
     val canFavorite: Boolean = true,
+    val diagnose: (() -> Unit)? = null,
 )
 
 @Composable fun PlayerScreen(song: Song, model: AmiViewModel, onClose: () -> Unit, onQueue: () -> Unit, onLyricFile: () -> Unit,
@@ -72,6 +73,8 @@ internal data class PlayerActions(
     val translation = lyrics.translation.takeIf { matched }
     val translating = matched && lyrics.translating
     val clock = rememberPlaybackClock(model.player, playback)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val diagnostics = model.cloud.playbackDiagnostics(song.id)
     PlayerContent(detailed, playback, translation, translating, PlayerActions(
         close = onClose, queue = onQueue, lyricFile = onLyricFile, favorite = { model.favorite(song) },
         seek = { if (model.player.state.value.id == song.id) model.act("player.seek") { model.player.seek(it) } },
@@ -82,6 +85,7 @@ internal data class PlayerActions(
         translate = { model.translate(song) }, retranslate = { model.translate(song, force = true) },
         restoreLyrics = { model.clearLyrics(song) },
         canFavorite = !song.isCloudSong() || model.cloud.direct && likes.ready && song.neteaseId !in likes.pending,
+        diagnose = diagnostics?.let { report -> { copyPlaybackDiagnostics(context, report) } },
     ), lyricPosition = { clock.value }, dragHandle = dragHandle, preparedLines = document?.lines, lyricsReady = document != null,
         audioQuality = if (song.isCloudSong()) qualities[song.id]?.label ?: "待确认" else song.format.ifBlank { "待确认" }, lyricsPage = lyricsPage)
 }
@@ -132,6 +136,8 @@ internal val PlayerColors = darkColorScheme(
                                 leadingIcon = { Icon(Icons.Rounded.HighQuality, null) },
                                 colors = MenuDefaults.itemColors(disabledTextColor = MaterialTheme.colorScheme.onSurface,
                                     disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant))
+                            actions.diagnose?.let { copy -> DropdownMenuItem(text = { Text("复制播放诊断") },
+                                onClick = { lyricMenu = false; copy() }, leadingIcon = { Icon(Icons.Rounded.ContentCopy, null) }) }
                             if (!song.isCloudSong() && !actions.external) DropdownMenuItem(text = { Text("为这首歌导入歌词") }, onClick = { lyricMenu = false; actions.lyricFile() })
                             if (song.manualLyrics && !actions.external) DropdownMenuItem(text = { Text("恢复自动匹配") }, onClick = { lyricMenu = false; actions.restoreLyrics() })
                             if (!translation.isNullOrEmpty()) DropdownMenuItem(text = { Text("重新翻译") }, onClick = { lyricMenu = false; actions.retranslate() }, enabled = !translating)
@@ -161,6 +167,14 @@ internal val PlayerColors = darkColorScheme(
             })
         }
     }
+}
+
+/** User-initiated support copy; the report is an allowlist, never a raw exception/response. */
+internal fun copyPlaybackDiagnostics(context: android.content.Context, report: String) {
+    val device = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".replace('\n', ' ').take(80)
+    val text = "AMI ${com.longzhousz.ami.BuildConfig.VERSION_NAME}\nAndroid ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})\n$device\n$report"
+    context.getSystemService(android.content.ClipboardManager::class.java)
+        .setPrimaryClip(android.content.ClipData.newPlainText("AMI 播放诊断", text))
 }
 
 private data class PlayerStage(val song: Song, val translation: List<String>?, val lines: List<LyricLine>?, val ready: Boolean)
