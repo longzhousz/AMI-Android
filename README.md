@@ -1,15 +1,18 @@
 # AMI Android
 
+<img src="design/ami-icon.svg" width="96" alt="AMI 图标">
+
 网易云在线音乐与沉浸式歌词播放器，保留本地音乐支持。运行只需要手机，无需电脑连接端或 root。Kotlin、Jetpack Compose、Media3；最低 Android 13（API 33），compile / target API 37。
 
 ## 下载与使用
 
-当前版本 **0.2.5**（versionCode 27）。
+当前版本 **0.2.6**（versionCode 28）。
 
 **[下载最新安装包](https://github.com/longzhousz/AMI-Android/releases/latest)** · [使用说明](docs/USER_GUIDE.md)
 
-安装发布页的 `AMI-Android-0.2.5-online-preview.apk`。它与此前云端在线版沿用同一包名、签名，可在 Android 13 及以上覆盖 0.1.14～0.2.4 并保留数据；其他包名或本地签名安装的兼容规则见使用说明。
+安装发布页的 `AMI-Android-0.2.6-online-preview.apk`。它与此前云端在线版沿用同一包名、签名，可在 Android 13 及以上覆盖 0.1.14～0.2.5 并保留数据；其他包名或本地签名安装的兼容规则见使用说明。
 
+- 全新珍珠白／墨蓝音符图标，适配桌面遮罩与系统主题；[SVG 源图及生成方式](design/README.md)随代码提供。
 - 播放页重新设计五个主控，模式合并为四项明确选择；短期复用有效音源，接近曲尾准备下一首，随机尽量打散近期歌曲与歌手／专辑。见 [播放流程](docs/PLAYBACK_FLOW.md)。
 - 专辑展开使用稳定的共享封面标识，返回重进仍从顶部开始；启动后静默检查、下载新版本，进入设置才询问安装。见 [更新规则](docs/APP_UPDATES.md)。
 - 全面采用开源 Backdrop 液态玻璃材质，悬浮栏随页面折射；专辑详情和播放页加入封面取色的流动光晕。

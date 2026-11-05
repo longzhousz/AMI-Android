@@ -1,6 +1,6 @@
 # AMI 文档
 
-当前版本 **0.2.5 / versionCode 27**。本目录只保留当前使用与开发说明；旧版交付、旧界面和已退出主流程的试验放入 [archive/](archive/README.md)。
+当前版本 **0.2.6 / versionCode 28**。本目录只保留当前使用与开发说明；旧版交付、旧界面和已退出主流程的试验放入 [archive/](archive/README.md)。
 
 | 需要了解什么 | 文档 |
 | --- | --- |
@@ -10,6 +10,7 @@
 | 页面记忆、换歌、歌词跟随与后台调度 | [播放流程](PLAYBACK_FLOW.md) |
 | 封面回看、逐字歌词、私人 FM 与共享封面 | [本轮体验说明](LISTENING_EXPERIENCE.md) |
 | 液态玻璃选型、封面光晕与最近红心封面墙 | [材质说明](LIQUID_GLASS.md) |
+| 图标源图与原生资源生成 | [图标说明](../design/README.md) |
 | 周报、月报、年报、统计口径与资源占用 | [我的聆听](MY_LISTENING.md) |
 | vivo / OriginOS 的标准接入与原子岛边界 | [系统兼容性](ORIGINOS_COMPATIBILITY.md) |
 | 协议参考与许可证 | [第三方说明](THIRD_PARTY_NOTICES.md) |
