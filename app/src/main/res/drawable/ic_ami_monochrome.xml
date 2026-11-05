@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from design/ami-icon.svg by tools/generate_icon.py. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="1536" android:viewportHeight="1536">
+    <group android:translateX="256" android:translateY="256">
+        <group android:translateX="512.0" android:translateY="512.0">
+            <group android:scaleX="1.12" android:scaleY="1.12">
+                <group android:translateX="-510.0" android:translateY="-519.0">
+                    <path android:pathData="M 426 363 C 426 348 436 336 451 333 L 665 286 C 682 282 699 295 699 313 V 612 C 699 662 657 698 607 698 C 562 698 532 674 532 638 C 532 595 573 562 620 562 C 626 562 632 563 636 564 V 383 Q 636 367 621 370 L 503 396 Q 489 399 489 413 V 665 C 489 715 447 751 397 751 C 352 751 322 727 322 691 C 322 648 363 615 410 615 C 416 615 422 616 426 617 Z" android:fillColor="#FFFFFF" />
+                </group>
+            </group>
+        </group>
+    </group>
+</vector>

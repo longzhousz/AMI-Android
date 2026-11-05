@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"
+    viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
+  <title id="title">AMI — Groove</title>
+  <desc id="description">Two ink-blue musical notes with five crisp, evenly spaced record grooves on pearl white.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2=".9" y2="1">
+      <stop stop-color="#F6F8FB"/>
+      <stop offset="1" stop-color="#E8EDF5"/>
+    </linearGradient>
+    <radialGradient id="light" cx=".10" cy=".02" r="1.1">
+      <stop stop-color="#FFFFFF" stop-opacity=".7"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ink" x1="300" y1="280" x2="700" y2="800"
+        gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3E4D67"/>
+      <stop offset="1" stop-color="#1B2A42"/>
+    </linearGradient>
+    <clipPath id="tile"><rect width="1024" height="1024" rx="228"/></clipPath>
+  </defs>
+  <rect width="1024" height="1024" rx="228" fill="url(#background)"/>
+  <rect width="1024" height="1024" rx="228" fill="url(#light)"/>
+<g clip-path="url(#tile)">
+    <g transform="translate(490 450) rotate(-34)" fill="none" stroke-linecap="round">
+      <path d="M 450.378 -129.342 A 493 318 0 1 1 -491.124 -27.716" stroke="#C6D0DF" stroke-width="3"/>
+      <path d="M 464.995 -135.850 A 509 334 0 1 1 -507.063 -29.110" stroke="#C6D0DF" stroke-width="3"/>
+      <path d="M 479.611 -142.358 A 525 350 0 1 1 -523.002 -30.505" stroke="#92A7C7" stroke-width="4"/>
+      <path d="M 494.228 -148.866 A 541 366 0 1 1 -538.941 -31.899" stroke="#C6D0DF" stroke-width="3"/>
+      <path d="M 508.845 -155.373 A 557 382 0 1 1 -554.880 -33.293" stroke="#C6D0DF" stroke-width="3"/>
+    </g>
+  </g>
+  <g transform="translate(512 512) scale(1.12) translate(-510 -519)">
+    <path fill="url(#ink)" d="M 426 363 C 426 348 436 336 451 333
+      L 665 286 C 682 282 699 295 699 313 V 612
+      C 699 662 657 698 607 698 C 562 698 532 674 532 638
+      C 532 595 573 562 620 562 C 626 562 632 563 636 564
+      V 383 Q 636 367 621 370 L 503 396 Q 489 399 489 413 V 665
+      C 489 715 447 751 397 751 C 352 751 322 727 322 691
+      C 322 648 363 615 410 615 C 416 615 422 616 426 617 Z"/>
+  </g>
+</svg>

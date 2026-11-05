@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from design/ami-icon.svg by tools/generate_icon.py. -->
+<vector xmlns:aapt="http://schemas.android.com/aapt" xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="1536" android:viewportHeight="1536">
+    <group android:translateX="256" android:translateY="256">
+        <group android:translateX="490.0" android:translateY="450.0">
+            <group android:rotation="-34.0">
+                <path android:pathData="M 450.378 -129.342 A 493 318 0 1 1 -491.124 -27.716" android:fillColor="#00000000" android:strokeColor="#C6D0DF" android:strokeWidth="3" android:strokeLineCap="round" />
+                <path android:pathData="M 464.995 -135.850 A 509 334 0 1 1 -507.063 -29.110" android:fillColor="#00000000" android:strokeColor="#C6D0DF" android:strokeWidth="3" android:strokeLineCap="round" />
+                <path android:pathData="M 479.611 -142.358 A 525 350 0 1 1 -523.002 -30.505" android:fillColor="#00000000" android:strokeColor="#92A7C7" android:strokeWidth="4" android:strokeLineCap="round" />
+                <path android:pathData="M 494.228 -148.866 A 541 366 0 1 1 -538.941 -31.899" android:fillColor="#00000000" android:strokeColor="#C6D0DF" android:strokeWidth="3" android:strokeLineCap="round" />
+                <path android:pathData="M 508.845 -155.373 A 557 382 0 1 1 -554.880 -33.293" android:fillColor="#00000000" android:strokeColor="#C6D0DF" android:strokeWidth="3" android:strokeLineCap="round" />
+            </group>
+        </group>
+        <group android:translateX="512.0" android:translateY="512.0">
+            <group android:scaleX="1.12" android:scaleY="1.12">
+                <group android:translateX="-510.0" android:translateY="-519.0">
+                    <path android:pathData="M 426 363 C 426 348 436 336 451 333 L 665 286 C 682 282 699 295 699 313 V 612 C 699 662 657 698 607 698 C 562 698 532 674 532 638 C 532 595 573 562 620 562 C 626 562 632 563 636 564 V 383 Q 636 367 621 370 L 503 396 Q 489 399 489 413 V 665 C 489 715 447 751 397 751 C 352 751 322 727 322 691 C 322 648 363 615 410 615 C 416 615 422 616 426 617 Z">
+                        <aapt:attr name="android:fillColor">
+                            <gradient android:startX="300.0" android:startY="280.0" android:endX="700.0" android:endY="800.0" android:type="linear">
+                                <item android:color="#FF3E4D67" android:offset="0" />
+                                <item android:color="#FF1B2A42" android:offset="1" />
+                            </gradient>
+                        </aapt:attr>
+                    </path>
+                </group>
+            </group>
+        </group>
+    </group>
+</vector>

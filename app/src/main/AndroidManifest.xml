@@ -16,8 +16,8 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="false"
         android:label="AMI"
-        android:icon="@drawable/ic_ami"
-        android:roundIcon="@drawable/ic_ami"
+        android:icon="@mipmap/ic_ami"
+        android:roundIcon="@mipmap/ic_ami"
         android:supportsRtl="true"
         android:theme="@style/Theme.AMI"
         android:usesCleartextTraffic="false">
