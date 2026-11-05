@@ -4,7 +4,7 @@
 
 ## 柔和暂停
 
-手动暂停约 360 ms 内按余弦包络减弱播放器增益，末尾暂停并恢复原增益。MediaLibrarySession 使用原生 ForwardingSimpleBasePlayer 扩展，未完成操作立即反馈暂停状态；应用、锁屏和耳机通过同一会话。底层 ExoPlayer 保留音频焦点与 noisy 处理，不改变系统音量。快速继续播放取消渐弱；seek、换队列、stop、release 及底层被中断时清理旧操作，不让旧任务暂停新歌曲。除这次短渐弱外无帧任务，不新增偏好或音频副本。
+手动暂停约 360 ms 内按余弦包络减弱播放器增益，末尾暂停并恢复原增益。MediaLibrarySession 使用原生 ForwardingSimpleBasePlayer 扩展，未完成操作立即反馈暂停状态；应用、锁屏和耳机通过同一会话。底层 ExoPlayer 保留音频焦点与 noisy 处理，不改变系统音量。快速继续播放取消渐弱；seek、换队列、stop、release 及底层被中断时清理旧操作，不让旧任务暂停新歌曲。渐弱结束后不保留音量帧任务，不新增偏好或音频副本。
 
 ## 完整歌名
 
@@ -16,6 +16,7 @@
 
 - 本地 112 项 JVM 全通过，Lint 无错误，Debug、AndroidTest 与优化 MusicPreview 构建通过。
 - [定向原生验证](https://github.com/longzhousz/AMI-Android/actions/runs/42063546810) Android 13／17 各 18 项通过，并验证后台回收及系统媒体恢复。核对每个原生测试名、数量和状态，覆盖真实 ExoPlayer 增益采样、快速恢复／换歌、系统底层中断、静音／未准备状态、标题中途反向动画、跨页／换歌、大字体、系统媒体会话、三种实际音频播放流程与六种歌词场景。截图与增益采样已查看。
+- [Android 17 完整回归](https://github.com/longzhousz/AMI-Android/actions/runs/42063541908/job/127371736421) 153 项全部通过，后台恢复通过；Android 13 同轮在第 122 项执行期间模拟器断连，报告不完整，不计为通过，已单独重跑。该系统的上述 18 项定向检查与签名 APK 覆盖验证均已通过。
 - [交付签名 APK 验证](https://github.com/longzhousz/AMI-Android/actions/runs/42065391400) 在 Android 13／17 覆盖安装 0.2.6，完成两次启动、设置、聆听图鉴及歌词导入入口；APK 摘要与交付文件一致。
 - v2 签名、16 KiB 对齐、最低系统、包名、版本及嵌入源码已核对；三个发布附件重新下载后与本地逐字节一致。
 
