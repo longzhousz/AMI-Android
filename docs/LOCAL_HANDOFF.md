@@ -1,31 +1,36 @@
 # AMI 当前交接
 
-当前版本 **0.2.6 / versionCode 28**，最低 Android 13 / API 33，compile / target API 37。应用源码 `3a6aa8d7e6548327d8b56c14428679aa945742bd`；后续提交仅更新文档。本地曲库 schema 5、在线音频缓存 schema 1 不变。
+当前版本 **0.2.7 / versionCode 29**，最低 Android 13 / API 33，compile / target API 37。应用源码 `d9cf3c091a37b814b331f5fccc5d788c3e4e4832`；后续提交只更新文档。本地曲库 schema 5、在线音频缓存 schema 1 不变。
 
-## 本次图标更新
+## 柔和暂停
 
-采用用户选定的珍珠白底、墨蓝双音符和五条清晰唱片纹路，不使用模糊光斑。可编辑源图位于 [design/ami-icon.svg](../design/ami-icon.svg)，通过 [Python 脚本](../tools/generate_icon.py)生成 Android 原生矢量资源，详见 [图标说明](../design/README.md)。无需运行时生成或新增依赖，不打包高分辨率 PNG。
+手动暂停约 360 ms 内按余弦包络减弱播放器增益，末尾暂停并恢复原增益。MediaLibrarySession 使用原生 ForwardingSimpleBasePlayer 扩展，未完成操作立即反馈暂停状态；应用、锁屏和耳机通过同一会话。底层 ExoPlayer 保留音频焦点与 noisy 处理，不改变系统音量。快速继续播放取消渐弱；seek、换队列、stop、release 及底层被中断时清理旧操作，不让旧任务暂停新歌曲。除这次短渐弱外无帧任务，不新增偏好或音频副本。
 
-桌面普通／圆形入口共用自适应 mipmap，由系统提供遮罩；108 dp 图层留出视差和裁切区域，音符位于安全区。背景、前景分层，颜色与源图对应。系统主题图标和通知保留清晰的单色音符。旧 AI 字母图标移除。
+## 完整歌名
 
-本轮只修改版本、图标资源及 Manifest 引用。播放、音质、缓存、账号和数据逻辑沿用 0.2.5；该版音源兼容与手机诊断说明保存在 [历史交接](archive/LOCAL_HANDOFF_0.2.5.md)，当前使用规则见 [使用说明](USER_GUIDE.md)。
+封面页与歌词页中被省略的标题点击原位展开，再点收起。只动画标题区域的尺寸，让歌手名始终在标题下方移动；封面和歌词按原有布局让出空间。极长标题在最高 160 dp 的区域内滑阅，底部主控保留。短标题不增加点击操作，换歌重置展开状态，不增加弹窗、额外文案或设置。
+
+播放队列、音质、缓存、图标、翻译和数据规则保留；图标历史见 [0.2.6 交接](archive/LOCAL_HANDOFF_0.2.6.md)，当前播放规则见 [PLAYBACK_FLOW.md](PLAYBACK_FLOW.md)。
 
 ## 验证范围
 
-- 本地 112 项 JVM 全部通过，Lint 无错误，Debug 与优化 MusicPreview 构建通过；生成脚本重复执行字节一致，SVG 与用户选定原图相同。
-- [实际云端签名 APK 检查](https://github.com/longzhousz/AMI-Android/actions/runs/41945944127) 在 Android 13／17 上覆盖安装 0.2.5，完成两次启动、设置、周／月／年聆听及歌词导入入口检查；查看系统应用信息页的新图标。截图及安装包摘要已核对，未将未签名或另一个构建当成交付包。
-- v2 签名、16 KiB 对齐、包名、最低系统、版本与嵌入的源码提交已核对；发布附件重新下载后与本地文件逐字节一致。
+- 本地 112 项 JVM 全通过，Lint 无错误，Debug、AndroidTest 与优化 MusicPreview 构建通过。
+- [定向原生验证](https://github.com/longzhousz/AMI-Android/actions/runs/42063546810) Android 13／17 各 18 项通过，并验证后台回收及系统媒体恢复。核对每个原生测试名、数量和状态，覆盖真实 ExoPlayer 增益采样、快速恢复／换歌、系统底层中断、静音／未准备状态、标题中途反向动画、跨页／换歌、大字体、系统媒体会话、三种实际音频播放流程与六种歌词场景。截图与增益采样已查看。
+- [交付签名 APK 验证](https://github.com/longzhousz/AMI-Android/actions/runs/42065391400) 在 Android 13／17 覆盖安装 0.2.6，完成两次启动、设置、聆听图鉴及歌词导入入口；APK 摘要与交付文件一致。
+- v2 签名、16 KiB 对齐、最低系统、包名、版本及嵌入源码已核对；三个发布附件重新下载后与本地逐字节一致。
 
-没有连接 vivo 或表弟手机，未新增真实账号、音质、原子岛、帧率或耗电验证。桌面图标实际遮罩与主题色由系统决定；若启动器缓存旧图标，移除快捷方式后重新添加，不卸载或清除 AMI 数据。
+首次定向 Android 13 的 AOSP 模拟器中途断连，未计为通过；最终原生验证改用项目已有的 Google APIs 33／4 GiB 配置，未降低应用画质。上一版常规 APK 启动检查也曾在应用启动前因开机 CPU 未稳定而失败，当前启动检查对齐已通过交付签名检查的 Ubuntu 24.04／AOSP 33 配置。失败记录保留在 Actions。
+
+没有连接 vivo X300 或表弟手机，未新增真机听感、帧率、耗电、网易云账号或原子岛验证。增益采样来自原生播放器参数，不是手机扬声器录音。
 
 ## 安装包
 
-`AMI-Android-0.2.6-online-preview.apk`，5,476,386 bytes；包名 `com.longzhousz.ami.musicpreview`，版本 `0.2.6-music-preview` / versionCode 28。SHA-256：
+`AMI-Android-0.2.7-online-preview.apk`，5,509,150 bytes；包名 `com.longzhousz.ami.musicpreview`，版本 `0.2.7-music-preview` / versionCode 29。SHA-256：
 
 ```text
-8aa1232c26afbb487a0facaef1a42d6a6a6d0315971a6a67bcc8cb87e7341fee
+9f4ba4995ad72237ea7fc896616acad23384d4a090efbf2ad61f30c0aacd3f94
 ```
 
-证书 SHA-256：`238e0c33d7deebc6dd873ae8f0e844cf626b873f2ddf2ea8900d4916e2dd6f39`，与云端 0.2.5 相同，可覆盖云端 0.1.14～0.2.5，保留登录、设置、曲库、歌词和聆听记录，不卸载或清数据。
+证书 SHA-256：`238e0c33d7deebc6dd873ae8f0e844cf626b873f2ddf2ea8900d4916e2dd6f39`，与云端 0.2.6 相同，可覆盖云端 0.1.14～0.2.6，保留登录、设置、曲库、歌词和聆听记录，不卸载或清数据。
 
-[0.2.6 发布](https://github.com/longzhousz/AMI-Android/releases/tag/android-v0.2.6-preview)包含 APK、中文说明和校验清单。0.2.3 起启动后可后台获取更新，进入设置才询问安装。旧版发布转草稿，历史及标签保留；安装包不进入 main。
+[0.2.7 发布](https://github.com/longzhousz/AMI-Android/releases/tag/android-v0.2.7-preview)含 APK、中文说明和校验清单。启动后可后台获取更新，进入设置才询问安装。旧发布转草稿，历史标签保留；安装包不进入 main。
