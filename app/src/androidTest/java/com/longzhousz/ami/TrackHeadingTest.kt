@@ -44,6 +44,7 @@ class TrackHeadingTest {
         compose.onNodeWithTag("player-track-heading").performClick()
         compose.mainClock.advanceTimeBy(80)
         val middle = headingHeight()
+        compose.onNodeWithText("AMI").assertIsDisplayed()
         compose.mainClock.advanceTimeBy(900)
         val opened = headingHeight()
         assertTrue("Height must animate, not jump", middle > folded && middle < opened)

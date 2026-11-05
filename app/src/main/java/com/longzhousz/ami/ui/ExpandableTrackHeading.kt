@@ -35,9 +35,10 @@ internal fun ExpandableTrackHeading(id: String, title: String, artist: String, m
             role = Role.Button, onClickLabel = if (expanded) "收起歌名" else "展开完整歌名",
             onClick = { expanded = !expanded },
         ).semantics { stateDescription = if (expanded) "已展开" else "已收起" } else Modifier
-        Column(modifier.animateContentSize(spring(dampingRatio = .96f, stiffness = 380f), Alignment.TopStart)
-            .then(toggle).testTag("player-track-heading")) {
-            Text(title, Modifier.fillMaxWidth().heightIn(max = 160.dp).verticalScroll(scroll, enabled = expanded)
+        Column(modifier.then(toggle).testTag("player-track-heading")) {
+            Text(title, Modifier.fillMaxWidth()
+                .animateContentSize(spring(dampingRatio = .96f, stiffness = 380f), Alignment.TopStart)
+                .heightIn(max = 160.dp).verticalScroll(scroll, enabled = expanded)
                 .testTag("player-track-title"),
                 color = Color.White, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold,
                 maxLines = if (expanded) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis,
