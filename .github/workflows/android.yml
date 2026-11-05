@@ -183,7 +183,8 @@ jobs:
     permissions:
       actions: read
       contents: read
-    runs-on: ubuntu-latest
+    # Keep API 33's startup check on the same host/image as signed upgrade validation.
+    runs-on: ${{ matrix.api == '33' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -232,13 +233,13 @@ jobs:
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api }}
-          target: ${{ matrix.api == '33' && 'google_apis' || 'default' }}
+          target: default
           arch: x86_64
           profile: pixel_2
           disk-size: ${{ matrix.api == '37.0' && '8192M' || '4096M' }}
-          ram-size: ${{ matrix.api == '33' && '4096M' || '' }}
+          ram-size: ${{ matrix.api == '33' && '2048' || '' }}
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect ${{ matrix.api == '33' && '-feature -Vulkan' || '' }} -noaudio -no-boot-anim -no-snapshot -camera-back none
+          emulator-options: -no-window -gpu ${{ matrix.api == '33' && 'swiftshader' || 'swiftshader_indirect' }} ${{ matrix.api == '33' && '-feature -Vulkan' || '' }} -noaudio -no-boot-anim -no-snapshot -camera-back none
           script: bash .github/scripts/android-preview-smoke.sh
       - uses: actions/upload-artifact@v4
         if: always()

@@ -72,6 +72,7 @@ class PlaybackService : MediaLibraryService() {
     private val repository get() = (application as AmiApplication).repository
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var player: ExoPlayer
+    private lateinit var sessionPlayer: FadingPausePlayer
     private var session: MediaLibrarySession? = null
     private var restored = false
     private val restoration = CompletableDeferred<Unit>()
@@ -153,7 +154,8 @@ class PlaybackService : MediaLibraryService() {
             shuffleModeEnabled = mode.shuffle
         }
         radio = RadioQueue(repository.cloud, player, scope)
-        session = MediaLibrarySession.Builder(this, player, callback)
+        sessionPlayer = FadingPausePlayer(player, onPauseRequested = { checkpoint() })
+        session = MediaLibrarySession.Builder(this, sessionPlayer, callback)
             .setSessionActivity(PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)).build()
         player.addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
             override fun onAudioInputFormatChanged(eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
@@ -303,6 +305,7 @@ class PlaybackService : MediaLibraryService() {
         }
     }
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     override fun onDestroy() {
         repository.listeningStats.sample(null, false, android.os.SystemClock.elapsedRealtime(), System.currentTimeMillis(), ZoneId.systemDefault())
         repository.listeningStats.flushAsync()
@@ -314,7 +317,7 @@ class PlaybackService : MediaLibraryService() {
         restored = false
         restoration.cancel()
         scope.cancel()
-        session?.release(); player.release()
+        session?.release(); sessionPlayer.release()
         super.onDestroy()
     }
 }

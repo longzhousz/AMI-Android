@@ -30,8 +30,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
@@ -204,12 +202,7 @@ private data class PlayerStage(val song: Song, val translation: List<String>?, v
                 AnimatedContent(song.title to song.artist, Modifier.weight(1f).graphicsLayer {
                     translationX = -60.dp.toPx() * (1f - artworkProgress.value)
                 }, transitionSpec = { AmiMotion.track() }, label = "player-track") { track ->
-                    Column {
-                        Text(track.first, fontSize = 22.sp, lineHeight = 28.sp,
-                            fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(track.second, Modifier.padding(top = 4.dp), fontSize = 13.sp, lineHeight = 19.sp,
-                            color = Color.White.copy(alpha = .56f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
+                    ExpandableTrackHeading(song.id, track.first, track.second)
                 }
                 if (!actions.external) ActionIcon(if (song.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     if (song.favorite) "取消喜欢" else "加入喜欢", actions.favorite,
