@@ -56,9 +56,12 @@ class TranslationClient internal constructor(
             } else {
                 listOf(selection)
             }
-        return compatible.firstNotNullOfOrNull { model ->
-            repository.db.translation(key(song, lines, model, style))?.let { body ->
-                runCatching { JSONArray(body).let { array -> (0 until array.length()).map { array.getString(it) } }.takeIf { it.size == lines.size } }.getOrNull()
+        val identities = listOf(song.id) + repository.db.translationAliases(song.id)
+        return identities.firstNotNullOfOrNull { id ->
+            compatible.firstNotNullOfOrNull { model ->
+                repository.db.translation(key(song.copy(id = id), lines, model, style))?.let { body ->
+                    runCatching { JSONArray(body).let { array -> (0 until array.length()).map { array.getString(it) } }.takeIf { it.size == lines.size } }.getOrNull()
+                }
             }
         }
     }

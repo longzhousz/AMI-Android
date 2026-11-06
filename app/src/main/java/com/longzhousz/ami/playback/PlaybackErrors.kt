@@ -11,9 +11,9 @@ import java.io.IOException
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal fun neteasePlaybackError(error: PlaybackException): String {
     val causes = generateSequence(error as Throwable) { it.cause }.take(12).toList()
-    causes.filterIsInstance<NeteaseLoginExpired>().firstOrNull()?.let { return it.message!! }
-    causes.filterIsInstance<NeteaseAudioUnavailable>().firstOrNull()?.let { return it.message!! }
-    causes.filterIsInstance<NeteaseRequestRejected>().firstOrNull()?.let { return it.message!! }
+    causes.filterIsInstance<NeteaseLoginExpired>().firstOrNull()?.let { return it.message ?: "未知播放错误" }
+    causes.filterIsInstance<NeteaseAudioUnavailable>().firstOrNull()?.let { return it.message ?: "未知播放错误" }
+    causes.filterIsInstance<NeteaseRequestRejected>().firstOrNull()?.let { return it.message ?: "未知播放错误" }
     causes.filterIsInstance<HttpDataSource.InvalidResponseCodeException>().firstOrNull()?.let {
         return "音频服务器暂时无法提供这首歌（${it.responseCode}），请重试"
     }

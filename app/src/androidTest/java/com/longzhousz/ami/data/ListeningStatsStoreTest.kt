@@ -118,7 +118,7 @@ class ListeningStatsStoreTest {
             }
             db = LibraryDatabase(context, name)
             store = ListeningStatsStore(db, CoroutineScope(job + Dispatchers.IO))
-            assertEquals(5, db.readableDatabase.version)
+            assertEquals(6, db.readableDatabase.version)
             assertTrue(db.songs().single().favorite)
             assertEquals("[00:00]原文", db.songs().single().lyrics)
             assertEquals("[\"保留译文\"]", db.translation("saved-translation"))

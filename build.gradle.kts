@@ -2,6 +2,7 @@ plugins {
     id("com.android.application") version "9.4.1" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.2.21" apply false
     id("com.diffplug.spotless") version "8.11.0"
+    id("io.gitlab.arturbosch.detekt") version "1.23.8"
 }
 
 // Pin the formatter inputs for CI as well as editor integrations.
@@ -23,4 +24,12 @@ spotless {
         target("*.gradle.kts", "app/*.gradle.kts")
         ktlint("1.8.0").editorConfigOverride(kotlinStyle)
     }
+}
+
+detekt {
+    toolVersion = "1.23.8"
+    buildUponDefaultConfig = false
+    source.setFrom("app/src/main/java")
+    config.setFrom("config/detekt.yml")
+    baseline = file("config/detekt-baseline.xml")
 }

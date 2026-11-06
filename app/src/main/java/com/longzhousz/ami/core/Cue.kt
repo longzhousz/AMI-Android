@@ -28,7 +28,7 @@ object Cue {
         fun flush() {
             if (number > 0) {
                 require(file.isNotBlank() && start != null) { "CUE 曲目缺少 FILE 或 INDEX 01" }
-                tracks += CueTrack(file.replace('\\', '/'), number, title.ifBlank { "Track %02d".format(number) }, artist.ifBlank { albumArtist }, start!!)
+                tracks += CueTrack(file.replace('\\', '/'), number, title.ifBlank { "Track %02d".format(java.util.Locale.ROOT, number) }, artist.ifBlank { albumArtist }, start!!)
             }
         }
 

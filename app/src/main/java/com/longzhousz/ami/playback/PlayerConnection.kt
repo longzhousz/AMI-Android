@@ -8,6 +8,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.longzhousz.ami.core.Song
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 enum class PlayMode(
     val label: String,
@@ -52,7 +53,8 @@ data class PlaybackState(
 class PlayerConnection(
     private val context: Context,
 ) {
-    val state = MutableStateFlow(PlaybackState())
+    private val _state = MutableStateFlow(PlaybackState())
+    val state = _state.asStateFlow()
     private val future = MediaController.Builder(context, SessionToken(context, ComponentName(context, PlaybackService::class.java))).buildAsync()
     private var controller: MediaController? = null
     private var queue: List<String> = emptyList()
@@ -69,7 +71,7 @@ class PlayerConnection(
             runCatching {
                 controller = future.get().also { it.addListener(listener) }
                 update(true)
-            }.onFailure { state.value = state.value.copy(error = "无法连接播放服务，请重启应用") }
+            }.onFailure { _state.value = state.value.copy(error = "无法连接播放服务，请重启应用") }
         }, ContextCompat.getMainExecutor(context))
     }
 
@@ -82,7 +84,7 @@ class PlayerConnection(
         val cloud = (context.applicationContext as com.longzhousz.ami.AmiApplication).repository.cloud
         val recovering = c.currentMediaItem?.mediaId?.let { cloud.recoveringAudio == it } == true
         val playRequested = c.playWhenReady && c.playbackState != Player.STATE_ENDED && (c.playerError == null || recovering)
-        state.value =
+        _state.value =
             PlaybackState(
                 true,
                 c.currentMediaItem?.mediaId,

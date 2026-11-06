@@ -95,7 +95,6 @@ fun AmiApp(
     ) {
         val focus = LocalFocusManager.current
         val library by model.repository.library.collectAsStateWithLifecycle()
-        val onlineSongs by model.cloud.catalog.collectAsStateWithLifecycle()
         val onlineLikes by model.cloud.likes.collectAsStateWithLifecycle()
         val loading by model.repository.loading.collectAsStateWithLifecycle()
         val playback by model.player.state.collectAsStateWithLifecycle()
@@ -109,7 +108,8 @@ fun AmiApp(
         var remove by remember { mutableStateOf<Song?>(null) }
         var miniBounds by remember { mutableStateOf<Rect?>(null) }
         val pageState = rememberSaveableStateHolder()
-        val current = songsById[playback.id] ?: onlineSongs[playback.id]
+        val selectedSong by model.playback.currentSong.collectAsStateWithLifecycle()
+        val current = selectedSong
         // Survives sheet disposal, but every new track starts on its original artwork.
         val lyricsPage = rememberSaveable(playback.id, selection) { mutableStateOf(false) }
         val floatingInset = if (current != null) 156.dp else 88.dp
@@ -136,7 +136,7 @@ fun AmiApp(
         LaunchedEffect(bridgeAlbum) {
             bridgeAlbum?.let {
                 albumKey = it
-                model.bridgeAlbum.value = null
+                model.consumeBridgeAlbum(it)
             }
         }
         LaunchedEffect(bridgeEnabled, lifecycle) {
@@ -161,7 +161,7 @@ fun AmiApp(
         LaunchedEffect(message) {
             message?.let {
                 snackbar.showSnackbar(it)
-                if (model.message.value == it) model.message.value = null
+                model.consumeMessage(it)
             }
         }
         val context = LocalContext.current
@@ -243,10 +243,7 @@ fun AmiApp(
                                                         { page = 2 },
                                                         ListeningScale.entries.firstOrNull { it.name == model.repository.prefs.getString("listeningScale", "MONTH") } ?: ListeningScale.MONTH,
                                                         {
-                                                            model.repository.prefs
-                                                                .edit()
-                                                                .putString("listeningScale", it.name)
-                                                                .apply()
+                                                            model.library.setListeningScale(it)
                                                         },
                                                     )
                                                 }
@@ -398,7 +395,7 @@ fun AmiApp(
                         playback.id,
                         current?.cover,
                         songFor = { id ->
-                            (songsById[id] ?: onlineSongs[id])?.let { song ->
+                            model.findSong(id)?.let { song ->
                                 if (song.isCloudSong()) song.copy(favorite = song.neteaseId in onlineLikes.ids) else song
                             }
                         },

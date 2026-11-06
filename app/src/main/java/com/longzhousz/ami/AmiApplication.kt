@@ -16,6 +16,14 @@ import kotlinx.coroutines.launch
 class AmiApplication :
     Application(),
     ImageLoaderFactory {
+    override fun onCreate() {
+        super.onCreate()
+        if (BuildConfig.DEBUG) {
+            com.longzhousz.ami.data.AppDiagnostics
+                .enableDevelopmentChecks()
+        }
+    }
+
     private val repositoryHolder = lazy { LibraryRepository(this) }
     val repository by repositoryHolder
     internal val updates by lazy {

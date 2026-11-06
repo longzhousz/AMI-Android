@@ -1,37 +1,21 @@
 # AMI 当前交接
 
-当前版本 **0.2.7 / versionCode 29**，最低 Android 13 / API 33，compile / target API 37。应用源码 `d9cf3c091a37b814b331f5fccc5d788c3e4e4832`；后续提交只更新文档。本地曲库 schema 5、在线音频缓存 schema 1 不变。
+当前开发版本 **0.2.8 / versionCode 30**，最低 Android 13 / API 33，compile / target API 37。本地曲库升级至 schema 6，在线音频缓存 schema 1 不变。已发布 0.2.7 的身份与证据保存在 [上一版交接](archive/LOCAL_HANDOFF_0.2.7.md)。
 
-## 柔和暂停
+## 本轮行为
 
-手动暂停约 360 ms 内按余弦包络减弱播放器增益，末尾暂停并恢复原增益。MediaLibrarySession 使用原生 ForwardingSimpleBasePlayer 扩展，未完成操作立即反馈暂停状态；应用、锁屏和耳机通过同一会话。底层 ExoPlayer 保留音频焦点与 noisy 处理，不改变系统音量。快速继续播放取消渐弱；seek、换队列、stop、release 及底层被中断时清理旧操作，不让旧任务暂停新歌曲。渐弱结束后不保留音量帧任务，不新增偏好或音频副本。
+设置增加「备份与恢复」，通过系统文件选择器导出／导入 JSON。保存统计、本地收藏、非机密设置、手动歌词关联和已有译文；排除会话、密钥、Agent 调用授权、媒体文件、路径与文件夹授权。导入先验证，再事务合并，保留当前数据；同源统计取较大累计值，不同安装来源相加，重复导入不重复累计。源 UUID 只占数字计数的索引，不记录逐次事件。旧 schema 5 数据原样迁入本机来源。
 
-## 完整歌名
+本地关联等待重新授权并完整扫描后匹配，歧义不猜；旧译文可沿历史歌曲 ID 查询，无需再次请求。网易云红心仍由账号服务同步。完整规则与限制见 [备份恢复](DATA_BACKUP.md)。
 
-封面页与歌词页中被省略的标题点击原位展开，再点收起。只动画标题区域的尺寸，让歌手名始终在标题下方移动；封面和歌词按原有布局让出空间。极长标题在最高 160 dp 的区域内滑阅，底部主控保留。短标题不增加点击操作，换歌重置展开状态，不增加弹窗、额外文案或设置。
+播放、在线、本地状态分别由三个持有者管理，主题、Agent 和提示公开只读流，经意图方法持久化；根组合改为订阅当前歌曲投影。安装权限只在 musicPreview 清单。诊断只驻内存，保存最近 50 条固定错误码、异常类型和时间，原有复制入口附带最近五条；StrictMode 只在 Debug 启用。播放与设置主要控件及长隐私说明开始资源化。见 [状态、检查与诊断](ENGINEERING.md)。
 
-播放队列、音质、缓存、图标、翻译和数据规则保留；图标历史见 [0.2.6 交接](archive/LOCAL_HANDOFF_0.2.6.md)，当前播放规则见 [PLAYBACK_FLOW.md](PLAYBACK_FLOW.md)。
+README 改为稳定中英产品介绍，更新记录留在 Releases；AGENTS 只保留长期协作规则，具体行为移至 [产品约束](PRODUCT_CONSTRAINTS.md) 和专题。全量格式已先独立提交 `4ea431e`，Spotless / ktlint 与窄范围 detekt 进入 CI。
 
-## 验证范围
+## 验证与交付状态
 
-- 本地 112 项 JVM 全通过，Lint 无错误，Debug、AndroidTest 与优化 MusicPreview 构建通过。
-- [定向原生验证](https://github.com/longzhousz/AMI-Android/actions/runs/42063546810) Android 13／17 各 18 项通过，并验证后台回收及系统媒体恢复。核对每个原生测试名、数量和状态，覆盖真实 ExoPlayer 增益采样、快速恢复／换歌、系统底层中断、静音／未准备状态、标题中途反向动画、跨页／换歌、大字体、系统媒体会话、三种实际音频播放流程与六种歌词场景。截图与增益采样已查看。
-- [Android 17 完整回归](https://github.com/longzhousz/AMI-Android/actions/runs/42063541908/job/127371736421) 153 项全部通过，后台恢复通过；Android 13 同轮在第 122 项执行期间模拟器断连，报告不完整，不计为通过，已单独重跑。该系统的上述 18 项定向检查与签名 APK 覆盖验证均已通过。
-- [交付签名 APK 验证](https://github.com/longzhousz/AMI-Android/actions/runs/42065391400) 在 Android 13／17 覆盖安装 0.2.6，完成两次启动、设置、聆听图鉴及歌词导入入口；APK 摘要与交付文件一致。
-- v2 签名、16 KiB 对齐、最低系统、包名、版本及嵌入源码已核对；三个发布附件重新下载后与本地逐字节一致。
+本地阶段检查：115 项 JVM 测试通过，格式、detekt、Lint、Debug 与 AndroidTest 构建通过；七种变体的合并清单已核对，只有 musicPreview 带安装权限。Android 13／17 原生完整回归及优化安装包验证尚未执行，不计为通过。完成后在本页记录本轮源码和产物身份。
 
-首次定向 Android 13 的 AOSP 模拟器中途断连，未计为通过；最终原生验证改用项目已有的 Google APIs 33／4 GiB 配置，未降低应用画质。上一版常规 APK 启动检查也曾在应用启动前因开机 CPU 未稳定而失败，当前启动检查对齐已通过交付签名检查的 Ubuntu 24.04／AOSP 33 配置。失败记录保留在 Actions。
+没有连接 vivo X300、表弟手机或真实网易云账号，不新增真机播放、音质、原子岛、帧率或耗电结论。图标、播放动效与画质保持原产品规则，未通过降低渲染效果换取检查通过。
 
-没有连接 vivo X300 或表弟手机，未新增真机听感、帧率、耗电、网易云账号或原子岛验证。增益采样来自原生播放器参数，不是手机扬声器录音。
-
-## 安装包
-
-`AMI-Android-0.2.7-online-preview.apk`，5,509,150 bytes；包名 `com.longzhousz.ami.musicpreview`，版本 `0.2.7-music-preview` / versionCode 29。SHA-256：
-
-```text
-9f4ba4995ad72237ea7fc896616acad23384d4a090efbf2ad61f30c0aacd3f94
-```
-
-证书 SHA-256：`238e0c33d7deebc6dd873ae8f0e844cf626b873f2ddf2ea8900d4916e2dd6f39`，与云端 0.2.6 相同，可覆盖云端 0.1.14～0.2.6，保留登录、设置、曲库、歌词和聆听记录，不卸载或清数据。
-
-[0.2.7 发布](https://github.com/longzhousz/AMI-Android/releases/tag/android-v0.2.7-preview)含 APK、中文说明和校验清单。启动后可后台获取更新，进入设置才询问安装。旧发布转草稿，历史标签保留；安装包不进入 main。
+尚未发布 0.2.8 安装包。当前下载仍指向 0.2.7；待实际签名、摘要、源码及验证结果核对后更新交付身份。

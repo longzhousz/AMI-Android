@@ -22,7 +22,7 @@ data class ScanRecord(
 class LibraryDatabase(
     context: Context,
     name: String = "ami.sqlite3",
-) : SQLiteOpenHelper(context, name, null, 5) {
+) : SQLiteOpenHelper(context, name, null, 6) {
     init {
         setWriteAheadLoggingEnabled(true)
     }
@@ -47,6 +47,7 @@ class LibraryDatabase(
         createPerformanceTables(db)
         createLazyLyricsTables(db)
         createListeningTables(db)
+        createBackupLinks(db)
     }
 
     override fun onUpgrade(
@@ -62,6 +63,8 @@ class LibraryDatabase(
         if (oldVersion < 3) createPerformanceTables(db)
         if (oldVersion < 4) createLazyLyricsTables(db)
         if (oldVersion < 5) createListeningTables(db)
+        if (oldVersion == 5) migrateListeningOrigins(db)
+        if (oldVersion < 6) createBackupLinks(db)
     }
 
     private fun createPerformanceTables(db: SQLiteDatabase) {

@@ -228,7 +228,7 @@ internal val FavoriteRed = Color(0xFFEE4865)
                 if (playing) {
                     Icon(Icons.Rounded.Equalizer, "正在播放", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                 } else {
-                    Text("%02d".format(number), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    Text("%02d".format(java.util.Locale.ROOT, number), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 }
             }
         } else {

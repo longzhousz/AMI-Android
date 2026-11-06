@@ -1,63 +1,35 @@
-# AMI Android
+# AMI
 
-<img src="design/ami-icon.svg" width="96" alt="AMI 图标">
+<img src="design/ami-icon.svg" width="96" alt="AMI">
 
-网易云在线音乐与沉浸式歌词播放器，保留本地音乐支持。运行只需要手机，无需电脑连接端或 root。Kotlin、Jetpack Compose、Media3；最低 Android 13（API 33），compile / target API 37。
+[简体中文](#简体中文) · [English](#english)
 
-## 下载与使用
+## 简体中文
 
-当前版本 **0.2.7**（versionCode 29）。
+AMI 是一款注重歌词、动效与聆听体验的 Android 音乐播放器。可以在手机上登录网易云音乐，浏览收藏专辑、歌单与红心歌曲，也保留本地音乐支持。
 
-**[下载最新安装包](https://github.com/longzhousz/AMI-Android/releases/latest)** · [使用说明](docs/USER_GUIDE.md)
+- 沉浸式封面与歌词、逐字跟随、按需 AI 翻译和柔和播放控制。
+- 液态玻璃与封面取色光晕，清晰、简洁的界面。
+- 常听歌曲与封面按需缓存，周、月、年聆听图鉴与手动备份恢复。
 
-安装发布页的 `AMI-Android-0.2.7-online-preview.apk`。它与此前云端在线版沿用同一包名、签名，可在 Android 13 及以上覆盖 0.1.14～0.2.6 并保留数据；其他包名或本地签名安装的兼容规则见使用说明。
+**Android 13 及以上。** 不需要 root 或电脑连接端。网易云功能使用兼容协议，遵循账号、会员和歌曲权限，并非官方 SDK；翻译需要自行配置服务密钥。
 
-- 手动暂停时声音在约 0.36 秒内柔和收住，按钮立即响应；快速恢复不会留下低音量或迟到的暂停。
-- 播放页长歌名点击原处展开，再点收起，封面和歌手名随布局平顺移动。
-- 全新珍珠白／墨蓝音符图标，适配桌面遮罩与系统主题；[SVG 源图及生成方式](design/README.md)随代码提供。
-- 播放页重新设计五个主控，模式合并为四项明确选择；短期复用有效音源，接近曲尾准备下一首，随机尽量打散近期歌曲与歌手／专辑。见 [播放流程](docs/PLAYBACK_FLOW.md)。
-- 专辑展开使用稳定的共享封面标识，返回重进仍从顶部开始；启动后静默检查、下载新版本，进入设置才询问安装。见 [更新规则](docs/APP_UPDATES.md)。
-- 全面采用开源 Backdrop 液态玻璃材质，悬浮栏随页面折射；专辑详情和播放页加入封面取色的流动光晕。
-- 「我喜欢」使用最多 30 张封面的沉浸式拼墙，统一角度并渐隐至深色背景，歌曲行不显示重复红心。
-- 专辑每次重新进入都从顶部开始；播放队列使用弹层内独立的封面配色，修复主题及开关动画。见 [材质与资源说明](docs/LIQUID_GLASS.md)。
-- 近期专辑内容优先复用，元数据内存缓存按估算 1 MiB 预算淘汰、最长七天；详情下拉可更新，不显示转圈。
+[下载安装包与更新日志](https://github.com/longzhousz/AMI-Android/releases/latest) · [使用说明](docs/USER_GUIDE.md) · [项目文档](docs/README.md)
 
-- 在线歌曲支持添加／取消网易云红心，播放页、列表与队列共用状态，成功后更新「我喜欢」。
-- 修正播放请求的客户端协议版本，补充同一账号的第一方桌面回退及旧会话校验字段；失败时可直接用手机复制脱敏诊断，保持最高授权音质优先。尚未用反馈账号验证，详见 [排查说明](docs/USER_GUIDE.md#播放失败排查)。
-- 「曲库」展示网易云收藏专辑与自建歌单；「我喜欢」展示红心歌曲。下拉或双击导航图标主动刷新。
-- 新选歌曲默认封面页，同一首歌收起重开记住封面／歌词。封面支持连续缩放与下拉交接，歌词可点句跳转。
-- 常听歌曲自动缓存，最近使用的封面按需保留；容量可在设置调整，后台补齐与清理避开前台操作。
-- 翻译按需使用 DeepSeek，可自动跟随最新模型；默认不使用网易云自带译文。
-- 浏览过的封面回滚时立即复用轻量预览；支持真实逐字歌词、私人 FM／每日推荐，以及专辑封面共享转场。见 [本轮体验说明](docs/LISTENING_EXPERIENCE.md)。
+## English
 
-- 「设置 → 我的聆听」直接进入周、月、年图鉴，长期保存实际播放的轻量数字汇总。见 [我的聆听](docs/MY_LISTENING.md)。
+AMI is an Android music player built around lyrics, fluid motion, and the listening experience. Sign in to NetEase Cloud Music on your phone to browse saved albums, playlists, and liked songs, or play your local music.
 
-## 文档
+- Immersive artwork and lyrics, word timing, optional AI translation, and gentle playback controls.
+- Liquid glass surfaces and artwork-inspired ambient colors in a clean interface.
+- On-demand artwork and frequently played audio caching, with weekly, monthly, and yearly listening reports and manual backup and restore.
 
-| 内容 | 入口 |
-| --- | --- |
-| 当前文档索引 | [docs/README.md](docs/README.md) |
-| 手机使用、音质、缓存与本地音乐 | [USER_GUIDE.md](docs/USER_GUIDE.md) |
-| 当前交接与验证范围 | [LOCAL_HANDOFF.md](docs/LOCAL_HANDOFF.md) |
-| 本地构建、签名与 USB 调试 | [LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) |
-| 当前播放流程 | [PLAYBACK_FLOW.md](docs/PLAYBACK_FLOW.md) |
-| 历史版本与旧试验 | [docs/archive/](docs/archive/README.md) |
+**Requires Android 13 or newer.** No root or desktop companion is required. NetEase integration uses compatible protocols and respects account and track permissions; it is not an official SDK. Translation requires your own service key.
 
-main 维护当前源码与文档，安装包放在 Releases。旧版本说明统一归档，Git 提交历史保留。
+[Downloads and release notes](https://github.com/longzhousz/AMI-Android/releases/latest) · [User guide (Chinese)](docs/USER_GUIDE.md) · [Project documentation](docs/README.md)
 
-## 构建
+---
 
-使用 JDK 21、仓库 Gradle Wrapper、Android SDK `platforms;android-37.0` 和 Build Tools `36.0.0`，在仓库根目录执行：
+Kotlin · Jetpack Compose · Media3. [Development](docs/LOCAL_DEVELOPMENT.md) · [Third-party notices](docs/THIRD_PARTY_NOTICES.md) · [Icon source](design/README.md)
 
-```sh
-./gradlew testDebugUnitTest lintDebug assembleDebug
-./gradlew assembleMusicPreview
-```
-
-Windows 使用 `gradlew.bat`。在线预览包位于 `app/build/outputs/apk/musicPreview/app-musicPreview.apk`；本机开发签名通常不能覆盖云端安装包，不要通过卸载或清除数据解决签名冲突。
-
-正式 Release 默认未签名；配置 `AMI_KEYSTORE_PATH`、`AMI_KEYSTORE_PASSWORD`、`AMI_KEY_ALIAS`、`AMI_KEY_PASSWORD` 后可运行 `assembleRelease bundleRelease`。密钥、签名文件、私人媒体和设备日志不提交 Git。完整工具链与构建类型见本地开发文档。
-
-## 来源
-
-源自 [AMI](https://github.com/longzhousz/AMI) 的 Android 工程，在此独立维护；不依赖桌面仓库。第三方协议参考与许可见 [THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md)。
+Based on the Android project from [AMI](https://github.com/longzhousz/AMI); maintained here as a standalone application.

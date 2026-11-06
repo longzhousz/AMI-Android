@@ -274,6 +274,8 @@ class LibraryScanner(
             flush()
             if (changed) repository.reload()
         }
+        repository.db.applyBackupLinks()
+        repository.reload()
         repository.importState.value = ImportState(false, work.size, work.size, "已导入 / 更新 $imported 首 · 网易云歌词 ${lyricReport.imported} 份 · 跳过 $skipped 个音频镜像 · ${errors.size} 个问题", errors.takeLast(50))
     }
 

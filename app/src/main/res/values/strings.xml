@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="backup_title" formatted="false">备份与恢复</string>
+    <string name="backup_summary" formatted="false">保存个人数据，换机后继续聆听</string>
+    <string name="backup_description" formatted="false">导出一个 JSON 文件，保存聆听统计、本地收藏、设置、歌词关联与已有译文。\n\n恢复时合并现有数据，重复导入不会重复累计时长。网易云红心仍在登录后由账号同步。\n\n不包含登录凭据、API Key、音频、封面文件或文件夹授权。换机后请重新登录，并为本地音乐重新授权文件夹。备份含听歌习惯，请自行妥善保存。</string>
+    <string name="backup_export" formatted="false">导出数据</string>
+    <string name="backup_restore" formatted="false">导入恢复</string>
+    <string name="backup_exported" formatted="false">个人数据已导出</string>
+    <string name="backup_restored" formatted="false">个人数据已合并恢复。换机后请重新登录网易云，并授权本地音乐文件夹。</string>
+    <string name="backup_export_failed" formatted="false">导出未完成，请检查存储空间和文件写入权限后重试</string>
+    <string name="backup_restore_failed" formatted="false">恢复未完成，请确认文件是完整的 AMI 备份，并检查存储空间。原有数据已保留。</string>
+    <string name="common_close" formatted="false">关闭</string>
+    <string name="common_done" formatted="false">完成</string>
+    <string name="common_cancel" formatted="false">取消</string>
+    <string name="player_quality_unknown" formatted="false">待确认</string>
+    <string name="player_quality_unavailable" formatted="false">暂不可知</string>
+    <string name="player_collapse" formatted="false">收起播放页</string>
+    <string name="common_settings" formatted="false">设置</string>
+    <string name="player_lyrics_options" formatted="false">歌词选项</string>
+    <string name="player_diagnostics_copy" formatted="false">复制播放诊断</string>
+    <string name="player_import_lyrics" formatted="false">为这首歌导入歌词</string>
+    <string name="player_automatic_lyrics" formatted="false">恢复自动匹配</string>
+    <string name="player_retranslate" formatted="false">重新翻译</string>
+    <string name="player_no_lyrics" formatted="false">暂无歌词</string>
+    <string name="player_unlike" formatted="false">取消喜欢</string>
+    <string name="player_like" formatted="false">加入喜欢</string>
+    <string name="player_ordered_description" formatted="false">播完队列后停止</string>
+    <string name="player_repeat_description" formatted="false">播完队列后从头继续</string>
+    <string name="player_current_mode" formatted="false">当前模式</string>
+    <string name="player_previous" formatted="false">上一首</string>
+    <string name="player_pause" formatted="false">暂停</string>
+    <string name="player_play" formatted="false">播放</string>
+    <string name="player_next" formatted="false">下一首</string>
+    <string name="player_open_netease" formatted="false">打开网易云音乐</string>
+    <string name="player_queue" formatted="false">播放队列</string>
+    <string name="player_switch_cover" formatted="false">切换到封面</string>
+    <string name="player_switch_lyrics" formatted="false">切换到歌词</string>
+    <string name="player_hide_translation" formatted="false">隐藏译文</string>
+    <string name="player_show_translation" formatted="false">显示译文</string>
+    <string name="player_translate" formatted="false">翻译歌词</string>
+    <string name="player_buffering" formatted="false">正在缓冲…</string>
+    <string name="settings_account_section" formatted="false">账号</string>
+    <string name="settings_account" formatted="false">网易云账号</string>
+    <string name="settings_logged_in" formatted="false">已登录</string>
+    <string name="settings_sign_in_summary" formatted="false">登录后同步专辑、歌单与红心歌曲</string>
+    <string name="settings_listening" formatted="false">我的聆听</string>
+    <string name="settings_listening_summary" formatted="false">周、月、年 · 回看音乐留下的足迹</string>
+    <string name="settings_translation_section" formatted="false">歌词与翻译</string>
+    <string name="settings_netease_lyrics" formatted="false">网易云歌词</string>
+    <string name="settings_saved_key" formatted="false">已加密保存 · 点击更换或删除</string>
+    <string name="settings_key_summary" formatted="false">用于翻译与获取官方模型列表</string>
+    <string name="settings_model" formatted="false">翻译模型</string>
+    <string name="settings_style" formatted="false">翻译风格</string>
+    <string name="settings_style_summary" formatted="false">按顺序遵循你的表达偏好</string>
+    <string name="settings_test" formatted="false">测试连接</string>
+    <string name="settings_test_summary" formatted="false">发送一条简短测试消息</string>
+    <string name="settings_appearance_section" formatted="false">聆听与外观</string>
+    <string name="settings_theme" formatted="false">外观</string>
+    <string name="settings_light" formatted="false">浅色</string>
+    <string name="settings_dark" formatted="false">深色</string>
+    <string name="settings_system" formatted="false">跟随系统</string>
+    <string name="settings_local_section" formatted="false">本地音乐</string>
+    <string name="settings_local_browse" formatted="false">浏览本地音乐</string>
+    <string name="settings_local_summary" formatted="false">保留已导入的曲库与收藏</string>
+    <string name="settings_import" formatted="false">导入音乐</string>
+    <string name="settings_scan" formatted="false">重新扫描</string>
+    <string name="settings_folders" formatted="false">管理音乐文件夹</string>
+    <string name="settings_folder_summary" formatted="false">只读取你选择的文件夹</string>
+    <string name="settings_storage_section" formatted="false">存储与隐私</string>
+    <string name="settings_cache_limit" formatted="false">常听歌曲缓存上限</string>
+    <string name="settings_cache" formatted="false">缓存管理</string>
+    <string name="settings_agent" formatted="false">Agent 与自动化</string>
+    <string name="settings_agent_summary" formatted="false">默认关闭 · 仅处理授权文件夹中的请求</string>
+    <string name="settings_history" formatted="false">操作记录</string>
+    <string name="settings_history_summary" formatted="false">最近 50 条 · 仅保存在本机</string>
+    <string name="settings_privacy" formatted="false">隐私说明</string>
+    <string name="settings_privacy_summary" formatted="false">本地曲库与网易云连接</string>
+    <string name="settings_account_actions" formatted="false">可以重新登录或退出当前账号。</string>
+    <string name="settings_sign_in_again" formatted="false">重新登录</string>
+    <string name="settings_sign_out" formatted="false">退出登录</string>
+    <string name="settings_privacy_body" formatted="false">AMI 只读取你授权的音乐与歌词文件夹，不改写原始文件。NCM 缺图时可获取其元数据指定的 HTTPS 封面。\n\n应用内网易云播放需要你在本应用的官方 HTTPS 网页自行登录，并点击“完成登录”。AMI 只保存本次会话，使用 Android Keystore 加密，用于直接向网易云读取歌单、搜索、歌词和有权限的播放地址；不读取其他应用的密码或登录数据，不向第三方代理发送会话。退出登录会删除保存的会话。\n\n旧版手机随播由网易云 App 播放。经你批准的通知使用权，AMI 只读取网易云的媒体会话信息、封面和播放进度，并发送你点击的播放控制；不读取或保存聊天等普通通知正文。\n\n随播歌词优先使用已导入的本地内容，缺少时向 LRCLIB 发送歌名、歌手、专辑和时长以匹配歌词，不发送音频或网易云登录凭据。AMI 不缓存随播音频；网易云自己的缓存由其设置管理。未找到歌词不影响播放。\n\n主动翻译时只向 DeepSeek 发送歌词与翻译要求；模型预设更新只获取模型列表，不自动重译。API Key 使用 Android Keystore 加密，排除在备份之外，不进入操作记录。\n\n卸载会删除本包的曲库记录、译文、授权与缓存，请保留原始文件。\n\n手动备份只包含聆听统计、本地收藏、非机密设置、歌词关联和译文，不包含登录凭据、API Key、音频缓存或文件夹授权。备份含个人听歌习惯，请自行保管。</string>
+    <string name="player_quality">当前音质：%1$s</string>
+    <string name="player_mode">播放模式：%1$s</string>
+</resources>

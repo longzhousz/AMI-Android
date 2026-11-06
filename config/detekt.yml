@@ -1,0 +1,27 @@
+build:
+  maxIssues: 0
+
+config:
+  validation: true
+  warningsAsErrors: true
+
+complexity:
+  active: true
+  CyclomaticComplexMethod:
+    active: true
+    threshold: 18
+    ignoreSimpleWhenEntries: true
+  LongMethod:
+    active: true
+    threshold: 80
+    ignoreAnnotated: ['Composable']
+
+exceptions:
+  active: true
+  TooGenericExceptionCaught:
+    active: true
+    exceptionNames:
+      - 'Exception'
+      - 'RuntimeException'
+      - 'Throwable'
+    allowedExceptionNameRegex: 'a^'

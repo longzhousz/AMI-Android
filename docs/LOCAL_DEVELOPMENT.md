@@ -12,7 +12,7 @@ cd AMI-Android
 git branch --show-current
 ```
 
-输出应为 `main`。它包含 0.2.7 及其依赖的全部前序改动，不需要逐个合并 PR。不能使用 Git 时，直接在 GitHub 默认分支选择 Code → Download ZIP。
+输出应为 `main`。它包含当前版本及其依赖的全部前序改动，不需要逐个合并 PR。不能使用 Git 时，直接在 GitHub 默认分支选择 Code → Download ZIP。
 
 已经克隆过且工作区干净时：
 
@@ -63,14 +63,14 @@ macOS / Linux：
 
 ```sh
 ./gradlew --version
-./gradlew testDebugUnitTest lintDebug assembleDebug
+./gradlew spotlessCheck detekt testDebugUnitTest lintDebug assembleDebug
 ```
 
 Windows PowerShell：
 
 ```powershell
 .\gradlew.bat --version
-.\gradlew.bat testDebugUnitTest lintDebug assembleDebug
+.\gradlew.bat spotlessCheck detekt testDebugUnitTest lintDebug assembleDebug
 ```
 
 可安装的调试包位于 `app/build/outputs/apk/debug/app-debug.apk`。需要检查压缩、资源缩减后的行为时运行 `assemblePreview`，产物为 `app/build/outputs/apk/preview/app-preview.apk`。
@@ -91,7 +91,9 @@ Preview 使用本机开发签名。不同电脑或云端的开发签名通常不
 
 **不要为了解决 `INSTALL_FAILED_UPDATE_INCOMPATIBLE` 卸载现有应用或清除数据。** 现有曲库、收藏、译文和文件夹授权在应用私有存储中，卸载会丢失。要覆盖现有 Preview，需另行安全取得原开发签名；本仓库不包含该密钥。可先保持现有 Preview，另装 Debug 并仅导入少量样本。
 
-Release 签名仍使用 `AMI_KEYSTORE_PATH`、`AMI_KEYSTORE_PASSWORD`、`AMI_KEY_ALIAS`、`AMI_KEY_PASSWORD`，见 [README 构建说明](../README.md#构建)。本地调试不需要这些变量。
+Release 签名仍使用 `AMI_KEYSTORE_PATH`、`AMI_KEYSTORE_PASSWORD`、`AMI_KEY_ALIAS`、`AMI_KEY_PASSWORD`。由你的安全环境提供这些变量，再运行 `assembleRelease`；密钥文件、密码与本机路径不进入仓库。本地调试不需要这些变量。
+
+格式修正用 `spotlessApply`，提交前保留 `spotlessCheck` 与 `detekt` 通过；首次使用工具配置及既有问题基线见 [状态、检查与诊断](ENGINEERING.md)。个人数据迁移用 [备份恢复](DATA_BACKUP.md)，不复制整个私有数据库或凭据文件。
 
 ## 连接 vivo X300 / OriginOS 7
 
@@ -126,7 +128,7 @@ Windows 安装 Python 3 后可将 `python3` 替换为 `py -3`。本地开发助�
 
 ## 采集诊断
 
-在线播放失败优先用手机完成：更新至 0.2.7，重试原歌曲，点击错误提示上的「复制诊断」；提示消失后可在播放页右上角「… → 复制播放诊断」复制。本曲没有音源失败记录时不显示入口。将文字交给开发者并说明官方 App 同账号、同网络是否可完整播放；不需要 ADB 或导出 Cookie。
+在线播放失败优先用手机完成：更新至最新版本，重试原歌曲，点击错误提示上的「复制诊断」；提示消失后可在播放页右上角「… → 复制播放诊断」复制。本曲没有音源失败记录时不显示入口。将文字交给开发者并说明官方 App 同账号、同网络是否可完整播放；不需要 ADB 或导出 Cookie。
 
 先在手机播放一首待排查歌曲。在仓库根目录为**当前云端在线包**采集：
 

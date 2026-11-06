@@ -30,11 +30,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.longzhousz.ami.AmiViewModel
+import com.longzhousz.ami.R
 import com.longzhousz.ami.core.LyricLine
 import com.longzhousz.ami.core.Lyrics
 import com.longzhousz.ami.core.Song
@@ -121,7 +123,7 @@ internal data class PlayerActions(
         dragHandle = dragHandle,
         preparedLines = document?.lines,
         lyricsReady = document != null,
-        audioQuality = if (song.isCloudSong()) qualities[song.id]?.label ?: "待确认" else song.format.ifBlank { "待确认" },
+        audioQuality = if (song.isCloudSong()) qualities[song.id]?.label ?: stringResource(R.string.player_quality_unknown) else song.format.ifBlank { stringResource(R.string.player_quality_unknown) },
         lyricsPage = lyricsPage,
     )
 }
@@ -148,7 +150,7 @@ internal val PlayerColors =
     dragHandle: Modifier = Modifier,
     preparedLines: List<LyricLine>? = null,
     lyricsReady: Boolean = true,
-    audioQuality: String = "暂不可知",
+    audioQuality: String = stringResource(R.string.player_quality_unavailable),
     lyricsPage: MutableState<Boolean> = rememberSaveable(song.id) { mutableStateOf(false) },
 ) {
     val latestSongId by rememberUpdatedState(song.id)
@@ -182,14 +184,14 @@ internal val PlayerColors =
                         .padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ActionIcon(Icons.Rounded.KeyboardArrowDown, "收起播放页", actions.close)
+                    ActionIcon(Icons.Rounded.KeyboardArrowDown, stringResource(R.string.player_collapse), actions.close)
                     Spacer(Modifier.weight(1f))
-                    actions.settings?.let { ActionIcon(Icons.Rounded.Tune, "设置", it, tint = Color.White.copy(alpha = .7f)) }
+                    actions.settings?.let { ActionIcon(Icons.Rounded.Tune, stringResource(R.string.common_settings), it, tint = Color.White.copy(alpha = .7f)) }
                     Box {
-                        ActionIcon(Icons.Rounded.MoreHoriz, "歌词选项", { lyricMenu = true }, tint = Color.White.copy(alpha = .7f))
+                        ActionIcon(Icons.Rounded.MoreHoriz, stringResource(R.string.player_lyrics_options), { lyricMenu = true }, tint = Color.White.copy(alpha = .7f))
                         GlassDropdownMenu(lyricMenu, { lyricMenu = false }) {
                             DropdownMenuItem(
-                                text = { Text("当前音质：$audioQuality") },
+                                text = { Text(stringResource(R.string.player_quality, audioQuality)) },
                                 onClick = {},
                                 enabled = false,
                                 leadingIcon = { Icon(Icons.Rounded.HighQuality, null) },
@@ -201,7 +203,7 @@ internal val PlayerColors =
                             )
                             actions.diagnose?.let { copy ->
                                 DropdownMenuItem(
-                                    text = { Text("复制播放诊断") },
+                                    text = { Text(stringResource(R.string.player_diagnostics_copy)) },
                                     onClick = {
                                         lyricMenu = false
                                         copy()
@@ -210,19 +212,19 @@ internal val PlayerColors =
                                 )
                             }
                             if (!song.isCloudSong() && !actions.external) {
-                                DropdownMenuItem(text = { Text("为这首歌导入歌词") }, onClick = {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.player_import_lyrics)) }, onClick = {
                                     lyricMenu = false
                                     actions.lyricFile()
                                 })
                             }
                             if (song.manualLyrics && !actions.external) {
-                                DropdownMenuItem(text = { Text("恢复自动匹配") }, onClick = {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.player_automatic_lyrics)) }, onClick = {
                                     lyricMenu = false
                                     actions.restoreLyrics()
                                 })
                             }
                             if (!translation.isNullOrEmpty()) {
-                                DropdownMenuItem(text = { Text("重新翻译") }, onClick = {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.player_retranslate)) }, onClick = {
                                     lyricMenu = false
                                     actions.retranslate()
                                 }, enabled = !translating)
@@ -289,7 +291,13 @@ internal fun copyPlaybackDiagnostics(
     report: String,
 ) {
     val device = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".replace('\n', ' ').take(80)
-    val text = "AMI ${com.longzhousz.ami.BuildConfig.VERSION_NAME}\nAndroid ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})\n$device\n$report"
+    val text =
+        "AMI ${com.longzhousz.ami.BuildConfig.VERSION_NAME}\nAndroid ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})\n$device\n$report" +
+            com.longzhousz.ami.data.AppDiagnostics.errors
+                .recent()
+                .takeIf { it.isNotEmpty() }
+                ?.let { "\n\n$it" }
+                .orEmpty()
     context
         .getSystemService(android.content.ClipboardManager::class.java)
         .setPrimaryClip(android.content.ClipData.newPlainText("AMI 播放诊断", text))
@@ -304,7 +312,7 @@ private data class PlayerStage(
 
 @Composable private fun EmptyLyrics() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("暂无歌词", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.player_no_lyrics), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -347,7 +355,7 @@ private fun PlayerControls(
                 if (!actions.external) {
                     ActionIcon(
                         if (song.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                        if (song.favorite) "取消喜欢" else "加入喜欢",
+                        if (song.favorite) stringResource(R.string.player_unlike) else stringResource(R.string.player_like),
                         actions.favorite,
                         tint = if (song.favorite) FavoriteRed else Color.White.copy(alpha = .55f),
                         enabled = actions.canFavorite,
@@ -366,7 +374,7 @@ private fun PlayerControls(
                     Spacer(Modifier.size(48.dp))
                 } else {
                     Box {
-                        TransportButton(mode.icon(), "播放模式：${mode.label}", { modeMenu = true }, tint = Color.White.copy(alpha = .65f))
+                        TransportButton(mode.icon(), stringResource(R.string.player_mode, mode.label), { modeMenu = true }, tint = Color.White.copy(alpha = .65f))
                         GlassDropdownMenu(modeMenu, { modeMenu = false }) {
                             PlayMode.entries.forEach { option ->
                                 DropdownMenuItem(
@@ -375,7 +383,7 @@ private fun PlayerControls(
                                             Text(option.label)
                                             if (option == PlayMode.Ordered || option == PlayMode.Loop) {
                                                 Text(
-                                                    if (option == PlayMode.Ordered) "播完队列后停止" else "播完队列后从头继续",
+                                                    if (option == PlayMode.Ordered) stringResource(R.string.player_ordered_description) else stringResource(R.string.player_repeat_description),
                                                     fontSize = 12.sp,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 )
@@ -383,7 +391,7 @@ private fun PlayerControls(
                                         }
                                     },
                                     leadingIcon = { Icon(option.icon(), null) },
-                                    trailingIcon = { if (mode == option) Icon(Icons.Rounded.Check, "当前模式") },
+                                    trailingIcon = { if (mode == option) Icon(Icons.Rounded.Check, stringResource(R.string.player_current_mode)) },
                                     onClick = {
                                         modeMenu = false
                                         actions.mode(option)
@@ -395,7 +403,7 @@ private fun PlayerControls(
                 }
                 TransportButton(
                     Icons.Rounded.SkipPrevious,
-                    "上一首",
+                    stringResource(R.string.player_previous),
                     actions.previous,
                     enabled = actions.canPrevious,
                     size = if (compact) 48.dp else 56.dp,
@@ -403,7 +411,7 @@ private fun PlayerControls(
                 )
                 TransportButton(
                     if (playback.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    if (playback.playing) "暂停" else "播放",
+                    if (playback.playing) stringResource(R.string.player_pause) else stringResource(R.string.player_play),
                     actions.toggle,
                     enabled = actions.canToggle,
                     primary = true,
@@ -412,7 +420,7 @@ private fun PlayerControls(
                 )
                 TransportButton(
                     Icons.Rounded.SkipNext,
-                    "下一首",
+                    stringResource(R.string.player_next),
                     actions.next,
                     enabled = actions.canNext,
                     size = if (compact) 48.dp else 56.dp,
@@ -420,7 +428,7 @@ private fun PlayerControls(
                 )
                 TransportButton(
                     if (actions.external) Icons.Rounded.OpenInNew else Icons.Rounded.QueueMusic,
-                    if (actions.external) "打开网易云音乐" else "播放队列",
+                    if (actions.external) stringResource(R.string.player_open_netease) else stringResource(R.string.player_queue),
                     actions.queue,
                     tint = Color.White.copy(alpha = .65f),
                 )
@@ -432,7 +440,7 @@ private fun PlayerControls(
             ) {
                 ActionIcon(
                     if (showLyrics) Icons.Rounded.Album else Icons.Rounded.Lyrics,
-                    if (showLyrics) "切换到封面" else "切换到歌词",
+                    if (showLyrics) stringResource(R.string.player_switch_cover) else stringResource(R.string.player_switch_lyrics),
                     onLyrics,
                     tint = Color.White.copy(alpha = .65f),
                     glass = false,
@@ -441,12 +449,12 @@ private fun PlayerControls(
                     Icons.Rounded.Translate,
                     if (translated) {
                         if (showTranslation) {
-                            "隐藏译文"
+                            stringResource(R.string.player_hide_translation)
                         } else {
-                            "显示译文"
+                            stringResource(R.string.player_show_translation)
                         }
                     } else {
-                        "翻译歌词"
+                        stringResource(R.string.player_translate)
                     },
                     onTranslation,
                     enabled = !translating && song.lyrics.isNotBlank(),
@@ -571,7 +579,7 @@ private fun PlayerTimeline(
             Text(durationLabel(displayed.toLong()), fontSize = 11.sp, color = Color.White.copy(alpha = .45f))
             Spacer(Modifier.weight(1f))
             if (buffering) {
-                Text("正在缓冲…", fontSize = 10.sp, color = Color.White.copy(alpha = .4f))
+                Text(stringResource(R.string.player_buffering), fontSize = 10.sp, color = Color.White.copy(alpha = .4f))
                 Spacer(Modifier.weight(1f))
             }
             Text(durationLabel(duration), fontSize = 11.sp, color = Color.White.copy(alpha = .45f))

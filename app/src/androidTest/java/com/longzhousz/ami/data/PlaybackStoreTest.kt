@@ -119,7 +119,7 @@ class PlaybackStoreTest {
             assertEquals("[\"保留译文\"]", db.translation("translation"))
             assertTrue(db.scanRecords().isEmpty())
             assertNull(db.playbackSnapshot())
-            assertEquals(5, db.readableDatabase.version)
+            assertEquals(6, db.readableDatabase.version)
             assertEquals(path, db.readableDatabase.path)
         }
 }

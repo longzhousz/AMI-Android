@@ -43,6 +43,32 @@ import java.io.File
 class InterfaceTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
+    @Test fun backupEntryExplainsBothDirectionsAndDoesNotOpenAnUnrelatedTaskPanel() {
+        compose.onNodeWithContentDescription("设置").performClick()
+        compose.onNodeWithText("备份与恢复").performScrollTo().performClick()
+        compose.onNodeWithText("导出数据").assertIsDisplayed()
+        compose.onNodeWithText("导入恢复").assertIsDisplayed()
+        compose.onNodeWithText("不包含登录凭据", substring = true).assertIsDisplayed()
+        val bitmap = compose.onNode(androidx.compose.ui.test.isDialog()).captureToImage().asAndroidBitmap()
+        File(compose.activity.filesDir, "qa/backup-restore-settings.png").apply { parentFile!!.mkdirs() }.outputStream().use {
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        compose.onNodeWithText("备份与恢复").assertIsDisplayed()
+    }
+
+    @Test fun consumingAnOlderSnackbarCannotEraseANewerFailure() {
+        val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
+        compose.runOnIdle {
+            model.showMessage("older")
+            model.showMessage("newer")
+            model.consumeMessage("older")
+            assertEquals("newer", model.message.value)
+            model.consumeMessage("newer")
+            assertEquals(null, model.message.value)
+        }
+    }
+
     @Test fun immersiveFavoritesUseLightSystemIconsAndSettingsRestoreTheLightTheme() {
         val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
         val previous = model.theme.value

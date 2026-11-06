@@ -30,11 +30,13 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             try {
                 (application as AmiApplication).updates.installerIntent()?.let { startActivity(it) }
-                    ?: run { model.message.value = "更新安装包尚未就绪，请稍后打开设置" }
+                    ?: run { model.showMessage("更新安装包尚未就绪，请稍后打开设置") }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
-                model.message.value = "暂时无法打开安装包，请稍后重试"
+            } catch (failure: Exception) {
+                com.longzhousz.ami.data.AppDiagnostics.errors
+                    .record(com.longzhousz.ami.core.ErrorCode.UPDATE_INSTALL, failure)
+                model.showMessage("暂时无法打开安装包，请稍后重试")
             }
         }
     }
@@ -52,7 +54,7 @@ class MainActivity : ComponentActivity() {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     model.repository.addLyricRoot(uri)
                 } catch (_: SecurityException) {
-                    model.message.value = "未获得歌词文件夹授权，请重新选择"
+                    model.showMessage("未获得歌词文件夹授权，请重新选择")
                 }
             }
         }
@@ -63,26 +65,22 @@ class MainActivity : ComponentActivity() {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     model.repository.addRoot(uri)
                 } catch (_: SecurityException) {
-                    model.message.value = "未获得文件夹读取授权，请重新选择"
+                    model.showMessage("未获得文件夹读取授权，请重新选择")
                 }
             }
         }
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            model.message.value = if (granted) "已允许导入进度通知" else "可在系统设置中开启通知"
+            model.showMessage(if (granted) "已允许通知" else "可在系统设置中开启通知")
         }
     private val bridgePicker =
         registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) {
                 try {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                    model.repository.prefs
-                        .edit()
-                        .putString("bridgeFolder", uri.toString())
-                        .apply()
-                    model.message.value = "已选择 Agent 交换文件夹"
+                    model.library.setBridgeFolder(uri)
                 } catch (_: SecurityException) {
-                    model.message.value = "交换文件夹需要读写授权"
+                    model.showMessage("交换文件夹需要读写授权")
                 }
             }
         }

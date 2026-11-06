@@ -1,0 +1,87 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:AgentBridge.kt$AgentBridge$suspend fun process(execute: suspend (String, JSONObject) -&gt; ActionResult)</ID>
+    <ID>CyclomaticComplexMethod:AmiApp.kt$@Composable private fun LibraryScreen( library: LibrarySnapshot, loading: Boolean, favorites: Boolean, currentId: String?, onSettings: () -&gt; Unit, onAlbum: (Album) -&gt; Unit, onPlay: (List&lt;Song&gt;, Int) -&gt; Unit, onFavorite: (Song) -&gt; Unit, onRemove: (Song) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:AmiApp.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AmiApp( model: AmiViewModel, onImport: () -&gt; Unit, onNotifications: () -&gt; Unit, onBridgeFolder: () -&gt; Unit, onLyricsFolder: () -&gt; Unit, onLyricFile: (Song) -&gt; Unit, initialPage: Int = 0, onInstallUpdate: () -&gt; Unit = {}, )</ID>
+    <ID>CyclomaticComplexMethod:LibraryStateHolder.kt$LibraryStateHolder$suspend fun processBridge()</ID>
+    <ID>CyclomaticComplexMethod:AppUpdates.kt$AppUpdates$suspend fun check()</ID>
+    <ID>CyclomaticComplexMethod:CloudMusic.kt$CloudConnection.Companion$fun parse(raw: String): CloudConnection</ID>
+    <ID>CyclomaticComplexMethod:CloudMusicScreen.kt$@Composable internal fun CloudMusicContent( cloud: CloudMusic, onPlay: (List&lt;CloudTrack&gt;, Int) -&gt; Unit, onDisconnect: () -&gt; Unit = {}, )</ID>
+    <ID>CyclomaticComplexMethod:Components.kt$@Composable internal fun Cover( path: String?, title: String, modifier: Modifier = Modifier, animateChanges: Boolean = false, )</ID>
+    <ID>CyclomaticComplexMethod:Cue.kt$Cue$fun parse(text: String): CueSheet</ID>
+    <ID>CyclomaticComplexMethod:LibraryScanner.kt$LibraryScanner$private suspend fun readSong( entry: DocumentEntry, assets: FolderAssets, includeLyrics: Boolean = true, ): SongRead</ID>
+    <ID>CyclomaticComplexMethod:LibraryScanner.kt$LibraryScanner$suspend fun scan( roots: Set&lt;String&gt;, lyricRoots: Set&lt;String&gt; = emptySet(), )</ID>
+    <ID>CyclomaticComplexMethod:ListeningStatsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun ListeningStatsScreen( store: ListeningStatsStore, onBack: () -&gt; Unit, initialScale: ListeningScale = ListeningScale.MONTH, onScaleChanged: (ListeningScale) -&gt; Unit = {}, )</ID>
+    <ID>CyclomaticComplexMethod:ListeningStatsStore.kt$ListeningStatsStore$internal fun write( batch: List&lt;ListeningSlice&gt;, lost: Boolean = false, )</ID>
+    <ID>CyclomaticComplexMethod:ListeningStatsStore.kt$ListeningStatsStore$private fun readReport( period: ListeningPeriod, today: LocalDate, ): ListeningReport</ID>
+    <ID>CyclomaticComplexMethod:LyricsStage.kt$@Composable internal fun LyricsStage( songId: String, lines: List&lt;LyricLine&gt;, translation: List&lt;String&gt;?, position: () -&gt; Long, onSeek: (Long) -&gt; Unit, modifier: Modifier = Modifier, seekEnabled: Boolean = true, seekSerial: Int = 0, )</ID>
+    <ID>CyclomaticComplexMethod:NcmDecoder.kt$NcmDecoder$fun decode( input: InputStream, output: OutputStream, headerOnly: Boolean = false, checkCancelled: () -&gt; Unit = {}, ): Header</ID>
+    <ID>CyclomaticComplexMethod:NeteaseAccount.kt$NeteaseAccount$fun stream( id: String, duration: Long, ): NeteaseAudio</ID>
+    <ID>CyclomaticComplexMethod:NeteaseAccount.kt$NeteaseAccount$suspend fun request( path: String, data: JSONObject, ): JSONObject</ID>
+    <ID>CyclomaticComplexMethod:NeteaseAudio.kt$internal fun bestNeteaseAudio( id: String, duration: Long, request: (String) -&gt; JSONObject, ): NeteaseAudio</ID>
+    <ID>CyclomaticComplexMethod:NeteaseMetadata.kt$NeteaseMetadata$private fun id3( input: InputStream, version: Int, ): String?</ID>
+    <ID>CyclomaticComplexMethod:NeteaseTransport.kt$NeteaseTransport$private fun read( http: HttpURLConnection, data: JSONObject, cookie: String, clientPath: String? = null, desktop: Boolean = false, ): JSONObject</ID>
+    <ID>CyclomaticComplexMethod:OnlineAudioCache.kt$OnlineAudioCache$@Synchronized fun cleanup( now: Long, incoming: Long = 0, diskIncoming: Long = incoming, active: () -&gt; Boolean = { true }, ): Boolean</ID>
+    <ID>CyclomaticComplexMethod:OnlineAudioCache.kt$OnlineAudioCache$fun download( account: String, candidate: Candidate, audio: NeteaseAudio, now: Long, active: () -&gt; Boolean, )</ID>
+    <ID>CyclomaticComplexMethod:OnlineLibraryScreen.kt$@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class) @Composable internal fun OnlineLibraryContent( cloud: CloudMusic, state: CloudLibraryState, favorites: Boolean, currentId: String?, onRefresh: () -&gt; Unit, onPlay: (List&lt;CloudTrack&gt;, Int) -&gt; Unit, onLogin: () -&gt; Unit, refreshRequest: Int = 0, bottomInset: Dp = 24.dp, onDiscover: (String) -&gt; Unit = {}, discovering: Boolean = false, onFavorite: (CloudTrack) -&gt; Unit = {}, onRefreshLikes: () -&gt; Unit = {}, )</ID>
+    <ID>CyclomaticComplexMethod:PhoneMusicViewModel.kt$PhoneMusicViewModel$fun start()</ID>
+    <ID>CyclomaticComplexMethod:PlayerBackdrop.kt$private suspend fun artworkColors( context: Context, cover: String?, ): ArtworkColors</ID>
+    <ID>CyclomaticComplexMethod:PlayerScreen.kt$@Composable internal fun PlayerContent( song: Song, playback: PlaybackState, translation: List&lt;String&gt;?, translating: Boolean, actions: PlayerActions, lyricPosition: () -&gt; Long = { playback.position }, dragHandle: Modifier = Modifier, preparedLines: List&lt;LyricLine&gt;? = null, lyricsReady: Boolean = true, audioQuality: String = stringResource(R.string.player_quality_unavailable), lyricsPage: MutableState&lt;Boolean&gt; = rememberSaveable(song.id) { mutableStateOf(false) }, )</ID>
+    <ID>CyclomaticComplexMethod:PlayerScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun PlayerControls( song: Song, playback: PlaybackState, actions: PlayerActions, showLyrics: Boolean, artworkProgress: State&lt;Float&gt;, thumbnail: Modifier, translating: Boolean, translated: Boolean, showTranslation: Boolean, onTranslation: () -&gt; Unit, onLyrics: () -&gt; Unit, position: () -&gt; Long, modifier: Modifier, )</ID>
+    <ID>CyclomaticComplexMethod:RadioQueue.kt$RadioQueue$fun update()</ID>
+    <ID>CyclomaticComplexMethod:ReorderDialog.kt$@Composable fun ReorderDialog( album: Album, onDismiss: () -&gt; Unit, onSave: (List&lt;String&gt;) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:SettingsScreen.kt$@Composable fun SettingsScreen( model: AmiViewModel, onImport: () -&gt; Unit, onNotifications: () -&gt; Unit, onBridgeFolder: () -&gt; Unit, onLyricsFolder: () -&gt; Unit, onLocalLibrary: () -&gt; Unit = {}, onListening: () -&gt; Unit = {}, onInstallUpdate: () -&gt; Unit = {}, settingsVisible: Boolean = true, )</ID>
+    <ID>CyclomaticComplexMethod:TranslationModelCatalog.kt$TranslationModelCatalog$suspend fun refresh(force: Boolean = false): TranslationModelState</ID>
+    <ID>CyclomaticComplexMethod:TranslationModelDialog.kt$@Composable internal fun TranslationModelDialog( state: TranslationModelState, hasKey: Boolean, refresh: () -&gt; Unit, automaticUpdates: (Boolean) -&gt; Unit, select: (String) -&gt; Unit, dismiss: () -&gt; Unit, )</ID>
+    <ID>LongMethod:AgentBridge.kt$AgentBridge$suspend fun process(execute: suspend (String, JSONObject) -&gt; ActionResult)</ID>
+    <ID>LongMethod:AppUpdates.kt$AppUpdates$suspend fun check()</ID>
+    <ID>LongMethod:LibraryScanner.kt$LibraryScanner$private suspend fun readSong( entry: DocumentEntry, assets: FolderAssets, includeLyrics: Boolean = true, ): SongRead</ID>
+    <ID>LongMethod:LibraryScanner.kt$LibraryScanner$suspend fun scan( roots: Set&lt;String&gt;, lyricRoots: Set&lt;String&gt; = emptySet(), )</ID>
+    <ID>LongMethod:NeteaseAccount.kt$NeteaseAccount$suspend fun request( path: String, data: JSONObject, ): JSONObject</ID>
+    <ID>LongMethod:NeteaseTransport.kt$NeteaseTransport$private fun read( http: HttpURLConnection, data: JSONObject, cookie: String, clientPath: String? = null, desktop: Boolean = false, ): JSONObject</ID>
+    <ID>LongMethod:OriginOsMediaNotification.kt$OriginOsMediaHints$fun apply( original: Notification, playing: Boolean, ): Notification</ID>
+    <ID>LongMethod:PhoneMusicViewModel.kt$PhoneMusicViewModel$fun start()</ID>
+    <ID>LongMethod:PlaybackService.kt$PlaybackService$@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class) override fun onCreate()</ID>
+    <ID>TooGenericExceptionCaught:AgentBridge.kt$AgentBridge$_: Exception</ID>
+    <ID>TooGenericExceptionCaught:AppUpdates.kt$AppUpdateWorker$_: Exception</ID>
+    <ID>TooGenericExceptionCaught:AppUpdates.kt$AppUpdates$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:ArtworkDownloader.kt$ArtworkDownloader$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:CloudMusic.kt$CloudMusic$_: Exception</ID>
+    <ID>TooGenericExceptionCaught:CloudMusic.kt$CloudMusic$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:CloudMusicScreen.kt$failure: Exception</ID>
+    <ID>TooGenericExceptionCaught:DeepSeekApi.kt$DeepSeekHttpApi$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:ImportWorker.kt$ImportWorker$_: Exception</ID>
+    <ID>TooGenericExceptionCaught:LibraryScanner.kt$LibraryScanner$_: Exception</ID>
+    <ID>TooGenericExceptionCaught:LibraryScanner.kt$LibraryScanner$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:LibraryScanner.kt$LibraryScanner$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:ListeningStatsScreen.kt$_: Exception</ID>
+    <ID>TooGenericExceptionCaught:LyricImporter.kt$LyricImporter$_: Exception</ID>
+    <ID>TooGenericExceptionCaught:LyricImporter.kt$LyricImporter$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:MainActivity.kt$MainActivity$failure: Exception</ID>
+    <ID>TooGenericExceptionCaught:NeteaseAccount.kt$NeteaseAccount$_: Exception</ID>
+    <ID>TooGenericExceptionCaught:NeteaseAccount.kt$NeteaseAccount$failure: Exception</ID>
+    <ID>TooGenericExceptionCaught:NeteaseLoginActivity.kt$NeteaseLoginActivity$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:NeteaseTransport.kt$NeteaseTransport$_: Exception</ID>
+    <ID>TooGenericExceptionCaught:NeteaseTransport.kt$NeteaseTransport$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:OnlineArtworkCache.kt$OnlineArtworkCache$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:OnlineArtworkCache.kt$OnlineArtworkCache$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:OnlineLibraryScreen.kt$failure: Exception</ID>
+    <ID>TooGenericExceptionCaught:PhoneLyrics.kt$PhoneLyrics$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:PhoneMusicViewModel.kt$PhoneMusicViewModel$_: Exception</ID>
+    <ID>TooGenericExceptionCaught:PhoneMusicViewModel.kt$PhoneMusicViewModel$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:PlaybackService.kt$PlaybackService.&lt;no name provided&gt;$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:PlayerBackdrop.kt$_: Exception</ID>
+    <ID>TooGenericExceptionCaught:RadioQueue.kt$RadioQueue$_: Exception</ID>
+    <ID>TooGenericExceptionCaught:SecretStore.kt$SecretStore$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:SettingsScreen.kt$_: Exception</ID>
+    <ID>TooGenericExceptionCaught:TranslationModelCatalog.kt$TranslationModelCatalog$_: Exception</ID>
+    <ID>TooGenericExceptionCaught:TranslationModelCatalog.kt$TranslationModelCatalog$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:LibraryStateHolder.kt$LibraryStateHolder$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:LibraryStateHolder.kt$LibraryStateHolder$failure: Exception</ID>
+    <ID>TooGenericExceptionCaught:PlaybackStateHolder.kt$PlaybackStateHolder$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:PlaybackStateHolder.kt$PlaybackStateHolder$failure: Exception</ID>
+    <ID>TooGenericExceptionCaught:OnlineStateHolder.kt$OnlineStateHolder$failure: Exception</ID>
+  </CurrentIssues>
+</SmellBaseline>

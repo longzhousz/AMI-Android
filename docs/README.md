@@ -1,9 +1,12 @@
 # AMI 文档
 
-当前版本 **0.2.7 / versionCode 29**。本目录只保留当前使用与开发说明；旧版交付、旧界面和已退出主流程的试验放入 [archive/](archive/README.md)。
+当前版本 **0.2.8 / versionCode 30**。本目录只保留当前使用与开发说明；旧版交付、旧界面和已退出主流程的试验放入 [archive/](archive/README.md)。
 
 | 需要了解什么 | 文档 |
 | --- | --- |
+| 备份、换机、合并规则与格式边界 | [备份恢复](DATA_BACKUP.md) |
+| 状态边界、静态检查与安全诊断 | [开发约束](ENGINEERING.md) |
+| 长期产品取舍 | [产品约束](PRODUCT_CONSTRAINTS.md) |
 | 安装、登录、曲库、红心、歌词、音质、缓存 | [使用说明](USER_GUIDE.md) |
 | 当前代码、安装包身份、验证结果、后续方向 | [当前交接](LOCAL_HANDOFF.md) |
 | Windows／macOS／Linux 构建与真机采集 | [本地开发](LOCAL_DEVELOPMENT.md) |

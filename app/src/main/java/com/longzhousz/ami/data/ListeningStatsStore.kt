@@ -12,6 +12,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.UUID
 
 internal fun createListeningTables(db: SQLiteDatabase) {
     // Independent of songs: removing a source or a disposable cache cannot erase a yearbook.
@@ -20,9 +21,30 @@ internal fun createListeningTables(db: SQLiteDatabase) {
         title TEXT NOT NULL,artist_key TEXT NOT NULL,artist TEXT NOT NULL,album_key TEXT NOT NULL,
         album TEXT NOT NULL,cover TEXT,first_day INTEGER NOT NULL)""",
     )
-    db.execSQL("CREATE TABLE listening_song_day(day INTEGER NOT NULL,track INTEGER NOT NULL,millis INTEGER NOT NULL,PRIMARY KEY(day,track)) WITHOUT ROWID")
-    db.execSQL("CREATE TABLE listening_hour(day INTEGER NOT NULL,hour INTEGER NOT NULL,millis INTEGER NOT NULL,PRIMARY KEY(day,hour)) WITHOUT ROWID")
+    createListeningOrigins(db)
+    createListeningCounters(db)
     db.execSQL("CREATE TABLE listening_status(singleton INTEGER PRIMARY KEY CHECK(singleton=1),incomplete INTEGER NOT NULL DEFAULT 0)")
+}
+
+private fun createListeningOrigins(db: SQLiteDatabase) {
+    db.execSQL("CREATE TABLE listening_origins(id INTEGER PRIMARY KEY,source TEXT NOT NULL UNIQUE)")
+    db.execSQL("INSERT INTO listening_origins(id,source) VALUES(1,?)", arrayOf(UUID.randomUUID().toString()))
+}
+
+private fun createListeningCounters(db: SQLiteDatabase) {
+    db.execSQL("CREATE TABLE listening_song_day(day INTEGER NOT NULL,track INTEGER NOT NULL,origin INTEGER NOT NULL DEFAULT 1,millis INTEGER NOT NULL,PRIMARY KEY(day,track,origin)) WITHOUT ROWID")
+    db.execSQL("CREATE TABLE listening_hour(day INTEGER NOT NULL,hour INTEGER NOT NULL,origin INTEGER NOT NULL DEFAULT 1,millis INTEGER NOT NULL,PRIMARY KEY(day,hour,origin)) WITHOUT ROWID")
+}
+
+internal fun migrateListeningOrigins(db: SQLiteDatabase) {
+    createListeningOrigins(db)
+    db.execSQL("ALTER TABLE listening_song_day RENAME TO listening_song_day_v5")
+    db.execSQL("ALTER TABLE listening_hour RENAME TO listening_hour_v5")
+    createListeningCounters(db)
+    db.execSQL("INSERT INTO listening_song_day(day,track,millis) SELECT day,track,millis FROM listening_song_day_v5")
+    db.execSQL("INSERT INTO listening_hour(day,hour,millis) SELECT day,hour,millis FROM listening_hour_v5")
+    db.execSQL("DROP TABLE listening_song_day_v5")
+    db.execSQL("DROP TABLE listening_hour_v5")
 }
 
 /** One bounded accumulator and writer. Nothing here loads the library or schedules a timer. */
@@ -91,7 +113,8 @@ class ListeningStatsStore(
                 }
             try {
                 write(batch, lost)
-            } catch (_: SQLiteException) {
+            } catch (failure: SQLiteException) {
+                AppDiagnostics.errors.record(ErrorCode.LISTENING_WRITE, failure)
                 // Retry only at the next real playback checkpoint, with bounded memory.
                 synchronized(state) {
                     for (slice in batch) {
@@ -176,9 +199,9 @@ class ListeningStatsStore(
             val day = slice.day.toEpochDay()
             val id = ids.getValue(slice.track.key)
             sql.execSQL("INSERT OR IGNORE INTO listening_song_day(day,track,millis) VALUES(?,?,0)", arrayOf(day, id))
-            sql.execSQL("UPDATE listening_song_day SET millis=millis+? WHERE day=? AND track=?", arrayOf(slice.millis, day, id))
+            sql.execSQL("UPDATE listening_song_day SET millis=millis+? WHERE day=? AND track=? AND origin=1", arrayOf(slice.millis, day, id))
             sql.execSQL("INSERT OR IGNORE INTO listening_hour(day,hour,millis) VALUES(?,?,0)", arrayOf<Any>(day, slice.hour))
-            sql.execSQL("UPDATE listening_hour SET millis=millis+? WHERE day=? AND hour=?", arrayOf<Any>(slice.millis, day, slice.hour))
+            sql.execSQL("UPDATE listening_hour SET millis=millis+? WHERE day=? AND hour=? AND origin=1", arrayOf<Any>(slice.millis, day, slice.hour))
         }
         if (lost) sql.execSQL("INSERT OR REPLACE INTO listening_status(singleton,incomplete) VALUES(1,1)")
     }
@@ -191,6 +214,14 @@ class ListeningStatsStore(
             writer.withLock {
                 flushPending()
                 db.transaction { readReport(period, today) }
+            }
+        }
+
+    internal suspend fun <T> withFlushedSnapshot(block: () -> T): T =
+        withContext(Dispatchers.IO) {
+            writer.withLock {
+                flushPending()
+                db.transaction(block)
             }
         }
 
@@ -321,9 +352,11 @@ class ListeningStatsStore(
                         "listening_hour",
                         "listening_tracks",
                         "listening_status",
+                        "listening_origins",
                     )) {
                         db.writableDatabase.delete(table, null, null)
                     }
+                    db.writableDatabase.execSQL("INSERT INTO listening_origins(id,source) VALUES(1,?)", arrayOf(UUID.randomUUID().toString()))
                 }
                 // No database work while holding the sampler lock on the playback thread.
                 synchronized(state) {

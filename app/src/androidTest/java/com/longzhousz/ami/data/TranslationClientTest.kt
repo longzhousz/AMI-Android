@@ -103,4 +103,28 @@ class TranslationClientTest {
             assertEquals(0, api.listCalls)
             assertTrue(api.completions.isEmpty())
         }
+
+    @Test fun movedLocalSongUsesItsRestoredTranslationAliasWithoutAnApiCall() =
+        scenario { client, _, api, song ->
+            val repo = (context.applicationContext as AmiApplication).repository
+            val lines = Lyrics.parse(song.lyrics)
+            val style = repo.prefs.getString("style", TranslationClient.DEFAULT_STYLE)!!
+            val key = digest("${song.id}|${lines.joinToString { "${it.time}:${it.text}" }}|deepseek-v4-flash|$style|zh-CN|android-lyrics-v1")
+            val moved = song.copy(id = "moved-${song.id}")
+            try {
+                repo.db.upsert(song)
+                repo.db.transaction { repo.db.captureBackupLinks() }
+                repo.db.remove(song.id)
+                repo.db.writableDatabase.execSQL("UPDATE backup_song_links SET applied_to=NULL WHERE reference=?", arrayOf(song.id))
+                repo.db.upsert(moved)
+                repo.db.applyBackupLinks()
+                repo.db.cacheTranslation(key, "[\"你好\",\"世界\"]")
+                assertEquals(listOf("你好", "世界"), client.cached(moved, lines))
+                assertTrue(api.completions.isEmpty())
+            } finally {
+                repo.db.remove(song.id)
+                repo.db.remove(moved.id)
+                repo.db.writableDatabase.delete("backup_song_links", "reference=?", arrayOf(song.id))
+            }
+        }
 }

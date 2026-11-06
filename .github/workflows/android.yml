@@ -2,9 +2,9 @@ name: Android
 on:
   push:
     branches: [main]
-    paths: ['app/**', 'tools/netease-bridge/**', 'gradle/**', '*.gradle.kts', 'gradle.properties', 'gradlew*', '.github/**']
+    paths: ['app/**', 'tools/netease-bridge/**', 'gradle/**', '*.gradle.kts', 'gradle.properties', '.editorconfig', 'config/**', 'gradlew*', '.github/**']
   pull_request:
-    paths: ['app/**', 'tools/netease-bridge/**', 'gradle/**', '*.gradle.kts', 'gradle.properties', 'gradlew*', '.github/**']
+    paths: ['app/**', 'tools/netease-bridge/**', 'gradle/**', '*.gradle.kts', 'gradle.properties', '.editorconfig', 'config/**', 'gradlew*', '.github/**']
   workflow_dispatch:
     inputs:
       device_tests_only:
@@ -66,7 +66,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Check personal NetEase bridge
         run: node --test tools/netease-bridge/bridge.test.mjs tools/netease-bridge/adapter.test.mjs
-      - run: ./gradlew testDebugUnitTest lintDebug assemblePreview assembleMusicPreview assembleRelease
+      - run: ./gradlew spotlessCheck detekt testDebugUnitTest lintDebug assemblePreview assembleMusicPreview assembleRelease
       - uses: actions/upload-artifact@v4
         with:
           name: AMI-Android-preview
@@ -80,6 +80,7 @@ jobs:
         with:
           name: Android-check-reports
           path: |
+            build/reports/detekt/
             app/build/reports/tests/
             app/build/reports/lint-results-debug.html
   device-tests:
