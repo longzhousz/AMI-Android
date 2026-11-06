@@ -10,6 +10,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -49,7 +50,7 @@ class InterfaceTest {
         compose.onNodeWithText("导出数据").assertIsDisplayed()
         compose.onNodeWithText("导入恢复").assertIsDisplayed()
         compose.onNodeWithText("不包含登录凭据", substring = true).assertIsDisplayed()
-        val bitmap = compose.onNode(androidx.compose.ui.test.isDialog()).captureToImage().asAndroidBitmap()
+        val bitmap = compose.onNode(isDialog()).captureToImage().asAndroidBitmap()
         File(compose.activity.filesDir, "qa/backup-restore-settings.png").apply { parentFile!!.mkdirs() }.outputStream().use {
             bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
         }
