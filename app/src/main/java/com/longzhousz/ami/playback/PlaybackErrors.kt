@@ -21,9 +21,17 @@ internal fun neteasePlaybackError(error: PlaybackException): String {
     return when (error.errorCode) {
         PlaybackException.ERROR_CODE_DECODER_INIT_FAILED, PlaybackException.ERROR_CODE_DECODING_FAILED,
         PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES, PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
-        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED, PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ->
+        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED, PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+        -> {
             "手机暂时无法解码当前音源（${error.errorCode}）"
-        else -> if (causes.any { it is IOException }) "音频连接失败，请检查网络后重试（${error.errorCode}）"
-            else "这首歌暂时播放失败（${error.errorCode}），请重试"
+        }
+
+        else -> {
+            if (causes.any { it is IOException }) {
+                "音频连接失败，请检查网络后重试（${error.errorCode}）"
+            } else {
+                "这首歌暂时播放失败（${error.errorCode}），请重试"
+            }
+        }
     }
 }

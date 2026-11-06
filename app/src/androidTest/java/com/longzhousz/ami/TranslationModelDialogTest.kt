@@ -20,6 +20,7 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class TranslationModelDialogTest {
     @get:Rule val compose = createComposeRule()
+
     @Test fun refreshingOfficialChoicesPreservesTheManualDraftUntilSaved() {
         val state = mutableStateOf(TranslationModelState(TranslationModels.defaults, TranslationModels.AUTO_FLASH, updatedAt = 1_792_857_600_000L))
         var selection: String? = null
@@ -39,11 +40,24 @@ class TranslationModelDialogTest {
         assertEquals("future-translation-model", selection)
         assertEquals(true, updates)
     }
+
     @Test fun missingKeyAndFailedRefreshKeepOfflineChoicesAvailableAndCancelHasNoEffects() {
         var saved = false
         compose.setContent {
-            AmiTheme("dark") { TranslationModelDialog(TranslationModelState(TranslationModels.defaults, TranslationModels.AUTO_FLASH,
-                error = "更新失败：网络暂不可用。已保留现有预设。"), false, {}, { saved = true }, { saved = true }, {}) }
+            AmiTheme("dark") {
+                TranslationModelDialog(
+                    TranslationModelState(
+                        TranslationModels.defaults,
+                        TranslationModels.AUTO_FLASH,
+                        error = "更新失败：网络暂不可用。已保留现有预设。",
+                    ),
+                    false,
+                    {},
+                    { saved = true },
+                    { saved = true },
+                    {},
+                )
+            }
         }
         compose.onNodeWithText("立即更新预设").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("更新失败：网络暂不可用。已保留现有预设。").performScrollTo().assertIsDisplayed()
@@ -53,9 +67,17 @@ class TranslationModelDialogTest {
         compose.onNodeWithText("取消").performClick()
         assertFalse(saved)
     }
+
     @Test fun officialLatestModelNameAndRefreshStatusAreReadable() {
-        val state = TranslationModelState(listOf(TranslationModel("deepseek-flash", "DeepSeek-V4.1-Flash"),
-            TranslationModel("deepseek-v4-pro", "DeepSeek-V4-Pro")), TranslationModels.AUTO_FLASH, updatedAt = 1_792_857_600_000L)
+        val state =
+            TranslationModelState(
+                listOf(
+                    TranslationModel("deepseek-flash", "DeepSeek-V4.1-Flash"),
+                    TranslationModel("deepseek-v4-pro", "DeepSeek-V4-Pro"),
+                ),
+                TranslationModels.AUTO_FLASH,
+                updatedAt = 1_792_857_600_000L,
+            )
         compose.setContent { AmiTheme("dark") { TranslationModelDialog(state, true, {}, {}, {}, {}) } }
         compose.onNodeWithText("自动跟随最新 Flash").performScrollTo().assertIsDisplayed()
         compose.onAllNodesWithText("DeepSeek-V4.1-Flash").onFirst().assertIsDisplayed()

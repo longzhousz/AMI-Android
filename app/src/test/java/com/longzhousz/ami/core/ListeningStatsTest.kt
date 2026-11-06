@@ -12,7 +12,8 @@ class ListeningStatsTest {
     private val song = Song("a", "file:///a.flac", folder = "music", title = "A", artist = "Singer", album = "Album").listeningTrack()
 
     @Test fun elapsedTimeCountsFragmentsAndNeverPausedBufferingOrWallClockJumps() {
-        val counter = ListeningAccumulator(); val slices = mutableListOf<ListeningSlice>()
+        val counter = ListeningAccumulator()
+        val slices = mutableListOf<ListeningSlice>()
         val wall = Instant.parse("2026-10-30T12:00:00Z").toEpochMilli()
         counter.update(song, false, 0, wall, utc, slices::add)
         counter.update(song, true, 60_000, wall + 60_000, utc, slices::add)
@@ -24,7 +25,8 @@ class ListeningStatsTest {
     }
 
     @Test fun switchingRepeatingAndEndingAttributeEveryMillisecondToThePreviousSong() {
-        val counter = ListeningAccumulator(); val slices = mutableListOf<ListeningSlice>()
+        val counter = ListeningAccumulator()
+        val slices = mutableListOf<ListeningSlice>()
         val other = song.copy(key = "b")
         counter.update(song, true, 0, 0, utc, slices::add)
         counter.update(song, true, 3000, 3000, utc, slices::add)
@@ -37,7 +39,8 @@ class ListeningStatsTest {
     }
 
     @Test fun midnightAndNewYearSplitRatherThanMoveTheWholeSong() {
-        val counter = ListeningAccumulator(); val slices = mutableListOf<ListeningSlice>()
+        val counter = ListeningAccumulator()
+        val slices = mutableListOf<ListeningSlice>()
         val wall = Instant.parse("2026-12-31T23:59:55Z").toEpochMilli()
         counter.update(song, true, 0, wall, utc, slices::add)
         counter.update(song, false, 20_000, wall + 20_000, utc, slices::add)
@@ -48,7 +51,8 @@ class ListeningStatsTest {
     @Test fun daylightSavingMissingAndRepeatedHoursKeepTheirActualDuration() {
         val zone = ZoneId.of("America/New_York")
         for ((instant, hours) in listOf("2026-03-08T06:59:55Z" to listOf(1, 3), "2026-11-01T05:59:55Z" to listOf(1, 1))) {
-            val counter = ListeningAccumulator(); val slices = mutableListOf<ListeningSlice>()
+            val counter = ListeningAccumulator()
+            val slices = mutableListOf<ListeningSlice>()
             val wall = Instant.parse(instant).toEpochMilli()
             counter.update(song, true, 0, wall, zone, slices::add)
             counter.update(song, false, 20_000, wall + 20_000, zone, slices::add)
@@ -58,7 +62,8 @@ class ListeningStatsTest {
     }
 
     @Test fun changingTimeZoneOnlyAffectsTheNextFragmentAndResetNeverBackfills() {
-        val counter = ListeningAccumulator(); val slices = mutableListOf<ListeningSlice>()
+        val counter = ListeningAccumulator()
+        val slices = mutableListOf<ListeningSlice>()
         val wall = Instant.parse("2026-10-30T23:59:55Z").toEpochMilli()
         counter.update(song, true, 0, wall, utc, slices::add)
         counter.update(song, true, 3000, wall + 3000, ZoneId.of("Asia/Shanghai"), slices::add)
@@ -81,8 +86,18 @@ class ListeningStatsTest {
     }
 
     @Test fun cacheAndImportedNcmShareAnIdentityButDifferentRecordingsDoNot() {
-        val original = Song("file-a", "file:///a", folder = "m", title = "同名曲", neteaseId = "123",
-            primaryArtistId = "456", primaryArtistName = "主艺人", artist = "主艺人 / 合作艺人", albumId = "789")
+        val original =
+            Song(
+                "file-a",
+                "file:///a",
+                folder = "m",
+                title = "同名曲",
+                neteaseId = "123",
+                primaryArtistId = "456",
+                primaryArtistName = "主艺人",
+                artist = "主艺人 / 合作艺人",
+                albumId = "789",
+            )
         val online = original.copy(id = "netease:123", uri = "ami-cloud://song/123")
         assertEquals(original.listeningTrack().key, online.listeningTrack().key)
         assertEquals(original.listeningTrack().key, online.copy(neteaseId = null).listeningTrack().key)

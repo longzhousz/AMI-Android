@@ -3,17 +3,18 @@ package com.longzhousz.ami.core
 import java.net.URI
 import java.net.URLEncoder
 import java.security.KeyFactory
-import java.security.SecureRandom
 import java.security.MessageDigest
+import java.security.SecureRandom
 import java.security.spec.X509EncodedKeySpec
 import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
-fun neteaseId(raw: String): String = raw.also {
-    require(it.matches(Regex("[1-9][0-9]{0,19}"))) { "网易云标识无效" }
-}
+fun neteaseId(raw: String): String =
+    raw.also {
+        require(it.matches(Regex("[1-9][0-9]{0,19}"))) { "网易云标识无效" }
+    }
 
 /** Only this app's official web login cookies are accepted; never read another app's storage. */
 fun neteaseCookies(raw: String): String {
@@ -29,40 +30,59 @@ fun neteaseCookies(raw: String): String {
     return values.entries.joinToString("; ") { "${it.key}=${it.value}" }
 }
 
-fun neteaseLoginUrl(raw: String): Boolean = runCatching {
-    val uri = URI(raw)
-    val host = uri.host?.lowercase().orEmpty()
-    uri.scheme == "https" && uri.userInfo == null && uri.port in setOf(-1, 443) &&
-        (host == "163.com" || host.endsWith(".163.com") || host == "netease.com" || host.endsWith(".netease.com"))
-}.getOrDefault(false)
+fun neteaseLoginUrl(raw: String): Boolean =
+    runCatching {
+        val uri = URI(raw)
+        val host = uri.host?.lowercase().orEmpty()
+        uri.scheme == "https" && uri.userInfo == null && uri.port in setOf(-1, 443) &&
+            (host == "163.com" || host.endsWith(".163.com") || host == "netease.com" || host.endsWith(".netease.com"))
+    }.getOrDefault(false)
 
 /** Public website protocol parameters, not user credentials or a platform private key. */
 internal object NeteaseForm {
     private val random = SecureRandom()
-    private const val alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    private const val publicKey = "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDgtQn2JZ34ZC28NWYpAUd98iZ37BUrX/aKzmFbt7clFSs6sXqHauqKWqdtLkF2KexO40H1YTX8z2lSgBBOAxLsvaklV8k4cBFK9snQXE9/DDaFt6Rr7iVZMldczhC0JNgTz+SHXT6CBHuX3e9SdB1Ua44oncaTWz7OBGLbCiK45wIDAQAB"
-    fun encodeClient(path: String, json: String): String {
+    private const val ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    private const val PUBLIC_KEY = "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDgtQn2JZ34ZC28NWYpAUd98iZ37BUrX/aKzmFbt7clFSs6sXqHauqKWqdtLkF2KexO40H1YTX8z2lSgBBOAxLsvaklV8k4cBFK9snQXE9/DDaFt6Rr7iVZMldczhC0JNgTz+SHXT6CBHuX3e9SdB1Ua44oncaTWz7OBGLbCiK45wIDAQAB"
+
+    fun encodeClient(
+        path: String,
+        json: String,
+    ): String {
         require(path.matches(Regex("/api/[a-z0-9/]+")) && !path.contains("//"))
-        val digest = MessageDigest.getInstance("MD5").digest("nobody${path}use${json}md5forencrypt".toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it.toInt() and 255) }
+        val digest =
+            MessageDigest
+                .getInstance("MD5")
+                .digest("nobody${path}use${json}md5forencrypt".toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it.toInt() and 255) }
         val bytes = "$path-36cd479b6b5-$json-36cd479b6b5-$digest".toByteArray(Charsets.UTF_8)
-        val encrypted = Cipher.getInstance("AES/ECB/PKCS5Padding").run {
-            init(Cipher.ENCRYPT_MODE, SecretKeySpec("e82ckenh8dichen8".toByteArray(Charsets.UTF_8), "AES"))
-            doFinal(bytes)
-        }
+        val encrypted =
+            Cipher.getInstance("AES/ECB/PKCS5Padding").run {
+                init(Cipher.ENCRYPT_MODE, SecretKeySpec("e82ckenh8dichen8".toByteArray(Charsets.UTF_8), "AES"))
+                doFinal(bytes)
+            }
         return "params=" + encrypted.joinToString("") { "%02X".format(it.toInt() and 255) }
     }
-    fun encode(json: String, key: String = buildString { repeat(16) { append(alphabet[random.nextInt(alphabet.length)]) } }): String {
-        require(key.length == 16 && key.all { it in alphabet })
-        fun aes(text: String, secret: String): String = Cipher.getInstance("AES/CBC/PKCS5Padding").run {
-            init(Cipher.ENCRYPT_MODE, SecretKeySpec(secret.toByteArray(Charsets.UTF_8), "AES"), IvParameterSpec("0102030405060708".toByteArray()))
-            Base64.getEncoder().encodeToString(doFinal(text.toByteArray(Charsets.UTF_8)))
-        }
+
+    fun encode(
+        json: String,
+        key: String = buildString { repeat(16) { append(ALPHABET[random.nextInt(ALPHABET.length)]) } },
+    ): String {
+        require(key.length == 16 && key.all { it in ALPHABET })
+
+        fun aes(
+            text: String,
+            secret: String,
+        ): String =
+            Cipher.getInstance("AES/CBC/PKCS5Padding").run {
+                init(Cipher.ENCRYPT_MODE, SecretKeySpec(secret.toByteArray(Charsets.UTF_8), "AES"), IvParameterSpec("0102030405060708".toByteArray()))
+                Base64.getEncoder().encodeToString(doFinal(text.toByteArray(Charsets.UTF_8)))
+            }
         val params = aes(aes(json, "0CoJUm6Qyw8W8jud"), key)
-        val rsa = Cipher.getInstance("RSA/ECB/NoPadding").run {
-            init(Cipher.ENCRYPT_MODE, KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(Base64.getDecoder().decode(publicKey))))
-            doFinal(key.reversed().toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 255) }
-        }
+        val rsa =
+            Cipher.getInstance("RSA/ECB/NoPadding").run {
+                init(Cipher.ENCRYPT_MODE, KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(Base64.getDecoder().decode(PUBLIC_KEY))))
+                doFinal(key.reversed().toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 255) }
+            }
         return "params=${URLEncoder.encode(params, "UTF-8")}&encSecKey=$rsa"
     }
 }

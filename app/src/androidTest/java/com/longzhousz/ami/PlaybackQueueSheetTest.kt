@@ -25,6 +25,7 @@ class PlaybackQueueSheetTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val songs = (0 until 1000).map { Song("queue-$it", "file:///unused-$it", folder = "qa", title = "队列歌曲 $it", artist = "AMI QA", duration = 180000) }
     private val ids = songs.map { it.id }
+
     private fun screenshot(name: String) {
         val bitmap = compose.onNodeWithTag("queue-surface").captureToImage().asAndroidBitmap()
         File(context.filesDir, "qa/$name.png").apply { parentFile!!.mkdirs() }.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -33,13 +34,24 @@ class PlaybackQueueSheetTest {
     @Test fun repeatedOpenCloseAndLongQueueSelectionStayResponsive() {
         var show by mutableStateOf(false)
         var selected = -1
-        compose.setContent { AmiTheme("light") {
-            GlassBackdropHost(Modifier.fillMaxSize()) {
-                Button({ show = true }) { Text("打开队列") }
-                if (show) PlaybackQueueSheet(ids, ids[500], null, { id -> songs.firstOrNull { it.id == id } },
-                    { show = false }, { selected = it }, {})
+        compose.setContent {
+            AmiTheme("light") {
+                GlassBackdropHost(Modifier.fillMaxSize()) {
+                    Button({ show = true }) { Text("打开队列") }
+                    if (show) {
+                        PlaybackQueueSheet(
+                            ids,
+                            ids[500],
+                            null,
+                            { id -> songs.firstOrNull { it.id == id } },
+                            { show = false },
+                            { selected = it },
+                            {},
+                        )
+                    }
+                }
             }
-        } }
+        }
         repeat(3) {
             compose.onNodeWithText("打开队列").performClick()
             compose.onNodeWithTag("queue-track-500").assertIsDisplayed()
@@ -58,11 +70,16 @@ class PlaybackQueueSheetTest {
     @Test fun queueUsesItsOwnCoverPaletteAndDarkThemeOverALightPlayerHost() {
         val cover = File(context.cacheDir, "qa-queue-green.png")
         val source = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888).apply { eraseColor(0xFF16884B.toInt()) }
-        cover.outputStream().use { source.compress(Bitmap.CompressFormat.PNG, 100, it) }; source.recycle()
+        cover.outputStream().use { source.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        source.recycle()
         try {
-            compose.setContent { AmiTheme("light") { GlassBackdropHost(Modifier.fillMaxSize()) {
-                PlaybackQueueSheet(ids.take(7), ids[2], cover.path, { id -> songs.firstOrNull { it.id == id } }, {}, {}, {})
-            } } }
+            compose.setContent {
+                AmiTheme("light") {
+                    GlassBackdropHost(Modifier.fillMaxSize()) {
+                        PlaybackQueueSheet(ids.take(7), ids[2], cover.path, { id -> songs.firstOrNull { it.id == id } }, {}, {}, {})
+                    }
+                }
+            }
             compose.onNodeWithText("播放队列 · 7").assertIsDisplayed()
             compose.waitUntil(15000) {
                 val bitmap = compose.onNodeWithTag("queue-surface").captureToImage().asAndroidBitmap()
@@ -75,20 +92,27 @@ class PlaybackQueueSheetTest {
             assertTrue("The native sheet must finish opening, not clip its lower half", close.top < sheet.top + sheet.height * .25f)
             compose.onNodeWithTag("queue-track-6").assertIsDisplayed()
             screenshot("queue-dark-cover")
-        } finally { cover.delete() }
+        } finally {
+            cover.delete()
+        }
     }
 
     @Test fun interruptingDismissalDoesNotLeaveTheQueueLocked() {
         var show by mutableStateOf(true)
-        compose.setContent { AmiTheme("dark") {
-            if (show) PlaybackQueueSheet(ids.take(7), ids[2], null, { id -> songs.firstOrNull { it.id == id } }, { show = false }, {}, {})
-        } }
+        compose.setContent {
+            AmiTheme("dark") {
+                if (show) PlaybackQueueSheet(ids.take(7), ids[2], null, { id -> songs.firstOrNull { it.id == id } }, { show = false }, {}, {})
+            }
+        }
         compose.onNodeWithContentDescription("关闭播放队列").assertIsDisplayed()
         compose.mainClock.autoAdvance = false
         compose.onNodeWithContentDescription("关闭播放队列").performClick()
         compose.mainClock.advanceTimeBy(32)
         compose.onNodeWithTag("queue-drag-handle").performTouchInput {
-            down(center); moveBy(Offset(0f, -180f), delayMillis = 180); advanceEventTime(300); up()
+            down(center)
+            moveBy(Offset(0f, -180f), delayMillis = 180)
+            advanceEventTime(300)
+            up()
         }
         compose.mainClock.advanceTimeBy(1800)
         compose.mainClock.autoAdvance = true

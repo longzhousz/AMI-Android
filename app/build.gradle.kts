@@ -14,13 +14,18 @@ android {
         versionName = "0.2.7"
         testInstrumentationRunner = "com.longzhousz.ami.RecoverySeedInstrumentation"
     }
-    buildFeatures { compose = true; buildConfig = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     signingConfigs {
-        if (System.getenv("AMI_KEYSTORE_PATH") != null) create("distribution") {
-            storeFile = file(System.getenv("AMI_KEYSTORE_PATH"))
-            storePassword = System.getenv("AMI_KEYSTORE_PASSWORD")
-            keyAlias = System.getenv("AMI_KEY_ALIAS")
-            keyPassword = System.getenv("AMI_KEY_PASSWORD")
+        if (System.getenv("AMI_KEYSTORE_PATH") != null) {
+            create("distribution") {
+                storeFile = file(System.getenv("AMI_KEYSTORE_PATH"))
+                storePassword = System.getenv("AMI_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("AMI_KEY_ALIAS")
+                keyPassword = System.getenv("AMI_KEY_PASSWORD")
+            }
         }
     }
     compileOptions {

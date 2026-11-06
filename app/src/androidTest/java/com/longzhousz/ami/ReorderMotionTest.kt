@@ -17,9 +17,10 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ReorderMotionTest {
     @get:Rule val compose = createComposeRule()
-    private val songs = listOf("第一首", "第二首", "第三首").mapIndexed { i, title ->
-        Song("reorder-$i", "file:///unused-$i", folder = "qa", title = title)
-    }
+    private val songs =
+        listOf("第一首", "第二首", "第三首").mapIndexed { i, title ->
+            Song("reorder-$i", "file:///unused-$i", folder = "qa", title = title)
+        }
     private val album = Album("qa", "曲序验证", "AMI", songs)
 
     @Test fun arrowReorderSavesTheVisibleOrder() {

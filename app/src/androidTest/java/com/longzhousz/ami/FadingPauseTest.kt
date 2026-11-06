@@ -29,11 +29,13 @@ class FadingPauseTest {
             val samples = mutableListOf<Pair<Long, Float>>()
             val started = SystemClock.uptimeMillis()
             instrumentation.runOnMainSync {
-                audio.addListener(object : Player.Listener {
-                    override fun onVolumeChanged(volume: Float) {
-                        if (audio.playWhenReady) samples += (SystemClock.uptimeMillis() - started) to volume
-                    }
-                })
+                audio.addListener(
+                    object : Player.Listener {
+                        override fun onVolumeChanged(volume: Float) {
+                            if (audio.playWhenReady) samples += (SystemClock.uptimeMillis() - started) to volume
+                        }
+                    },
+                )
                 controls.pause()
                 assertFalse("The button and media session must immediately reflect the request", controls.playWhenReady)
                 assertTrue("The audible player should still be fading", audio.isPlaying)
@@ -48,7 +50,10 @@ class FadingPauseTest {
             output.parentFile!!.mkdirs()
             output.writeText("elapsed_ms,player_gain\n" + samples.joinToString("\n") { "${it.first},${it.second}" } + "\n")
             Thread.sleep(450)
-            instrumentation.runOnMainSync { assertEquals(.63f, audio.volume, .001f); assertFalse(audio.isPlaying) }
+            instrumentation.runOnMainSync {
+                assertEquals(.63f, audio.volume, .001f)
+                assertFalse(audio.isPlaying)
+            }
         }
     }
 
@@ -59,7 +64,8 @@ class FadingPauseTest {
             instrumentation.runOnMainSync { controls.play() }
             Thread.sleep(500)
             instrumentation.runOnMainSync {
-                assertTrue(audio.isPlaying); assertEquals(.63f, audio.volume, .001f)
+                assertTrue(audio.isPlaying)
+                assertEquals(.63f, audio.volume, .001f)
                 controls.pause()
                 controls.seekTo(1, 0)
                 controls.play()
@@ -84,7 +90,10 @@ class FadingPauseTest {
             }
             await { !audio.playWhenReady && audio.volume == .63f }
             Thread.sleep(450)
-            instrumentation.runOnMainSync { assertFalse(controls.playWhenReady); assertFalse(audio.isPlaying) }
+            instrumentation.runOnMainSync {
+                assertFalse(controls.playWhenReady)
+                assertFalse(audio.isPlaying)
+            }
         }
     }
 
@@ -114,29 +123,51 @@ class FadingPauseTest {
         fail("Native audio did not reach the expected state")
     }
 
-    private fun withAudio(onPause: () -> Unit = {}, test: (ExoPlayer, FadingPausePlayer) -> Unit) {
+    private fun withAudio(
+        onPause: () -> Unit = {},
+        test: (ExoPlayer, FadingPausePlayer) -> Unit,
+    ) {
         val context = instrumentation.targetContext
         val activity = ActivityScenario.launch(ComponentActivity::class.java)
         val source = File(context.cacheDir, "qa-pause.flac")
-        instrumentation.context.assets.open("qa-96k-24bit.flac").use { input -> source.outputStream().use { input.copyTo(it) } }
+        instrumentation.context.assets
+            .open("qa-96k-24bit.flac")
+            .use { input -> source.outputStream().use { input.copyTo(it) } }
         lateinit var audio: ExoPlayer
         var controls: FadingPausePlayer? = null
         try {
             stopPreviousPlaybackSession()
             instrumentation.runOnMainSync {
                 audio = ExoPlayer.Builder(context, DefaultRenderersFactory(context).setEnableAudioFloatOutput(true)).build()
-                audio.setAudioAttributes(AudioAttributes.Builder().setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).setUsage(C.USAGE_MEDIA).build(), true)
+                audio.setAudioAttributes(
+                    AudioAttributes
+                        .Builder()
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                        .setUsage(C.USAGE_MEDIA)
+                        .build(),
+                    true,
+                )
                 audio.volume = .63f
                 val transport = FadingPausePlayer(audio, onPause)
                 controls = transport
-                transport.setMediaItems((0..1).map { MediaItem.Builder().setMediaId("pause-$it").setUri(android.net.Uri.fromFile(source)).build() })
-                transport.prepare(); transport.play()
+                transport.setMediaItems(
+                    (0..1).map {
+                        MediaItem
+                            .Builder()
+                            .setMediaId("pause-$it")
+                            .setUri(android.net.Uri.fromFile(source))
+                            .build()
+                    },
+                )
+                transport.prepare()
+                transport.play()
             }
             await { audio.isPlaying }
             test(audio, checkNotNull(controls))
         } finally {
             instrumentation.runOnMainSync { controls?.release() }
-            source.delete(); activity.close()
+            source.delete()
+            activity.close()
         }
     }
 }

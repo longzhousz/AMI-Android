@@ -15,8 +15,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.longzhousz.ami.core.Song
-import com.longzhousz.ami.playback.PlaybackState
 import com.longzhousz.ami.playback.PlayMode
+import com.longzhousz.ami.playback.PlaybackState
 import com.longzhousz.ami.ui.AmiTheme
 import com.longzhousz.ami.ui.PlayerActions
 import com.longzhousz.ami.ui.PlayerContent
@@ -32,21 +32,53 @@ class PlayerMotionTest {
 
     @Test fun playbackDiagnosticsAreOnlyExposedOnFailureAndCopiedAfterExplicitTap() {
         val report = "song=1234\nandroid/jyeffect: api=200 source=404 url=none trial=false"
-        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val context =
+            androidx.test.platform.app.InstrumentationRegistry
+                .getInstrumentation()
+                .targetContext
         var failed by mutableStateOf(false)
         val song = Song("netease:1234", "ami-cloud://song/1234", folder = "qa", title = "音源诊断", duration = 90000)
-        compose.setContent { AmiTheme("dark") { PlayerContent(song, PlaybackState(), null, false,
-            PlayerActions(diagnose = if (failed) { { com.longzhousz.ami.ui.copyPlaybackDiagnostics(context, report) } } else null)) } }
+        compose.setContent {
+            AmiTheme("dark") {
+                PlayerContent(
+                    song,
+                    PlaybackState(),
+                    null,
+                    false,
+                    PlayerActions(
+                        diagnose =
+                            if (failed) {
+                                {
+                                    com.longzhousz.ami.ui
+                                        .copyPlaybackDiagnostics(context, report)
+                                }
+                            } else {
+                                null
+                            },
+                    ),
+                )
+            }
+        }
         compose.onNodeWithContentDescription("歌词选项").performClick()
         compose.onNodeWithText("复制播放诊断").assertDoesNotExist()
-        androidx.test.espresso.Espresso.pressBack()
+        androidx.test.espresso.Espresso
+            .pressBack()
         compose.runOnIdle { failed = true }
         compose.onNodeWithContentDescription("歌词选项").performClick()
         compose.onNodeWithText("复制播放诊断").assertIsDisplayed().performClick()
         compose.runOnIdle {
-            val text = context.getSystemService(android.content.ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString()
-            assertTrue(text.contains(report)); assertTrue(text.contains("AMI ")); assertTrue(text.contains("Android "))
-            assertFalse(text.contains("MUSIC_U")); assertFalse(text.contains("https://"))
+            val text =
+                context
+                    .getSystemService(android.content.ClipboardManager::class.java)
+                    .primaryClip!!
+                    .getItemAt(0)
+                    .text
+                    .toString()
+            assertTrue(text.contains(report))
+            assertTrue(text.contains("AMI "))
+            assertTrue(text.contains("Android "))
+            assertFalse(text.contains("MUSIC_U"))
+            assertFalse(text.contains("https://"))
         }
     }
 
@@ -55,8 +87,15 @@ class PlayerMotionTest {
         var queues = 0
         val song = Song("transport", "file:///unused", folder = "qa", title = "控制与留白", duration = 90000)
         compose.setContent {
-            AmiTheme("dark") { PlayerContent(song, playback, null, false,
-                PlayerActions(mode = { playback = playback.copy(repeat = it.repeat, shuffle = it.shuffle) }, queue = { queues++ })) }
+            AmiTheme("dark") {
+                PlayerContent(
+                    song,
+                    playback,
+                    null,
+                    false,
+                    PlayerActions(mode = { playback = playback.copy(repeat = it.repeat, shuffle = it.shuffle) }, queue = { queues++ }),
+                )
+            }
         }
         compose.onAllNodesWithContentDescription("播放队列").assertCountEquals(1)
         compose.onNodeWithContentDescription("开启随机播放").assertDoesNotExist()
@@ -76,14 +115,28 @@ class PlayerMotionTest {
         compose.runOnIdle { assertEquals(1, queues) }
     }
 
-    private fun sheet(visible: MutableState<Boolean>, onDismiss: () -> Unit = {}) {
+    private fun sheet(
+        visible: MutableState<Boolean>,
+        onDismiss: () -> Unit = {},
+    ) {
         compose.setContent {
             AmiTheme("dark") {
                 Box(Modifier.fillMaxSize()) {
-                    if (visible.value) PlayerSheet(null, { visible.value = false; onDismiss() }) { close, drag ->
-                        Column(Modifier.fillMaxSize().background(Color.DarkGray)) {
-                            Box(Modifier.fillMaxWidth().height(160.dp).then(drag).testTag("test-drag-handle"))
-                            TextButton(close) { Text("收起") }
+                    if (visible.value) {
+                        PlayerSheet(null, {
+                            visible.value = false
+                            onDismiss()
+                        }) { close, drag ->
+                            Column(Modifier.fillMaxSize().background(Color.DarkGray)) {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(160.dp)
+                                        .then(drag)
+                                        .testTag("test-drag-handle"),
+                                )
+                                TextButton(close) { Text("收起") }
+                            }
                         }
                     }
                 }
@@ -95,38 +148,69 @@ class PlayerMotionTest {
     @Test fun shortSlowDragFollowsTheFingerAndSpringsBack() {
         var dismissed = 0
         sheet(mutableStateOf(true)) { dismissed++ }
-        val start = compose.onNodeWithTag("player-sheet").fetchSemanticsNode().boundsInRoot.top
+        val start =
+            compose
+                .onNodeWithTag("player-sheet")
+                .fetchSemanticsNode()
+                .boundsInRoot.top
         compose.onNodeWithTag("test-drag-handle").performTouchInput {
             down(center)
             moveBy(Offset(0f, 80f), delayMillis = 300)
         }
-        val dragged = compose.onNodeWithTag("player-sheet").fetchSemanticsNode().boundsInRoot.top
+        val dragged =
+            compose
+                .onNodeWithTag("player-sheet")
+                .fetchSemanticsNode()
+                .boundsInRoot.top
         assertTrue("The surface must move before the finger is released", dragged > start + 40f)
         compose.onNodeWithTag("test-drag-handle").performTouchInput {
             advanceEventTime(400)
             up()
         }
         compose.waitForIdle()
-        assertEquals(start, compose.onNodeWithTag("player-sheet").fetchSemanticsNode().boundsInRoot.top, 1f)
+        assertEquals(
+            start,
+            compose
+                .onNodeWithTag("player-sheet")
+                .fetchSemanticsNode()
+                .boundsInRoot.top,
+            1f,
+        )
         assertEquals(0, dismissed)
     }
 
     @Test fun reversingALongDragKeepsThePlayerOpen() {
         var dismissed = 0
         sheet(mutableStateOf(true)) { dismissed++ }
-        val start = compose.onNodeWithTag("player-sheet").fetchSemanticsNode().boundsInRoot.top
+        val start =
+            compose
+                .onNodeWithTag("player-sheet")
+                .fetchSemanticsNode()
+                .boundsInRoot.top
         compose.onNodeWithTag("test-drag-handle").performTouchInput {
             down(center)
             moveBy(Offset(0f, 300f), delayMillis = 250)
         }
-        assertTrue(compose.onNodeWithTag("player-sheet").fetchSemanticsNode().boundsInRoot.top > start + 200f)
+        assertTrue(
+            compose
+                .onNodeWithTag("player-sheet")
+                .fetchSemanticsNode()
+                .boundsInRoot.top > start + 200f,
+        )
         compose.onNodeWithTag("test-drag-handle").performTouchInput {
             moveBy(Offset(0f, -290f), delayMillis = 250)
             advanceEventTime(400)
             up()
         }
         compose.waitForIdle()
-        assertEquals(start, compose.onNodeWithTag("player-sheet").fetchSemanticsNode().boundsInRoot.top, 1f)
+        assertEquals(
+            start,
+            compose
+                .onNodeWithTag("player-sheet")
+                .fetchSemanticsNode()
+                .boundsInRoot.top,
+            1f,
+        )
         assertEquals(0, dismissed)
     }
 
@@ -152,7 +236,11 @@ class PlayerMotionTest {
         compose.mainClock.autoAdvance = false
         compose.onNodeWithText("收起").performClick()
         compose.mainClock.advanceTimeBy(64)
-        val closingTop = compose.onNodeWithTag("player-sheet").fetchSemanticsNode().boundsInRoot.top
+        val closingTop =
+            compose
+                .onNodeWithTag("player-sheet")
+                .fetchSemanticsNode()
+                .boundsInRoot.top
         assertTrue("The closing animation must still be in flight", closingTop > 0f)
         compose.onNodeWithTag("test-drag-handle").performTouchInput {
             down(center)
@@ -163,7 +251,14 @@ class PlayerMotionTest {
         compose.mainClock.autoAdvance = true
         compose.waitForIdle()
         compose.onNodeWithTag("player-sheet").assertIsDisplayed()
-        assertEquals(0f, compose.onNodeWithTag("player-sheet").fetchSemanticsNode().boundsInRoot.top, 1f)
+        assertEquals(
+            0f,
+            compose
+                .onNodeWithTag("player-sheet")
+                .fetchSemanticsNode()
+                .boundsInRoot.top,
+            1f,
+        )
         assertEquals(0, dismissed)
     }
 
@@ -174,49 +269,86 @@ class PlayerMotionTest {
         val song = Song("scrub", "file:///unused", folder = "qa", title = "拖动进度", duration = 90000)
         compose.setContent {
             AmiTheme("dark") {
-                PlayerContent(song, PlaybackState(duration = 90000), null, false,
-                    PlayerActions(seek = { seeks++; target = it }), lyricPosition = { position.longValue })
+                PlayerContent(
+                    song,
+                    PlaybackState(duration = 90000),
+                    null,
+                    false,
+                    PlayerActions(seek = {
+                        seeks++
+                        target = it
+                    }),
+                    lyricPosition = { position.longValue },
+                )
             }
         }
         compose.onNodeWithTag("playback-seek").performTouchInput {
             down(Offset(width * .25f, centerY))
             moveTo(Offset(width * .75f, centerY), delayMillis = 200)
         }
-        compose.runOnIdle { position.longValue = 5000; assertEquals(0, seeks) }
-        val dragged = compose.onNodeWithTag("playback-seek").fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current
+        compose.runOnIdle {
+            position.longValue = 5000
+            assertEquals(0, seeks)
+        }
+        val dragged =
+            compose
+                .onNodeWithTag("playback-seek")
+                .fetchSemanticsNode()
+                .config[SemanticsProperties.ProgressBarRangeInfo]
+                .current
         assertTrue("A playback tick must not override the user's preview", dragged > 50000f)
         compose.onNodeWithTag("playback-seek").performTouchInput { up() }
-        compose.runOnIdle { assertEquals(1, seeks); assertTrue(target > 50000) }
+        compose.runOnIdle {
+            assertEquals(1, seeks)
+            assertTrue(target > 50000)
+        }
     }
+
     @Test fun repeatedCloseRequestsDismissThePanelOnlyOnce() {
-        val visible=mutableStateOf(true)
-        var dismissals=0
+        val visible = mutableStateOf(true)
+        var dismissals = 0
         sheet(visible) { dismissals++ }
-        compose.mainClock.autoAdvance=false
+        compose.mainClock.autoAdvance = false
         compose.onNodeWithText("收起").performClick()
         compose.onNodeWithText("收起").performClick()
         compose.mainClock.advanceTimeBy(2000)
-        compose.mainClock.autoAdvance=true
+        compose.mainClock.autoAdvance = true
         compose.waitForIdle()
-        assertEquals(1,dismissals)
+        assertEquals(1, dismissals)
         compose.onNodeWithTag("player-sheet").assertDoesNotExist()
     }
-    @Test fun anEarlierSeekAcknowledgementCannotMoveTheNewPreviewBack() {
-        val position=mutableLongStateOf(1000)
-        val requests=mutableListOf<Long>()
-        val song=Song("rapid-seek","file:///unused",folder="qa",title="Rapid seek",duration=90000)
-        compose.setContent {
-            AmiTheme("dark") { PlayerContent(song,PlaybackState(duration=90000),null,false,
-                PlayerActions(seek={ requests+=it }),lyricPosition={ position.longValue }) }
-        }
-        compose.onNodeWithTag("playback-seek").performTouchInput { click(Offset(width*.75f,centerY)) }
-        compose.onNodeWithTag("playback-seek").performTouchInput { click(Offset(width*.30f,centerY)) }
-        assertEquals(2,requests.size)
-        compose.runOnIdle { position.longValue=requests[0] }
-        val progress=compose.onNodeWithTag("playback-seek").fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo]
-        assertEquals(requests[1].toFloat(),progress.current,1000f)
-        compose.runOnIdle { position.longValue=requests[1] }
-        assertEquals(requests[1].toFloat(),compose.onNodeWithTag("playback-seek").fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current,1000f)
-    }
 
+    @Test fun anEarlierSeekAcknowledgementCannotMoveTheNewPreviewBack() {
+        val position = mutableLongStateOf(1000)
+        val requests = mutableListOf<Long>()
+        val song = Song("rapid-seek", "file:///unused", folder = "qa", title = "Rapid seek", duration = 90000)
+        compose.setContent {
+            AmiTheme("dark") {
+                PlayerContent(
+                    song,
+                    PlaybackState(duration = 90000),
+                    null,
+                    false,
+                    PlayerActions(seek = { requests += it }),
+                    lyricPosition = { position.longValue },
+                )
+            }
+        }
+        compose.onNodeWithTag("playback-seek").performTouchInput { click(Offset(width * .75f, centerY)) }
+        compose.onNodeWithTag("playback-seek").performTouchInput { click(Offset(width * .30f, centerY)) }
+        assertEquals(2, requests.size)
+        compose.runOnIdle { position.longValue = requests[0] }
+        val progress = compose.onNodeWithTag("playback-seek").fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo]
+        assertEquals(requests[1].toFloat(), progress.current, 1000f)
+        compose.runOnIdle { position.longValue = requests[1] }
+        assertEquals(
+            requests[1].toFloat(),
+            compose
+                .onNodeWithTag("playback-seek")
+                .fetchSemanticsNode()
+                .config[SemanticsProperties.ProgressBarRangeInfo]
+                .current,
+            1000f,
+        )
+    }
 }

@@ -16,17 +16,40 @@ internal class FadingPausePlayer(
     private val audio: Player,
     private val onPauseRequested: () -> Unit = {},
 ) : ForwardingSimpleBasePlayer(audio) {
-    private class Fade(val volume: Float, val started: Long, val completion: SettableFuture<Void>)
+    private class Fade(
+        val volume: Float,
+        val started: Long,
+        val completion: SettableFuture<Void>,
+    )
+
     private val handler = Handler(audio.applicationLooper)
     private var fade: Fade? = null
     private val frame = Runnable { advance() }
-    private val interruptions = object : Player.Listener {
-        override fun onIsPlayingChanged(isPlaying: Boolean) { if (!isPlaying) finish(pause = true) }
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { finish(pause = true) }
-        override fun onPositionDiscontinuity(old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) { finish(pause = true) }
-    }
+    private val interruptions =
+        object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (!isPlaying) finish(pause = true)
+            }
 
-    init { audio.addListener(interruptions) }
+            override fun onMediaItemTransition(
+                mediaItem: MediaItem?,
+                reason: Int,
+            ) {
+                finish(pause = true)
+            }
+
+            override fun onPositionDiscontinuity(
+                old: Player.PositionInfo,
+                new: Player.PositionInfo,
+                reason: Int,
+            ) {
+                finish(pause = true)
+            }
+        }
+
+    init {
+        audio.addListener(interruptions)
+    }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
         if (playWhenReady) {
@@ -45,7 +68,10 @@ internal class FadingPausePlayer(
 
     private fun advance() {
         val pending = fade ?: return
-        if (!audio.isPlaying) { finish(pause = true); return }
+        if (!audio.isPlaying) {
+            finish(pause = true)
+            return
+        }
         val progress = ((SystemClock.uptimeMillis() - pending.started) / 360f).coerceIn(0f, 1f)
         audio.volume = pending.volume * ((1.0 + cos(Math.PI * progress)) * .5).toFloat()
         if (progress >= 1f) finish(pause = true) else handler.postDelayed(frame, 16)
@@ -60,17 +86,28 @@ internal class FadingPausePlayer(
         pending.completion.set(null)
     }
 
-    override fun handleSeek(mediaItemIndex: Int, positionMs: Long, seekCommand: Int): ListenableFuture<*> {
+    override fun handleSeek(
+        mediaItemIndex: Int,
+        positionMs: Long,
+        seekCommand: Int,
+    ): ListenableFuture<*> {
         finish(pause = true)
         return super.handleSeek(mediaItemIndex, positionMs, seekCommand)
     }
 
-    override fun handleSetMediaItems(mediaItems: List<MediaItem>, startIndex: Int, startPositionMs: Long): ListenableFuture<*> {
+    override fun handleSetMediaItems(
+        mediaItems: List<MediaItem>,
+        startIndex: Int,
+        startPositionMs: Long,
+    ): ListenableFuture<*> {
         finish(pause = true)
         return super.handleSetMediaItems(mediaItems, startIndex, startPositionMs)
     }
 
-    override fun handleSetVolume(volume: Float, flags: Int): ListenableFuture<*> {
+    override fun handleSetVolume(
+        volume: Float,
+        flags: Int,
+    ): ListenableFuture<*> {
         finish(pause = true)
         return super.handleSetVolume(volume, flags)
     }

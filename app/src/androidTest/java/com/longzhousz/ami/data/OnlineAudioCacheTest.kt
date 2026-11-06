@@ -22,34 +22,55 @@ class OnlineAudioCacheTest {
     private var now = 0L
     private var limit = 0L
     private val owner = "test-account-hash"
+
     @Before fun prepare() {
         name = "qa-online-audio-${System.nanoTime()}"
         now = System.currentTimeMillis()
-        tone = instrumentation.context.assets.open("qa-96k-24bit.flac").use { it.readBytes() }
+        tone =
+            instrumentation.context.assets
+                .open("qa-96k-24bit.flac")
+                .use { it.readBytes() }
         payload = tone
         limit = tone.size * 2L
-        cache = OnlineAudioCache(context, name, budget = { limit }, reserve = 0, open = { address ->
-            object : HttpURLConnection(URL(address)) {
-                override fun connect() = Unit
-                override fun disconnect() = Unit
-                override fun usingProxy() = false
-                override fun getResponseCode() = 200
-                override fun getContentLengthLong() = tone.size.toLong()
-                override fun getInputStream() = ByteArrayInputStream(payload)
-            }
-        })
+        cache =
+            OnlineAudioCache(context, name, budget = { limit }, reserve = 0, open = { address ->
+                object : HttpURLConnection(URL(address)) {
+                    override fun connect() = Unit
+
+                    override fun disconnect() = Unit
+
+                    override fun usingProxy() = false
+
+                    override fun getResponseCode() = 200
+
+                    override fun getContentLengthLong() = tone.size.toLong()
+
+                    override fun getInputStream() = ByteArrayInputStream(payload)
+                }
+            })
         cache.switchAccount(owner)
     }
+
     @After fun cleanup() {
-        cache.switchAccount(null); cache.close()
+        cache.switchAccount(null)
+        cache.close()
         context.deleteDatabase(File(context.noBackupFilesDir, "$name.db").path)
         File(context.cacheDir, name).deleteRecursively()
     }
-    private fun hot(id: String, at: Long = now) {
+
+    private fun hot(
+        id: String,
+        at: Long = now,
+    ) {
         repeat(3) { cache.record(owner, id, 6000, at + it) }
     }
+
     private fun audio(md5: String? = null) = NeteaseAudio("https://m7.music.126.net/qa.flac", "hires", "flac", 2400000, tone.size.toLong(), md5)
-    private fun save(id: String, at: Long = now) {
+
+    private fun save(
+        id: String,
+        at: Long = now,
+    ) {
         hot(id, at)
         cache.download(owner, OnlineAudioCache.Candidate(id, 6000), audio(), at) { cache.scope() == owner }
     }
@@ -66,6 +87,7 @@ class OnlineAudioCacheTest {
             assertEquals("1", reopened.candidates(owner, now + 1000).single().id)
         }
     }
+
     @Test fun completeVerifiedAudioBecomesAFileWithTheOriginalQuality() {
         hot("1")
         val md5 = MessageDigest.getInstance("MD5").digest(tone).joinToString("") { "%02x".format(it) }
@@ -76,8 +98,10 @@ class OnlineAudioCacheTest {
         assertTrue(hit.quality.cached)
         assertTrue(cache.candidates(owner, now).isEmpty())
     }
+
     @Test fun truncatedAndWrongChecksumDownloadsNeverBecomePlayable() {
-        hot("1"); payload = tone.copyOf(tone.size / 2)
+        hot("1")
+        payload = tone.copyOf(tone.size / 2)
         assertTrue(runCatching { cache.download(owner, OnlineAudioCache.Candidate("1", 6000), audio(), now) { true } }.isFailure)
         assertNull(cache.get(owner, "1", now))
         payload = tone
@@ -85,6 +109,7 @@ class OnlineAudioCacheTest {
         assertNull(cache.get(owner, "1", now))
         assertTrue(File(context.cacheDir, name).listFiles().orEmpty().isEmpty())
     }
+
     @Test fun durationMismatchAndCancellationNeverPublishPartialAudio() {
         hot("1")
         assertTrue(runCatching { cache.download(owner, OnlineAudioCache.Candidate("1", 180000), audio(), now) { true } }.isFailure)
@@ -93,10 +118,16 @@ class OnlineAudioCacheTest {
         assertNull(cache.get(owner, "1", now))
         assertTrue(File(context.cacheDir, name).listFiles().orEmpty().isEmpty())
     }
+
     @Test fun lruEvictionAndExpiryProtectThePlayingFileAndNeverTouchImportedMusic() {
-        val imported = File(context.filesDir, "AudioCache/qa-source-$name.flac").apply { parentFile!!.mkdirs(); writeText("original") }
+        val imported =
+            File(context.filesDir, "AudioCache/qa-source-$name.flac").apply {
+                parentFile!!.mkdirs()
+                writeText("original")
+            }
         try {
-            save("1", now - 3000); save("2", now - 2000)
+            save("1", now - 3000)
+            save("2", now - 2000)
             cache.playingId = "1"
             save("3", now)
             assertNotNull(cache.get(owner, "1", now))
@@ -108,8 +139,11 @@ class OnlineAudioCacheTest {
             cache.cleanup(now + OnlineAudioCache.WEEK + 10001)
             assertTrue(File(context.cacheDir, name).listFiles().orEmpty().isEmpty())
             assertEquals("original", imported.readText())
-        } finally { imported.delete() }
+        } finally {
+            imported.delete()
+        }
     }
+
     @Test fun missingFilesAndAccountChangesFallBackWithoutSharingAccountAudio() {
         save("1")
         assertNull(cache.get("another-account", "1", now))
@@ -121,18 +155,29 @@ class OnlineAudioCacheTest {
         assertTrue(cache.candidates("another-account", now).isEmpty())
         assertTrue(File(context.cacheDir, name).listFiles().orEmpty().isEmpty())
     }
+
     @Test fun startupReclaimsInterruptedFilesButCleanupPreservesTheActiveDownload() {
         val directory = File(context.cacheDir, name)
         File(directory, "interrupted.part").writeBytes(tone)
-        File(directory, java.util.UUID.randomUUID().toString() + ".audio").writeBytes(tone)
+        File(
+            directory,
+            java.util.UUID
+                .randomUUID()
+                .toString() + ".audio",
+        ).writeBytes(tone)
         cache.cleanup(now)
         assertTrue(directory.listFiles().orEmpty().isEmpty())
         hot("1")
-        cache.download(owner, OnlineAudioCache.Candidate("1", 6000), audio(), now) { cache.cleanup(now); true }
+        cache.download(owner, OnlineAudioCache.Candidate("1", 6000), audio(), now) {
+            cache.cleanup(now)
+            true
+        }
         assertNotNull(cache.get(owner, "1", now))
     }
+
     @Test fun loweringTheLimitTrimsOldCopiesAndDefersThePlayingFileUntilItIsReleased() {
-        save("1", now - 1000); save("2", now)
+        save("1", now - 1000)
+        save("2", now)
         cache.playingId = "2"
         limit = tone.size / 2L
         cache.cleanup(now)

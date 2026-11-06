@@ -26,12 +26,24 @@ import com.longzhousz.ami.core.CloudTrack
         val width = maxWidth
         val height = (width * .9f + WindowInsets.statusBars.asPaddingValues().calculateTopPadding()).coerceIn(330.dp, 420.dp)
         Box(Modifier.fillMaxWidth().height(height).clipToBounds()) {
-            val columns = when { tracks.size > 18 -> 6; tracks.size > 9 -> 5; tracks.size > 3 -> 4; else -> tracks.size.coerceAtLeast(1) }
+            val columns =
+                when {
+                    tracks.size > 18 -> 6
+                    tracks.size > 9 -> 5
+                    tracks.size > 3 -> 4
+                    else -> tracks.size.coerceAtLeast(1)
+                }
             val edge = width / columns * 1.18f
-            Column(Modifier.align(Alignment.TopCenter).offset(y = (-24).dp)
-                .requiredSize(edge * columns, edge * ((tracks.size + columns - 1) / columns)).graphicsLayer { rotationZ = -9f }
-                .testTag("favorites-album-wall").clearAndSetSemantics { contentDescription = "最近喜欢的 ${tracks.size} 首歌曲封面" },
-                horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .offset(y = (-24).dp)
+                    .requiredSize(edge * columns, edge * ((tracks.size + columns - 1) / columns))
+                    .graphicsLayer { rotationZ = -9f }
+                    .testTag("favorites-album-wall")
+                    .clearAndSetSemantics { contentDescription = "最近喜欢的 ${tracks.size} 首歌曲封面" },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
                 tracks.chunked(columns).forEach { row ->
                     Row {
                         row.forEach { track -> Cover(track.cover, track.title, Modifier.size(edge).testTag("favorite-wall-${track.id}")) }
@@ -40,11 +52,24 @@ import com.longzhousz.ami.core.CloudTrack
             }
             Canvas(Modifier.fillMaxSize()) {
                 drawRect(Color.Black.copy(alpha = .08f))
-                drawRect(Brush.verticalGradient(0f to Color.Black.copy(alpha = .42f), .4f to Color.Transparent,
-                    .64f to base.copy(alpha = .30f), .9f to base.copy(alpha = .95f), 1f to base))
+                drawRect(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = .42f),
+                        .4f to Color.Transparent,
+                        .64f to base.copy(alpha = .30f),
+                        .9f to base.copy(alpha = .95f),
+                        1f to base,
+                    ),
+                )
             }
-            Text("我喜欢", Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 26.dp),
-                fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Text(
+                "我喜欢",
+                Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 26.dp),
+                fontSize = 32.sp,
+                lineHeight = 40.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+            )
         }
     }
 }

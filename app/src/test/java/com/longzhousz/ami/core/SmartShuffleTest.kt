@@ -1,8 +1,8 @@
 package com.longzhousz.ami.core
 
-import kotlin.random.Random
 import org.junit.Assert.*
 import org.junit.Test
+import kotlin.random.Random
 
 class SmartShuffleTest {
     @Test fun anchoredPermutationDelaysRecentSongsAndHandlesSmallOrHomogeneousQueues() {
@@ -25,10 +25,13 @@ class SmartShuffleTest {
     @Test fun mixedQueuesHaveFewerArtistAndAlbumRunsWithoutChangingSourceOrder() {
         val tracks = List(120) { ShuffleTrack("$it", "artist${it / 12}", "album${it / 6}") }
         val original = tracks.toList()
-        var balanced = 0; var ordinary = 0
-        fun runs(order: List<Int>) = order.zipWithNext().count { (a, b) ->
-            tracks[a].artist == tracks[b].artist || tracks[a].album == tracks[b].album
-        }
+        var balanced = 0
+        var ordinary = 0
+
+        fun runs(order: List<Int>) =
+            order.zipWithNext().count { (a, b) ->
+                tracks[a].artist == tracks[b].artist || tracks[a].album == tracks[b].album
+            }
         repeat(40) { seed ->
             balanced += runs(balancedShuffle(tracks, 0, emptyList(), Random(seed)).toList())
             ordinary += runs(tracks.indices.shuffled(Random(seed)))

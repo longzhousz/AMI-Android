@@ -1,23 +1,23 @@
 package com.longzhousz.ami.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -29,55 +29,70 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.selected
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.longzhousz.ami.AmiViewModel
 import com.longzhousz.ami.core.Album
-import com.longzhousz.ami.core.Song
-import com.longzhousz.ami.core.isCloudSong
 import com.longzhousz.ami.core.LibrarySnapshot
-import com.longzhousz.ami.core.durationLabel
 import com.longzhousz.ami.core.ListeningScale
+import com.longzhousz.ami.core.Song
+import com.longzhousz.ami.core.durationLabel
+import com.longzhousz.ami.core.isCloudSong
 import com.longzhousz.ami.playback.PlaybackState
 import com.longzhousz.ami.playback.PlayerConnection
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
-private data class AppDestination(val page: Int, val albumKey: String?)
+private data class AppDestination(
+    val page: Int,
+    val albumKey: String?,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun AmiApp(model: AmiViewModel, onImport: () -> Unit, onNotifications: () -> Unit, onBridgeFolder: () -> Unit,
-    onLyricsFolder: () -> Unit, onLyricFile: (Song) -> Unit, initialPage: Int = 0, onInstallUpdate: () -> Unit = {}) {
+@Composable
+fun AmiApp(
+    model: AmiViewModel,
+    onImport: () -> Unit,
+    onNotifications: () -> Unit,
+    onBridgeFolder: () -> Unit,
+    onLyricsFolder: () -> Unit,
+    onLyricFile: (Song) -> Unit,
+    initialPage: Int = 0,
+    onInstallUpdate: () -> Unit = {},
+) {
     val theme by model.theme.collectAsStateWithLifecycle()
     var fullPlayer by rememberSaveable { mutableStateOf(false) }
-    var page by rememberSaveable { mutableIntStateOf(if (initialPage == 3 && model.cloud.direct) 0 else initialPage.coerceIn(0,6)) }
+    var page by rememberSaveable { mutableIntStateOf(if (initialPage == 3 && model.cloud.direct) 0 else initialPage.coerceIn(0, 6)) }
     val immersiveFavorites = page == 1 && model.cloud.direct
     var playerOverStatusBar by remember { mutableStateOf(false) }
     var playerOverNavigationBar by remember { mutableStateOf(false) }
-    AmiTheme(theme, statusBarImmersive = immersiveFavorites || fullPlayer && playerOverStatusBar,
-        navigationBarImmersive = immersiveFavorites || fullPlayer && playerOverNavigationBar) {
+    AmiTheme(
+        theme,
+        statusBarImmersive = immersiveFavorites || (fullPlayer && playerOverStatusBar),
+        navigationBarImmersive = immersiveFavorites || (fullPlayer && playerOverNavigationBar),
+    ) {
         val focus = LocalFocusManager.current
         val library by model.repository.library.collectAsStateWithLifecycle()
         val onlineSongs by model.cloud.catalog.collectAsStateWithLifecycle()
@@ -108,29 +123,58 @@ private data class AppDestination(val page: Int, val albumKey: String?)
             try {
                 lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                     model.setUiActive(true)
-                    try { awaitCancellation() } finally { model.setUiActive(false) }
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        model.setUiActive(false)
+                    }
                 }
-            } finally { model.setUiActive(false) }
+            } finally {
+                model.setUiActive(false)
+            }
         }
-        LaunchedEffect(bridgeAlbum) { bridgeAlbum?.let { albumKey = it; model.bridgeAlbum.value = null } }
+        LaunchedEffect(bridgeAlbum) {
+            bridgeAlbum?.let {
+                albumKey = it
+                model.bridgeAlbum.value = null
+            }
+        }
         LaunchedEffect(bridgeEnabled, lifecycle) {
-            if (bridgeEnabled) lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                while (true) { model.processBridge(); delay(3000) }
+            if (bridgeEnabled) {
+                lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                    while (true) {
+                        model.processBridge()
+                        delay(3000)
+                    }
+                }
             }
         }
         val snackbar = remember { SnackbarHostState() }
         val contentBackdrop = rememberLayerBackdrop()
         val floatingColors = if (immersiveFavorites) FavoritesColors else MaterialTheme.colorScheme
         LaunchedEffect(current?.id, loading) {
-            if (!loading && current == null) { fullPlayer = false; queue = false }
+            if (!loading && current == null) {
+                fullPlayer = false
+                queue = false
+            }
         }
-        LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); if (model.message.value == it) model.message.value = null } }
+        LaunchedEffect(message) {
+            message?.let {
+                snackbar.showSnackbar(it)
+                if (model.message.value == it) model.message.value = null
+            }
+        }
         val context = LocalContext.current
         LaunchedEffect(playback.id, playback.error) {
             playback.error?.let { error ->
                 val report = playback.id?.let(model.cloud::playbackDiagnostics)
-                val result = snackbar.showSnackbar(error, actionLabel = if (report != null) "复制诊断" else null,
-                    withDismissAction = report != null, duration = if (report != null) SnackbarDuration.Long else SnackbarDuration.Short)
+                val result =
+                    snackbar.showSnackbar(
+                        error,
+                        actionLabel = if (report != null) "复制诊断" else null,
+                        withDismissAction = report != null,
+                        duration = if (report != null) SnackbarDuration.Long else SnackbarDuration.Short,
+                    )
                 if (result == SnackbarResult.ActionPerformed && report != null) copyPlaybackDiagnostics(context, report)
             }
         }
@@ -139,140 +183,262 @@ private data class AppDestination(val page: Int, val albumKey: String?)
         BackHandler(page >= 4 && selectedAlbum == null && !fullPlayer && !queue) { page = 2 }
         LaunchedEffect(page) { if (page in 4..5) model.repository.load() }
         CompositionLocalProvider(LocalGlassBackdrop provides contentBackdrop) {
-        Box(Modifier.fillMaxSize()) {
-            GlassBackdropHost(Modifier.fillMaxSize().layerBackdrop(contentBackdrop), background = {
-                MaterialTheme(colorScheme = floatingColors) { GlassCanvas() }
-            }) {
-            CompositionLocalProvider(LocalVisualsActive provides !fullPlayer) {
-            Scaffold(
-                modifier = if (fullPlayer) Modifier.clearAndSetSemantics {} else Modifier,
-                containerColor = Color.Transparent,
-                contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Bottom),
-                snackbarHost = { GlassSnackbarHost(snackbar, Modifier.padding(bottom = floatingInset)) },
-            ) { padding ->
-                Column(Modifier.fillMaxSize().padding(padding)) {
-                    AnimatedVisibility(importing.running) {
-                        Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primaryContainer).padding(horizontal = 20.dp, vertical = 8.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("${importing.done}/${importing.total}  ${importing.message}", Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
-                                TextButton({ model.repository.cancelScan() }) { Text("取消") }
-                            }
-                            if (importing.total > 0) LinearProgressIndicator(progress = { importing.done.toFloat() / importing.total }, modifier = Modifier.fillMaxWidth())
-                            else LinearProgressIndicator(Modifier.fillMaxWidth())
-                        }
-                    }
-                    AnimatedContent(AppDestination(page, albumKey), Modifier.weight(1f), transitionSpec = {
-                        AmiMotion.page(if (targetState.page != initialState.page) targetState.page > initialState.page else targetState.albumKey != null)
-                    }, label = "app-destination") { destination ->
-                        val album = albumsByKey[destination.albumKey]
-                        Box(Modifier.fillMaxSize().then(if (destination.page == 1 && model.cloud.direct && album == null) Modifier else Modifier.statusBarsPadding())) {
-                        when {
-                            album != null -> AlbumScreen(album, playback.id, model, { albumKey = null }, { remove = it }, floatingInset)
-                            destination.page == 2 -> pageState.SaveableStateProvider("settings") {
-                                Box(Modifier.padding(bottom = floatingInset)) { SettingsScreen(model, onImport, onNotifications, onBridgeFolder, onLyricsFolder,
-                                    onLocalLibrary = { page = 4 }, onListening = { page = 6 }, onInstallUpdate = onInstallUpdate,
-                                    settingsVisible = page == 2 && !fullPlayer && !queue && selectedAlbum == null && remove == null) }
-                            }
-                            destination.page == 6 -> Box(Modifier.padding(bottom = floatingInset)) {
-                                ListeningStatsScreen(model.repository.listeningStats, { page = 2 },
-                                    ListeningScale.entries.firstOrNull { it.name == model.repository.prefs.getString("listeningScale", "MONTH") } ?: ListeningScale.MONTH,
-                                    { model.repository.prefs.edit().putString("listeningScale", it.name).apply() })
-                            }
-                            destination.page in 4..5 -> pageState.SaveableStateProvider("local-${destination.page}") {
-                                Column(Modifier.padding(bottom = floatingInset)) {
-                                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        ActionIcon(Icons.Rounded.ArrowBack, "返回设置", { page = 2 })
-                                        Text("本地音乐", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                                        FilterChip(destination.page == 5, { page = if (page == 5) 4 else 5 }, { Text("本地喜欢") })
+            Box(Modifier.fillMaxSize()) {
+                GlassBackdropHost(Modifier.fillMaxSize().layerBackdrop(contentBackdrop), background = {
+                    MaterialTheme(colorScheme = floatingColors) { GlassCanvas() }
+                }) {
+                    CompositionLocalProvider(LocalVisualsActive provides !fullPlayer) {
+                        Scaffold(
+                            modifier = if (fullPlayer) Modifier.clearAndSetSemantics {} else Modifier,
+                            containerColor = Color.Transparent,
+                            contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Bottom),
+                            snackbarHost = { GlassSnackbarHost(snackbar, Modifier.padding(bottom = floatingInset)) },
+                        ) { padding ->
+                            Column(Modifier.fillMaxSize().padding(padding)) {
+                                AnimatedVisibility(importing.running) {
+                                    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primaryContainer).padding(horizontal = 20.dp, vertical = 8.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("${importing.done}/${importing.total}  ${importing.message}", Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
+                                            TextButton({ model.repository.cancelScan() }) { Text("取消") }
+                                        }
+                                        if (importing.total > 0) {
+                                            LinearProgressIndicator(progress = { importing.done.toFloat() / importing.total }, modifier = Modifier.fillMaxWidth())
+                                        } else {
+                                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                                        }
                                     }
-                                    LibraryScreen(library, loading, destination.page == 5, playback.id, { page = 2 },
-                                        onAlbum = { albumKey = it.key }, onPlay = { list, index -> model.play(list, index) }, onFavorite = model::favorite, onRemove = { remove = it })
+                                }
+                                AnimatedContent(AppDestination(page, albumKey), Modifier.weight(1f), transitionSpec = {
+                                    AmiMotion.page(if (targetState.page != initialState.page) targetState.page > initialState.page else targetState.albumKey != null)
+                                }, label = "app-destination") { destination ->
+                                    val album = albumsByKey[destination.albumKey]
+                                    Box(Modifier.fillMaxSize().then(if (destination.page == 1 && model.cloud.direct && album == null) Modifier else Modifier.statusBarsPadding())) {
+                                        when {
+                                            album != null -> {
+                                                AlbumScreen(album, playback.id, model, { albumKey = null }, { remove = it }, floatingInset)
+                                            }
+
+                                            destination.page == 2 -> {
+                                                pageState.SaveableStateProvider("settings") {
+                                                    Box(Modifier.padding(bottom = floatingInset)) {
+                                                        SettingsScreen(
+                                                            model,
+                                                            onImport,
+                                                            onNotifications,
+                                                            onBridgeFolder,
+                                                            onLyricsFolder,
+                                                            onLocalLibrary = { page = 4 },
+                                                            onListening = { page = 6 },
+                                                            onInstallUpdate = onInstallUpdate,
+                                                            settingsVisible = page == 2 && !fullPlayer && !queue && selectedAlbum == null && remove == null,
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            destination.page == 6 -> {
+                                                Box(Modifier.padding(bottom = floatingInset)) {
+                                                    ListeningStatsScreen(
+                                                        model.repository.listeningStats,
+                                                        { page = 2 },
+                                                        ListeningScale.entries.firstOrNull { it.name == model.repository.prefs.getString("listeningScale", "MONTH") } ?: ListeningScale.MONTH,
+                                                        {
+                                                            model.repository.prefs
+                                                                .edit()
+                                                                .putString("listeningScale", it.name)
+                                                                .apply()
+                                                        },
+                                                    )
+                                                }
+                                            }
+
+                                            destination.page in 4..5 -> {
+                                                pageState.SaveableStateProvider("local-${destination.page}") {
+                                                    Column(Modifier.padding(bottom = floatingInset)) {
+                                                        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                            ActionIcon(Icons.Rounded.ArrowBack, "返回设置", { page = 2 })
+                                                            Text("本地音乐", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                                                            FilterChip(destination.page == 5, { page = if (page == 5) 4 else 5 }, { Text("本地喜欢") })
+                                                        }
+                                                        LibraryScreen(
+                                                            library,
+                                                            loading,
+                                                            destination.page == 5,
+                                                            playback.id,
+                                                            { page = 2 },
+                                                            onAlbum = { albumKey = it.key },
+                                                            onPlay = { list, index -> model.play(list, index) },
+                                                            onFavorite = model::favorite,
+                                                            onRemove = { remove = it },
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            !model.cloud.direct -> {
+                                                CloudMusicScreen(model)
+                                            }
+
+                                            else -> {
+                                                pageState.SaveableStateProvider("online-${destination.page}") {
+                                                    OnlineLibraryScreen(model, destination.page == 1, floatingInset) {
+                                                        if (page == 0) {
+                                                            focus.clearFocus()
+                                                            playerOverStatusBar = false
+                                                            playerOverNavigationBar = false
+                                                            fullPlayer = true
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                            !model.cloud.direct -> CloudMusicScreen(model)
-                            else -> pageState.SaveableStateProvider("online-${destination.page}") {
-                                OnlineLibraryScreen(model, destination.page == 1, floatingInset) {
-                                    if (page == 0) { focus.clearFocus(); playerOverStatusBar = false; playerOverNavigationBar = false; fullPlayer = true }
-                                }
-                            }
-                        }
                         }
                     }
                 }
-            }
-            }
-            }
-            MaterialTheme(colorScheme = floatingColors) {
-            Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
-                .then(if (fullPlayer) Modifier.clearAndSetSemantics {} else Modifier), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (current != null) MiniPlayer(current, playback, model.player, clockEnabled = !fullPlayer,
-                        modifier = Modifier.padding(horizontal = 12.dp).graphicsLayer { alpha = if (fullPlayer) 0f else 1f },
-                        onBounds = { miniBounds = it }, onOpen = {
-                            focus.clearFocus(); playerOverStatusBar = false; playerOverNavigationBar = false; fullPlayer = true
-                        },
-                        onToggle = { model.act("player.toggle") { model.player.toggle() } },
-                        onNext = { model.act("player.next") { model.player.next() } })
-                if (current != null) Spacer(Modifier.height(8.dp))
-                GlassSurface(shape = RoundedCornerShape(32.dp), prominent = true) {
-                    val tab = if (page >= 2) 2 else page
-                    val indicator by animateDpAsState(8.dp + 60.dp * tab, spring(dampingRatio = .78f, stiffness = 450f), label = "glass-tab")
-                    Box(Modifier.offset(x = indicator, y = 4.dp).size(52.dp).liquidGlass(CircleShape))
-                    Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(Triple("曲库", Icons.Rounded.LibraryMusic, 0), Triple("我喜欢", Icons.Rounded.FavoriteBorder, 1), Triple("设置", Icons.Rounded.Tune, 2)).forEach { (label, icon, index) ->
-                            val active = page == index || index == 2 && page >= 4
-                            IconButton(onClick = {
-                                val now = android.os.SystemClock.uptimeMillis()
-                                val doubleTap = lastNavPage == index && now - lastNavTap <= android.view.ViewConfiguration.getDoubleTapTimeout()
-                                lastNavPage = if (doubleTap) -1 else index; lastNavTap = now
-                                page = index; albumKey = null; focus.clearFocus()
-                                if (doubleTap && index < 2) model.requestOnlineRefresh(index)
-                            }, modifier = Modifier.size(52.dp)
-                                .semantics {
-                                    selected = active
-                                    if (index < 2) customActions = listOf(CustomAccessibilityAction("刷新$label") { model.requestOnlineRefresh(index); true })
-                                }) {
-                                Icon(icon, label, tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-                }
-            }
-            }
-            if (fullPlayer && current != null) PlayerSheet(miniBounds, { fullPlayer = false }, onSystemBars = { status, navigation ->
-                playerOverStatusBar = status; playerOverNavigationBar = navigation
-            }, collapsedContent = {
                 MaterialTheme(colorScheme = floatingColors) {
-                MiniPlayer(current, playback, model.player, clockEnabled = false,
-                    onOpen = {}, onToggle = {}, onNext = {})
-                }
-            }) { close, dragHandle ->
-                Box(Modifier.fillMaxSize()) {
-                    CompositionLocalProvider(LocalVisualsActive provides !queue) {
-                        PlayerScreen(current, model, close, { queue = true }, { onLyricFile(current) }, dragHandle, lyricsPage)
+                    Column(
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .navigationBarsPadding()
+                            .padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
+                            .then(if (fullPlayer) Modifier.clearAndSetSemantics {} else Modifier),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        if (current != null) {
+                            MiniPlayer(
+                                current,
+                                playback,
+                                model.player,
+                                clockEnabled = !fullPlayer,
+                                modifier = Modifier.padding(horizontal = 12.dp).graphicsLayer { alpha = if (fullPlayer) 0f else 1f },
+                                onBounds = { miniBounds = it },
+                                onOpen = {
+                                    focus.clearFocus()
+                                    playerOverStatusBar = false
+                                    playerOverNavigationBar = false
+                                    fullPlayer = true
+                                },
+                                onToggle = { model.act("player.toggle") { model.player.toggle() } },
+                                onNext = { model.act("player.next") { model.player.next() } },
+                            )
+                        }
+                        if (current != null) Spacer(Modifier.height(8.dp))
+                        GlassSurface(shape = RoundedCornerShape(32.dp), prominent = true) {
+                            val tab = if (page >= 2) 2 else page
+                            val indicator by animateDpAsState(8.dp + 60.dp * tab, spring(dampingRatio = .78f, stiffness = 450f), label = "glass-tab")
+                            Box(Modifier.offset(x = indicator, y = 4.dp).size(52.dp).liquidGlass(CircleShape))
+                            Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(Triple("曲库", Icons.Rounded.LibraryMusic, 0), Triple("我喜欢", Icons.Rounded.FavoriteBorder, 1), Triple("设置", Icons.Rounded.Tune, 2)).forEach { (label, icon, index) ->
+                                    val active = page == index || (index == 2 && page >= 4)
+                                    IconButton(
+                                        onClick = {
+                                            val now = android.os.SystemClock.uptimeMillis()
+                                            val doubleTap = lastNavPage == index && now - lastNavTap <= android.view.ViewConfiguration.getDoubleTapTimeout()
+                                            lastNavPage = if (doubleTap) -1 else index
+                                            lastNavTap = now
+                                            page = index
+                                            albumKey = null
+                                            focus.clearFocus()
+                                            if (doubleTap && index < 2) model.requestOnlineRefresh(index)
+                                        },
+                                        modifier =
+                                            Modifier
+                                                .size(52.dp)
+                                                .semantics {
+                                                    selected = active
+                                                    if (index < 2) {
+                                                        customActions =
+                                                            listOf(
+                                                                CustomAccessibilityAction("刷新$label") {
+                                                                    model.requestOnlineRefresh(index)
+                                                                    true
+                                                                },
+                                                            )
+                                                    }
+                                                },
+                                    ) {
+                                        Icon(icon, label, tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
                     }
-                    GlassSnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 64.dp))
+                }
+                if (fullPlayer && current != null) {
+                    PlayerSheet(miniBounds, { fullPlayer = false }, onSystemBars = { status, navigation ->
+                        playerOverStatusBar = status
+                        playerOverNavigationBar = navigation
+                    }, collapsedContent = {
+                        MaterialTheme(colorScheme = floatingColors) {
+                            MiniPlayer(
+                                current,
+                                playback,
+                                model.player,
+                                clockEnabled = false,
+                                onOpen = {},
+                                onToggle = {},
+                                onNext = {},
+                            )
+                        }
+                    }) { close, dragHandle ->
+                        Box(Modifier.fillMaxSize()) {
+                            CompositionLocalProvider(LocalVisualsActive provides !queue) {
+                                PlayerScreen(current, model, close, { queue = true }, { onLyricFile(current) }, dragHandle, lyricsPage)
+                            }
+                            GlassSnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 64.dp))
+                        }
+                    }
+                }
+                if (queue) {
+                    PlaybackQueueSheet(
+                        playback.queue,
+                        playback.id,
+                        current?.cover,
+                        songFor = { id ->
+                            (songsById[id] ?: onlineSongs[id])?.let { song ->
+                                if (song.isCloudSong()) song.copy(favorite = song.neteaseId in onlineLikes.ids) else song
+                            }
+                        },
+                        onDismiss = { queue = false },
+                        onPlay = { index -> model.act("player.jump") { model.player.jump(index) } },
+                        onFavorite = model::favorite,
+                        favoriteEnabled = { song ->
+                            !song.isCloudSong() || (model.cloud.direct && onlineLikes.ready && song.neteaseId !in onlineLikes.pending)
+                        },
+                    )
+                }
+                remove?.let { song ->
+                    GlassAlertDialog(
+                        { remove = null },
+                        title = { Text("从曲库移除？") },
+                        text = { Text("《${song.title}》将从 AMI 曲库和播放队列中移除。原始音频会保留，重新扫描可再次导入。") },
+                        confirmButton = {
+                            TextButton({
+                                model.remove(song)
+                                remove = null
+                            }) { Text("移除") }
+                        },
+                        dismissButton = { TextButton({ remove = null }) { Text("取消") } },
+                    )
                 }
             }
-            if (queue) PlaybackQueueSheet(playback.queue, playback.id, current?.cover, songFor = { id ->
-                (songsById[id] ?: onlineSongs[id])?.let { song ->
-                    if (song.isCloudSong()) song.copy(favorite = song.neteaseId in onlineLikes.ids) else song
-                }
-            }, onDismiss = { queue = false }, onPlay = { index -> model.act("player.jump") { model.player.jump(index) } },
-                onFavorite = model::favorite, favoriteEnabled = { song ->
-                    !song.isCloudSong() || model.cloud.direct && onlineLikes.ready && song.neteaseId !in onlineLikes.pending
-                })
-            remove?.let { song ->
-                GlassAlertDialog({ remove = null }, title = { Text("从曲库移除？") }, text = { Text("《${song.title}》将从 AMI 曲库和播放队列中移除。原始音频会保留，重新扫描可再次导入。") },
-                    confirmButton = { TextButton({ model.remove(song); remove = null }) { Text("移除") } }, dismissButton = { TextButton({ remove = null }) { Text("取消") } })
-            }
-        }
         }
     }
 }
 
 @Composable private fun LibraryScreen(
-    library: LibrarySnapshot, loading: Boolean, favorites: Boolean, currentId: String?, onSettings: () -> Unit,
-    onAlbum: (Album) -> Unit, onPlay: (List<Song>, Int) -> Unit, onFavorite: (Song) -> Unit, onRemove: (Song) -> Unit,
+    library: LibrarySnapshot,
+    loading: Boolean,
+    favorites: Boolean,
+    currentId: String?,
+    onSettings: () -> Unit,
+    onAlbum: (Album) -> Unit,
+    onPlay: (List<Song>, Int) -> Unit,
+    onFavorite: (Song) -> Unit,
+    onRemove: (Song) -> Unit,
 ) {
     val songs = library.songs
     var query by rememberSaveable(favorites) { mutableStateOf("") }
@@ -300,44 +466,84 @@ private data class AppDestination(val page: Int, val albumKey: String?)
     val filteredSongs = results.songs
     val filteredAlbums = results.albums
     Column(Modifier.fillMaxSize()) {
-        OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).testTag("library-search"), placeholder = { Text("搜索专辑、歌曲、艺人") },
-            leadingIcon = { Icon(Icons.Rounded.Search, null) }, trailingIcon = { if (query.isNotEmpty()) ActionIcon(Icons.Rounded.Close, "清空搜索", { query = "" }) },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
-            singleLine = true, shape = RoundedCornerShape(18.dp), colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant))
+        OutlinedTextField(
+            query,
+            { query = it },
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).testTag("library-search"),
+            placeholder = { Text("搜索专辑、歌曲、艺人") },
+            leadingIcon = { Icon(Icons.Rounded.Search, null) },
+            trailingIcon = { if (query.isNotEmpty()) ActionIcon(Icons.Rounded.Close, "清空搜索", { query = "" }) },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
+            singleLine = true,
+            shape = RoundedCornerShape(18.dp),
+            colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
+        )
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (!favorites) { FilterChip(mode == 0, { mode = 0 }, { Text("专辑") }); FilterChip(mode == 1, { mode = 1 }, { Text("歌曲") }) }
-            else Text("${filteredSongs.size} 首", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
+            if (!favorites) {
+                FilterChip(mode == 0, { mode = 0 }, { Text("专辑") })
+                FilterChip(mode == 1, { mode = 1 }, { Text("歌曲") })
+            } else {
+                Text("${filteredSongs.size} 首", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
+            }
             Spacer(Modifier.weight(1f))
             Box {
                 ActionIcon(Icons.Rounded.Sort, "排序", { sorting = true }, tint = if (recent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                 GlassDropdownMenu(sorting, { sorting = false }) {
-                    DropdownMenuItem({ Text("默认排序") }, { recent = false; sorting = false }, trailingIcon = { if (!recent) Icon(Icons.Rounded.Check, null) })
-                    DropdownMenuItem({ Text("最近导入") }, { recent = true; sorting = false }, trailingIcon = { if (recent) Icon(Icons.Rounded.Check, null) })
+                    DropdownMenuItem({ Text("默认排序") }, {
+                        recent = false
+                        sorting = false
+                    }, trailingIcon = { if (!recent) Icon(Icons.Rounded.Check, null) })
+                    DropdownMenuItem({ Text("最近导入") }, {
+                        recent = true
+                        sorting = false
+                    }, trailingIcon = { if (recent) Icon(Icons.Rounded.Check, null) })
                 }
             }
             ActionIcon(Icons.Rounded.Shuffle, "随机播放", { onPlay(filteredSongs.shuffled(), 0) }, enabled = filteredSongs.isNotEmpty() && !loading)
         }
         AnimatedContent(if (favorites) 1 else mode, Modifier.weight(1f), transitionSpec = { AmiMotion.page(targetState > initialState) }, label = "library-layout") { layout ->
-        when {
-            loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            songs.isEmpty() && !favorites -> EmptyLibrary(onSettings)
-            layout == 1 && filteredSongs.isEmpty() || layout == 0 && filteredAlbums.isEmpty() -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) { Text(if (favorites && query.isEmpty()) "暂无收藏" else "没有找到匹配的音乐", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            layout == 1 -> LazyColumn(state = songList, modifier = Modifier.testTag("library-song-list"), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp)) {
-                itemsIndexed(filteredSongs, key = { _, song -> song.id }) { index, song ->
-                    SongRow(song, song.id == currentId, { onPlay(filteredSongs, index) }, { onFavorite(song) }, { onRemove(song) },
-                        modifier = Modifier.animateItem(placementSpec = spring(stiffness = 500f), fadeInSpec = tween(160), fadeOutSpec = tween(120)))
+            when {
+                loading -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 }
-            }
-            else -> LazyVerticalGrid(GridCells.Adaptive(145.dp), state = albumGrid, contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-                items(filteredAlbums, key = { it.key }) { album ->
-                    Column(Modifier.animateItem(placementSpec = spring(stiffness = 500f)).clickable { onAlbum(album) }) {
-                        Cover(album.cover, album.title, Modifier.fillMaxWidth().aspectRatio(1f))
-                        Text(album.title, Modifier.padding(top = 10.dp, start = 2.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${album.artist} · ${album.songs.size} 首", Modifier.padding(start = 2.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+
+                songs.isEmpty() && !favorites -> {
+                    EmptyLibrary(onSettings)
+                }
+
+                (layout == 1 && filteredSongs.isEmpty()) || (layout == 0 && filteredAlbums.isEmpty()) -> {
+                    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) { Text(if (favorites && query.isEmpty()) "暂无收藏" else "没有找到匹配的音乐", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+
+                layout == 1 -> {
+                    LazyColumn(state = songList, modifier = Modifier.testTag("library-song-list"), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp)) {
+                        itemsIndexed(filteredSongs, key = { _, song -> song.id }) { index, song ->
+                            SongRow(
+                                song,
+                                song.id == currentId,
+                                { onPlay(filteredSongs, index) },
+                                { onFavorite(song) },
+                                { onRemove(song) },
+                                modifier = Modifier.animateItem(placementSpec = spring(stiffness = 500f), fadeInSpec = tween(160), fadeOutSpec = tween(120)),
+                            )
+                        }
+                    }
+                }
+
+                else -> {
+                    LazyVerticalGrid(GridCells.Adaptive(145.dp), state = albumGrid, contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+                        items(filteredAlbums, key = { it.key }) { album ->
+                            Column(Modifier.animateItem(placementSpec = spring(stiffness = 500f)).clickable { onAlbum(album) }) {
+                                Cover(album.cover, album.title, Modifier.fillMaxWidth().aspectRatio(1f))
+                                Text(album.title, Modifier.padding(top = 10.dp, start = 2.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("${album.artist} · ${album.songs.size} 首", Modifier.padding(start = 2.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
                     }
                 }
             }
-        } }
+        }
     }
 }
 
@@ -352,20 +558,37 @@ private data class AppDestination(val page: Int, val albumKey: String?)
 }
 
 @Composable private fun MiniPlayer(
-    song: Song, playback: PlaybackState, player: PlayerConnection,
-    onOpen: () -> Unit, onToggle: () -> Unit, onNext: () -> Unit,
-    clockEnabled: Boolean = true, onBounds: (Rect) -> Unit = {}, modifier: Modifier = Modifier,
+    song: Song,
+    playback: PlaybackState,
+    player: PlayerConnection,
+    onOpen: () -> Unit,
+    onToggle: () -> Unit,
+    onNext: () -> Unit,
+    clockEnabled: Boolean = true,
+    onBounds: (Rect) -> Unit = {},
+    modifier: Modifier = Modifier,
 ) {
     val clock = rememberPlaybackClock(player, playback, clockEnabled)
     val duration = playback.duration.takeIf { it > 0 } ?: song.duration
-    GlassSurface(modifier.fillMaxWidth()
-        .onGloballyPositioned { onBounds(it.boundsInRoot()) }.testTag("mini-player")
-        .clip(RoundedCornerShape(20.dp)).clickable(onClick = onOpen), shape = RoundedCornerShape(20.dp), prominent = true) {
+    GlassSurface(
+        modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { onBounds(it.boundsInRoot()) }
+            .testTag("mini-player")
+            .clip(RoundedCornerShape(20.dp))
+            .clickable(onClick = onOpen),
+        shape = RoundedCornerShape(20.dp),
+        prominent = true,
+    ) {
         Column {
             Row(Modifier.padding(start = 9.dp, top = 7.dp, bottom = 7.dp, end = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                Cover(song.cover, song.album, Modifier.size(46.dp).clip(RoundedCornerShape(9.dp))); Spacer(Modifier.width(12.dp))
+                Cover(song.cover, song.album, Modifier.size(46.dp).clip(RoundedCornerShape(9.dp)))
+                Spacer(Modifier.width(12.dp))
                 AnimatedContent(song.title to song.artist, Modifier.weight(1f), transitionSpec = { AmiMotion.page(true) }, label = "mini-track") { track ->
-                    Column { Text(track.first, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(track.second, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
+                    Column {
+                        Text(track.first, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(track.second, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    }
                 }
                 if (playback.buffering) CircularProgressIndicator(Modifier.size(24.dp).padding(4.dp), strokeWidth = 2.dp)
                 ActionIcon(if (playback.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playback.playing) "暂停" else "播放", onToggle, glass = false)
@@ -376,38 +599,68 @@ private data class AppDestination(val page: Int, val albumKey: String?)
     }
 }
 
-@Composable private fun AlbumScreen(album: Album, currentId: String?, model: AmiViewModel, onBack: () -> Unit, onRemove: (Song) -> Unit, bottomInset: androidx.compose.ui.unit.Dp) {
+@Composable private fun AlbumScreen(
+    album: Album,
+    currentId: String?,
+    model: AmiViewModel,
+    onBack: () -> Unit,
+    onRemove: (Song) -> Unit,
+    bottomInset: androidx.compose.ui.unit.Dp,
+) {
     var reorder by remember { mutableStateOf(false) }
     GlassBackdropHost(Modifier.fillMaxSize(), background = { PlayerBackdrop(album.cover) }) {
-    Column {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            ActionIcon(Icons.Rounded.ArrowBack, "返回曲库", onBack)
-            Spacer(Modifier.weight(1f))
-            TextButton({ reorder = true }) { Icon(Icons.Rounded.SwapVert, null, Modifier.size(18.dp)); Text("曲序") }
-        }
-        LazyColumn(contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 8.dp, bottom = bottomInset)) {
-            item {
-                Column(Modifier.fillMaxWidth()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Cover(album.cover, album.title, Modifier.size(88.dp))
-                        Column(Modifier.weight(1f).padding(start = 16.dp)) {
-                            Text(album.title, style = MaterialTheme.typography.headlineSmall)
-                            Text(album.artist, Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("${album.songs.size} 首歌曲 · ${durationLabel(album.duration)}", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                    Row(Modifier.padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button({ model.play(album.songs) }, Modifier.weight(1f).liquidGlass(CircleShape), colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.primary), contentPadding = PaddingValues(14.dp)) { Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("播放") }
-                        FilledTonalButton({ model.play(album.songs.shuffled()) }, Modifier.weight(1f).liquidGlass(CircleShape), colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.Transparent), contentPadding = PaddingValues(14.dp)) { Icon(Icons.Rounded.Shuffle, null); Spacer(Modifier.width(6.dp)); Text("随机播放") }
-                    }
+        Column {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                ActionIcon(Icons.Rounded.ArrowBack, "返回曲库", onBack)
+                Spacer(Modifier.weight(1f))
+                TextButton({ reorder = true }) {
+                    Icon(Icons.Rounded.SwapVert, null, Modifier.size(18.dp))
+                    Text("曲序")
                 }
             }
-            itemsIndexed(album.songs, key = { _, song -> song.id }) { index, song ->
-                SongRow(song, currentId == song.id, { model.play(album.songs, index) }, { model.favorite(song) }, { onRemove(song) }, index + 1,
-                    modifier = Modifier.animateItem(placementSpec = spring(stiffness = 500f)))
+            LazyColumn(contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 8.dp, bottom = bottomInset)) {
+                item {
+                    Column(Modifier.fillMaxWidth()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Cover(album.cover, album.title, Modifier.size(88.dp))
+                            Column(Modifier.weight(1f).padding(start = 16.dp)) {
+                                Text(album.title, style = MaterialTheme.typography.headlineSmall)
+                                Text(album.artist, Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("${album.songs.size} 首歌曲 · ${durationLabel(album.duration)}", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        Row(Modifier.padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button({ model.play(album.songs) }, Modifier.weight(1f).liquidGlass(CircleShape), colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.primary), contentPadding = PaddingValues(14.dp)) {
+                                Icon(Icons.Rounded.PlayArrow, null)
+                                Spacer(Modifier.width(6.dp))
+                                Text("播放")
+                            }
+                            FilledTonalButton({ model.play(album.songs.shuffled()) }, Modifier.weight(1f).liquidGlass(CircleShape), colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.Transparent), contentPadding = PaddingValues(14.dp)) {
+                                Icon(Icons.Rounded.Shuffle, null)
+                                Spacer(Modifier.width(6.dp))
+                                Text("随机播放")
+                            }
+                        }
+                    }
+                }
+                itemsIndexed(album.songs, key = { _, song -> song.id }) { index, song ->
+                    SongRow(
+                        song,
+                        currentId == song.id,
+                        { model.play(album.songs, index) },
+                        { model.favorite(song) },
+                        { onRemove(song) },
+                        index + 1,
+                        modifier = Modifier.animateItem(placementSpec = spring(stiffness = 500f)),
+                    )
+                }
             }
         }
-    }
-    if (reorder) ReorderDialog(album, { reorder = false }, { ids -> model.reorder(ids); reorder = false })
+        if (reorder) {
+            ReorderDialog(album, { reorder = false }, { ids ->
+                model.reorder(ids)
+                reorder = false
+            })
+        }
     }
 }

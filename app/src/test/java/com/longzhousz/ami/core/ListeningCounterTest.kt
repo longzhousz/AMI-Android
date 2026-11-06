@@ -13,6 +13,7 @@ class ListeningCounterTest {
         assertEquals("a", counter.update("a", 180000, true, 220000))
         assertNull(counter.update("a", 180000, true, 320000))
     }
+
     @Test fun repeatAndTrackTransitionCountThePreviousSessionOnlyOnce() {
         val counter = ListeningCounter()
         counter.update("a", 6000, true, 0)
@@ -21,6 +22,7 @@ class ListeningCounterTest {
         assertNull(counter.update("b", 6000, false, 13000))
         assertNull(counter.update(null, 0, false, 60000))
     }
+
     @Test fun durationDiscoveredAfterPrepareStillQualifiesShortSongs() {
         val counter = ListeningCounter()
         counter.update("a", 0, true, 0)

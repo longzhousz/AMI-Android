@@ -30,14 +30,23 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class TrackHeadingTest {
     @get:Rule val compose = createComposeRule()
-    private val song = Song("heading", "file:///unused", folder = "qa",
-        title = "在漫长的旅途中，听见晚风经过我们的身旁 (Live at the End of a Beautiful Day)",
-        artist = "AMI", duration = 90_000, lyrics = "[00:00]听见晚风\n[00:30]经过身旁")
+    private val song =
+        Song(
+            "heading",
+            "file:///unused",
+            folder = "qa",
+            title = "在漫长的旅途中，听见晚风经过我们的身旁 (Live at the End of a Beautiful Day)",
+            artist = "AMI",
+            duration = 90_000,
+            lyrics = "[00:00]听见晚风\n[00:30]经过身旁",
+        )
 
     @Test fun longHeadingUnfoldsContinuouslyAndCanReverseMidAnimation() {
-        compose.setContent { AmiTheme("dark") {
-            PlayerContent(song, PlaybackState(duration = 90_000), null, false, PlayerActions())
-        } }
+        compose.setContent {
+            AmiTheme("dark") {
+                PlayerContent(song, PlaybackState(duration = 90_000), null, false, PlayerActions())
+            }
+        }
         assertTrue(titleLayout().isLineEllipsized(0))
         compose.mainClock.autoAdvance = false
         val folded = headingHeight()
@@ -63,9 +72,11 @@ class TrackHeadingTest {
 
     @Test fun headingStaysExpandedAcrossPagesAndResetsForANewSong() {
         val current = mutableStateOf(song)
-        compose.setContent { AmiTheme("dark") {
-            PlayerContent(current.value, PlaybackState(duration = 90_000), null, false, PlayerActions())
-        } }
+        compose.setContent {
+            AmiTheme("dark") {
+                PlayerContent(current.value, PlaybackState(duration = 90_000), null, false, PlayerActions())
+            }
+        }
         compose.onNodeWithTag("player-track-heading").performClick()
         compose.onNodeWithContentDescription("切换到歌词").performClick()
         assertTrue(titleLayout().lineCount > 1)
@@ -81,11 +92,13 @@ class TrackHeadingTest {
     @Test fun largeFontAndVeryLongTitleLeaveTransportControlsAccessible() {
         compose.setContent {
             val density = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides Density(density.density, 1.5f)) { AmiTheme("dark") {
-                Box(Modifier.width(320.dp).fillMaxHeight()) {
-                    PlayerContent(song.copy(title = song.title.repeat(4)), PlaybackState(duration = 90_000), null, false, PlayerActions())
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 1.5f)) {
+                AmiTheme("dark") {
+                    Box(Modifier.width(320.dp).fillMaxHeight()) {
+                        PlayerContent(song.copy(title = song.title.repeat(4)), PlaybackState(duration = 90_000), null, false, PlayerActions())
+                    }
                 }
-            } }
+            }
         }
         compose.onNodeWithTag("player-track-heading").performClick()
         val layout = titleLayout()
@@ -99,13 +112,20 @@ class TrackHeadingTest {
         assertEquals(1, titleLayout().lineCount)
     }
 
-    private fun headingHeight() = compose.onNodeWithTag("player-track-heading").fetchSemanticsNode().boundsInRoot.height
+    private fun headingHeight() =
+        compose
+            .onNodeWithTag("player-track-heading")
+            .fetchSemanticsNode()
+            .boundsInRoot.height
+
     private fun titleLayout(): TextLayoutResult {
         val layouts = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithTag("player-track-title", useUnmergedTree = true)
+        compose
+            .onNodeWithTag("player-track-title", useUnmergedTree = true)
             .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         return layouts.single()
     }
+
     private fun screenshot(name: String) {
         val image = compose.onRoot().captureToImage().asAndroidBitmap()
         val file = File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir, "qa/$name.png")

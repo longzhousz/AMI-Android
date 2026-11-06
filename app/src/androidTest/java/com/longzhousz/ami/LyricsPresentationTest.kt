@@ -32,35 +32,76 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class LyricsPresentationTest {
     @get:Rule val compose = createComposeRule()
-    private val phrases = listOf(
-        "风从海面吹来", "把昨天轻轻翻过", "光落在你经过的地方", "我们沿着晚风，走向下一场日落",
-        "把每个平凡的瞬间，唱成一首温柔的歌", "遠い街の灯りが、静かな夜に溶けてゆく",
-        "Let the quiet moments carry us home", "还有未曾说完的故事", "留给明天慢慢听", "让这首歌，陪你走远一些",
-    )
+    private val phrases =
+        listOf(
+            "风从海面吹来",
+            "把昨天轻轻翻过",
+            "光落在你经过的地方",
+            "我们沿着晚风，走向下一场日落",
+            "把每个平凡的瞬间，唱成一首温柔的歌",
+            "遠い街の灯りが、静かな夜に溶けてゆく",
+            "Let the quiet moments carry us home",
+            "还有未曾说完的故事",
+            "留给明天慢慢听",
+            "让这首歌，陪你走远一些",
+        )
     private val raw = phrases.mapIndexed { i, text -> "[00:${(i * 6).toString().padStart(2, '0')}.00]$text" }.joinToString("\n")
-    private val translations = listOf(
-        "A breeze arrives from the sea", "Gently turn the page on yesterday", "Light falls where you have been",
-        "Follow the evening breeze into another sunset", "Turn the ordinary into a gentle song", "远处的灯光，融入安静的夜色",
-        "让安静的时光，带我们回家", "There are stories still to tell", "Listen slowly tomorrow", "May this song stay with you",
-    )
-    private val song = Song("presentation", "file:///unused", folder = "qa", title = "光经过的地方", artist = "AMI · 听见日常", album = "晚风与回声", duration = 90000, format = "FLAC", lyrics = raw)
+    private val translations =
+        listOf(
+            "A breeze arrives from the sea",
+            "Gently turn the page on yesterday",
+            "Light falls where you have been",
+            "Follow the evening breeze into another sunset",
+            "Turn the ordinary into a gentle song",
+            "远处的灯光，融入安静的夜色",
+            "让安静的时光，带我们回家",
+            "There are stories still to tell",
+            "Listen slowly tomorrow",
+            "May this song stay with you",
+        )
+    private val song =
+        Song(
+            "presentation",
+            "file:///unused",
+            folder = "qa",
+            title = "光经过的地方",
+            artist = "AMI · 听见日常",
+            album = "晚风与回声",
+            duration = 90000,
+            format = "FLAC",
+            lyrics = raw,
+        )
 
     @Test fun genuineWordsBrightenWithoutMovingTheLineAndFreezeWithTheClock() {
         val document = SongLyrics("[00:01]风 经过 窗边\n[00:08]下一句", wordTimed = "[1000,6000](1000,2000,0)风 (3000,2000,0)经过 (5000,2000,0)窗边")
         val position = mutableLongStateOf(1000)
-        compose.setContent { AmiTheme("dark") {
-            PlayerContent(song.copy(lyrics = document.original), PlaybackState(position = 1000, duration = 90000), null, false,
-                PlayerActions(), lyricPosition = { position.longValue }, preparedLines = document.lines,
-                lyricsPage = remember { mutableStateOf(true) })
-        } }
+        compose.setContent {
+            AmiTheme("dark") {
+                PlayerContent(
+                    song.copy(lyrics = document.original),
+                    PlaybackState(position = 1000, duration = 90000),
+                    null,
+                    false,
+                    PlayerActions(),
+                    lyricPosition = { position.longValue },
+                    preparedLines = document.lines,
+                    lyricsPage = remember { mutableStateOf(true) },
+                )
+            }
+        }
         // The clickable lyric row merges descendants for accessibility; inspect the actual text.
         compose.onNodeWithTag("word-timed-lyric", useUnmergedTree = true).assertIsDisplayed()
+
         fun brightness(): Double {
             val image = compose.onNodeWithTag("word-timed-lyric", useUnmergedTree = true).captureToImage().asAndroidBitmap()
-            var sum = 0L; var count = 0
-            for (y in 0 until image.height step 2) for (x in 0 until image.width step 2) {
-                val pixel = image.getPixel(x, y)
-                sum += ((pixel shr 16) and 255) + ((pixel shr 8) and 255) + (pixel and 255); count++
+            var sum = 0L
+            var count = 0
+            for (y in 0 until image.height step 2) {
+                for (x in 0 until image.width step 2) {
+                    val pixel = image.getPixel(x, y)
+                    sum += ((pixel shr 16) and 255) + ((pixel shr 8) and 255) + (pixel and 255)
+                    count++
+                }
             }
             return sum.toDouble() / count / 3
         }
@@ -81,8 +122,17 @@ class LyricsPresentationTest {
         var sought = -1L
         compose.setContent {
             AmiTheme("light") {
-                PlayerContent(song, PlaybackState(position = position.longValue, duration = 90000), translations, false,
-                    PlayerActions(seek = { sought = it; position.longValue = it }), lyricsPage = remember { mutableStateOf(true) })
+                PlayerContent(
+                    song,
+                    PlaybackState(position = position.longValue, duration = 90000),
+                    translations,
+                    false,
+                    PlayerActions(seek = {
+                        sought = it
+                        position.longValue = it
+                    }),
+                    lyricsPage = remember { mutableStateOf(true) },
+                )
             }
         }
         compose.onNodeWithTag("lyric-2").assertIsSelected().assertIsDisplayed()
@@ -118,7 +168,20 @@ class LyricsPresentationTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, 1.5f)) {
                 AmiTheme("dark") {
                     Box(Modifier.width(320.dp).fillMaxHeight()) {
-                        PlayerContent(largeSong, PlaybackState(position = 1000, duration = 90000), listOf("Let all the ordinary moments become a gentle song.", ""), false, PlayerActions(), lyricsPage = remember { mutableStateOf(true) })
+                        PlayerContent(
+                            largeSong,
+                            PlaybackState(
+                                position = 1000,
+                                duration = 90000,
+                            ),
+                            listOf("Let all the ordinary moments become a gentle song.", ""),
+                            false,
+                            PlayerActions(),
+                            lyricsPage =
+                                remember {
+                                    mutableStateOf(true)
+                                },
+                        )
                     }
                 }
             }
@@ -137,10 +200,19 @@ class LyricsPresentationTest {
     @Test fun seekingWhileBrowsingFollowsTheNewLineBeforeThePlayerAcknowledgesIt() {
         val position = mutableLongStateOf(13000)
         var requested = -1L
-        compose.setContent { AmiTheme("dark") {
-            PlayerContent(song, PlaybackState(duration = 90000), null, false, PlayerActions(seek = { requested = it }),
-                lyricPosition = { position.longValue }, lyricsPage = remember { mutableStateOf(true) })
-        } }
+        compose.setContent {
+            AmiTheme("dark") {
+                PlayerContent(
+                    song,
+                    PlaybackState(duration = 90000),
+                    null,
+                    false,
+                    PlayerActions(seek = { requested = it }),
+                    lyricPosition = { position.longValue },
+                    lyricsPage = remember { mutableStateOf(true) },
+                )
+            }
+        }
         compose.onNodeWithTag("lyrics-list").performTouchInput { swipeUp() }
         compose.onNodeWithText("回到当前句").assertIsDisplayed()
         compose.mainClock.autoAdvance = false
@@ -170,7 +242,23 @@ class LyricsPresentationTest {
 
     @Test fun cloudPlayerUsesIconsAndShowsTheCurrentSourceQualityInItsMenu() {
         compose.setContent {
-            AmiTheme("dark") { PlayerContent(song.copy(id = "netease:123", uri = "ami-cloud://song/123"), PlaybackState(), null, false, PlayerActions(), audioQuality = "无损", lyricsPage = remember { mutableStateOf(true) }) }
+            AmiTheme("dark") {
+                PlayerContent(
+                    song.copy(
+                        id = "netease:123",
+                        uri = "ami-cloud://song/123",
+                    ),
+                    PlaybackState(),
+                    null,
+                    false,
+                    PlayerActions(),
+                    audioQuality = "无损",
+                    lyricsPage =
+                        remember {
+                            mutableStateOf(true)
+                        },
+                )
+            }
         }
         compose.onNodeWithText("封面").assertDoesNotExist()
         compose.onNodeWithText("翻译").assertDoesNotExist()

@@ -16,20 +16,25 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class LibraryIntegrationTest {
     private val target get() = InstrumentationRegistry.getInstrumentation().targetContext
+
     private fun database(): LibraryDatabase {
         val databaseName = "test-${System.nanoTime()}.sqlite3"
-        val context = object : ContextWrapper(target) {
-            override fun getDatabasePath(name: String): File = File(super.getDatabasePath(name).parentFile, databaseName)
-        }
+        val context =
+            object : ContextWrapper(target) {
+                override fun getDatabasePath(name: String): File = File(super.getDatabasePath(name).parentFile, databaseName)
+            }
         return LibraryDatabase(context)
     }
+
     @Test fun rescanningPreservesFavoritesAndManualTrackOrderAcrossReopen() {
         val database = database()
         val a = Song("a", "content://a", folder = "f", title = "Before", track = 1)
         val b = Song("b", "content://b", folder = "f", title = "Second", track = 2)
         try {
-            database.upsert(a); database.upsert(b)
-            database.favorite("a", true); database.reorder(listOf("b", "a"))
+            database.upsert(a)
+            database.upsert(b)
+            database.favorite("a", true)
+            database.reorder(listOf("b", "a"))
             database.upsert(a.copy(title = "Updated metadata", duration = 12345))
             database.close()
             val read = database.songs().first { it.id == "a" }
@@ -40,8 +45,13 @@ class LibraryIntegrationTest {
             assertEquals(2, database.songs().size)
             database.remove("a")
             assertEquals(listOf("b"), database.songs().map { it.id })
-        } finally { val path = database.readableDatabase.path; database.close(); target.deleteDatabase(path) }
+        } finally {
+            val path = database.readableDatabase.path
+            database.close()
+            target.deleteDatabase(path)
+        }
     }
+
     @Test fun keystoreRoundTripsReplacesAndDeletesWithoutPlaintextOnDisk() {
         val name = "test-${System.nanoTime()}"
         val store = SecretStore(target, name)
@@ -54,8 +64,11 @@ class LibraryIntegrationTest {
             store.save("")
             assertFalse(store.configured())
             assertNull(store.read())
-        } finally { store.save("") }
+        } finally {
+            store.save("")
+        }
     }
+
     @Test fun cleanupKeepsReferencedDecodedAudioAndNeverTouchesSourceFiles() {
         val app = target.applicationContext as AmiApplication
         val repo = app.repository
@@ -66,7 +79,15 @@ class LibraryIntegrationTest {
         try {
             repo.db.upsert(song)
             repo.cleanup()
-            assertTrue(source.exists()); assertTrue(cached.exists()); assertFalse(orphan.exists())
-        } finally { repo.db.remove(song.id); repo.reload(); source.delete(); cached.delete(); orphan.delete() }
+            assertTrue(source.exists())
+            assertTrue(cached.exists())
+            assertFalse(orphan.exists())
+        } finally {
+            repo.db.remove(song.id)
+            repo.reload()
+            source.delete()
+            cached.delete()
+            orphan.delete()
+        }
     }
 }

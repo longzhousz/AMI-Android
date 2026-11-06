@@ -27,9 +27,16 @@ class WordLyricsTest {
 
     @Test fun invalidOrUnrelatedTimingFallsBackWithoutInventingWordDurations() {
         val raw = "[00:01]Keep this line"
-        val malformed = listOf("[1000,100](900,500,0)Keep this line", "[1000,100](1000,500,0)Keep this line",
-            "[1000,100]Keep this line", "[1000,100](1000,100,0)Different", "[7000,100](7000,100,0)Keep this line",
-            "[999999999,100](999999999,100,0)Keep this line", "x".repeat(500001))
+        val malformed =
+            listOf(
+                "[1000,100](900,500,0)Keep this line",
+                "[1000,100](1000,500,0)Keep this line",
+                "[1000,100]Keep this line",
+                "[1000,100](1000,100,0)Different",
+                "[7000,100](7000,100,0)Keep this line",
+                "[999999999,100](999999999,100,0)Keep this line",
+                "x".repeat(500001),
+            )
         malformed.forEach { assertEquals(Lyrics.parse(raw), SongLyrics(raw, wordTimed = it).lines) }
     }
 

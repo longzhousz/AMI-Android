@@ -4,39 +4,39 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.os.ParcelFileDescriptor
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
-import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextClearance
-import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.swipe
-import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.longzhousz.ami.core.Song
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.junit.Assert.assertTrue
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertEquals
 import java.io.File
 
 @RunWith(AndroidJUnit4::class)
@@ -51,18 +51,24 @@ class InterfaceTest {
             compose.onNodeWithContentDescription("我喜欢").performClick()
             compose.onNodeWithTag("favorites-hero").assertIsDisplayed()
             compose.runOnIdle {
-                val bars = androidx.core.view.WindowCompat.getInsetsController(compose.activity.window, compose.activity.window.decorView)
+                val bars =
+                    androidx.core.view.WindowCompat
+                        .getInsetsController(compose.activity.window, compose.activity.window.decorView)
                 assertFalse(bars.isAppearanceLightStatusBars)
                 assertFalse(bars.isAppearanceLightNavigationBars)
             }
             compose.onNodeWithContentDescription("设置").performClick()
             compose.onNodeWithText("我的聆听").assertIsDisplayed()
             compose.runOnIdle {
-                val bars = androidx.core.view.WindowCompat.getInsetsController(compose.activity.window, compose.activity.window.decorView)
+                val bars =
+                    androidx.core.view.WindowCompat
+                        .getInsetsController(compose.activity.window, compose.activity.window.decorView)
                 assertTrue(bars.isAppearanceLightStatusBars)
                 assertTrue(bars.isAppearanceLightNavigationBars)
             }
-        } finally { compose.runOnIdle { model.setTheme(previous) } }
+        } finally {
+            compose.runOnIdle { model.setTheme(previous) }
+        }
     }
 
     @Test fun listeningIsADirectSettingsEntryAndReturnsToSettings() {
@@ -75,7 +81,11 @@ class InterfaceTest {
         compose.onNodeWithText("我的聆听").assertIsDisplayed()
         assertEquals("The report must not request the local library", loading, model.repository.loading.value)
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
-        File(compose.activity.filesDir, "qa/listening-settings.png").apply { parentFile!!.mkdirs() }.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        File(compose.activity.filesDir, "qa/listening-settings.png")
+            .apply {
+                parentFile!!.mkdirs()
+            }.outputStream()
+            .use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }
 
     private fun openLocalLibrary() {
@@ -85,30 +95,55 @@ class InterfaceTest {
 
     @Test fun songSelectionStartsOnArtworkAndReopeningRemembersEitherPage() {
         val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
-        val songs = (0..1).map { n -> Song("qa-player-page-$n", "content://com.longzhousz.ami.test.fixtures/document/album.wav",
-            folder = "qa-player-page", title = "播放页记忆 $n", duration = 6000, lyrics = "[00:00]当前歌曲 $n\n[00:03]继续听歌") }
-        fun open() { compose.onNodeWithTag("mini-player").performClick() }
-        fun close() { compose.onNodeWithContentDescription("收起播放页").performClick() }
+        val songs =
+            (0..1).map { n ->
+                Song(
+                    "qa-player-page-$n",
+                    "content://com.longzhousz.ami.test.fixtures/document/album.wav",
+                    folder = "qa-player-page",
+                    title = "播放页记忆 $n",
+                    duration = 6000,
+                    lyrics = "[00:00]当前歌曲 $n\n[00:03]继续听歌",
+                )
+            }
+
+        fun open() {
+            compose.onNodeWithTag("mini-player").performClick()
+        }
+
+        fun close() {
+            compose.onNodeWithContentDescription("收起播放页").performClick()
+        }
         try {
-            songs.forEach(model.repository.db::upsert); model.repository.load(); model.repository.reload()
+            songs.forEach(model.repository.db::upsert)
+            model.repository.load()
+            model.repository.reload()
             compose.waitUntil(30000) { model.player.state.value.connected }
-            compose.runOnIdle { model.play(songs); model.player.pause() }
+            compose.runOnIdle {
+                model.play(songs)
+                model.player.pause()
+            }
             compose.waitUntil(10000) { model.player.state.value.id == songs[0].id }
             open()
             compose.onNodeWithContentDescription("切换到歌词").assertIsDisplayed()
             compose.onNodeWithTag("lyrics-stage").assertDoesNotExist()
             compose.onNodeWithContentDescription("切换到歌词").performClick()
             compose.onNodeWithTag("lyrics-stage").assertIsDisplayed()
-            close(); open()
+            close()
+            open()
             compose.onNodeWithContentDescription("切换到封面").assertIsDisplayed()
             compose.onNodeWithTag("lyrics-stage").assertIsDisplayed()
             compose.onNodeWithContentDescription("切换到封面").performClick()
-            close(); open()
+            close()
+            open()
             compose.onNodeWithContentDescription("切换到歌词").assertIsDisplayed()
             compose.onNodeWithContentDescription("切换到歌词").performClick()
             close()
             // Explicitly choosing even the same song is a new selection, unlike reopening its bar.
-            compose.runOnIdle { model.play(songs); model.player.pause() }
+            compose.runOnIdle {
+                model.play(songs)
+                model.player.pause()
+            }
             open()
             compose.onNodeWithContentDescription("切换到歌词").assertIsDisplayed()
             compose.onNodeWithContentDescription("切换到歌词").performClick()
@@ -118,8 +153,12 @@ class InterfaceTest {
             open()
             compose.onNodeWithContentDescription("切换到歌词").assertIsDisplayed()
         } finally {
-            compose.runOnIdle { model.player.pause(); songs.forEach { model.player.remove(it.id) } }
-            songs.forEach { model.repository.db.remove(it.id) }; model.repository.reload()
+            compose.runOnIdle {
+                model.player.pause()
+                songs.forEach { model.player.remove(it.id) }
+            }
+            songs.forEach { model.repository.db.remove(it.id) }
+            model.repository.reload()
         }
     }
 
@@ -135,14 +174,23 @@ class InterfaceTest {
                 assertEquals(1024L * 1024 * 1024, model.repository.audioCacheLimit.value)
                 assertEquals(model.repository.audioCacheLimit.value, model.repository.prefs.getLong("onlineCacheLimit", 0))
             }
-        } finally { compose.runOnIdle { model.repository.setAudioCacheLimit(previous) } }
+        } finally {
+            compose.runOnIdle { model.repository.setAudioCacheLimit(previous) }
+        }
     }
 
     @Test fun returningFromSettingsPreservesLibraryScroll() {
         val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
-        val songs = (0 until 60).map { index ->
-            Song("qa-scroll-$index", "file:///unused-$index", folder = "qa-scroll", title = "滚动验证 ${index.toString().padStart(2, '0')}", importedAt = index.toLong())
-        }
+        val songs =
+            (0 until 60).map { index ->
+                Song(
+                    "qa-scroll-$index",
+                    "file:///unused-$index",
+                    folder = "qa-scroll",
+                    title = "滚动验证 ${index.toString().padStart(2, '0')}",
+                    importedAt = index.toLong(),
+                )
+            }
         try {
             songs.forEach { model.repository.db.upsert(it) }
             model.repository.load()
@@ -183,17 +231,44 @@ class InterfaceTest {
         compose.activityRule.scenario.onActivity { ViewModelProvider(it)[AmiViewModel::class.java].setTheme("system") }
         verifyFullPlayerWindow()
     }
+
     private fun verifyFullPlayerWindow() {
         val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
-        val song = Song("qa-player-window", "content://com.longzhousz.ami.test.fixtures/document/single.wav",
-            folder = "qa", title = "风经过海面", artist = "AMI · 界面验证", album = "晚风与回声", duration = 2000, format = "WAV",
-            lyrics = "[00:00.00]让歌词成为主角\n[00:01.00]让音乐留在身边")
-        val songs = listOf("风经过海面", "暮色", "遥远的回声", "城市灯火", "纸飞机", "下一场日落").mapIndexed { index, title ->
-            song.copy(id = "qa-player-window-$index", title = title, album = if (index < 3) "晚风与回声" else "海边来信", favorite = index == 0 || index == 2, importedAt = index.toLong())
-        }
+        val song =
+            Song(
+                "qa-player-window",
+                "content://com.longzhousz.ami.test.fixtures/document/single.wav",
+                folder = "qa",
+                title = "风经过海面",
+                artist = "AMI · 界面验证",
+                album = "晚风与回声",
+                duration = 2000,
+                format = "WAV",
+                lyrics = "[00:00.00]让歌词成为主角\n[00:01.00]让音乐留在身边",
+            )
+        val songs =
+            listOf("风经过海面", "暮色", "遥远的回声", "城市灯火", "纸飞机", "下一场日落").mapIndexed { index, title ->
+                song.copy(
+                    id = "qa-player-window-$index",
+                    title = title,
+                    album =
+                        if (index <
+                            3
+                        ) {
+                            "晚风与回声"
+                        } else {
+                            "海边来信"
+                        },
+                    favorite = index == 0 || index == 2,
+                    importedAt = index.toLong(),
+                )
+            }
         try {
             // Import upsert preserves user state; seed favorites through their dedicated API.
-            songs.forEach { model.repository.db.upsert(it); model.repository.db.favorite(it.id, it.favorite) }
+            songs.forEach {
+                model.repository.db.upsert(it)
+                model.repository.db.favorite(it.id, it.favorite)
+            }
             model.repository.load()
             model.repository.reload()
             openLocalLibrary()
@@ -207,7 +282,16 @@ class InterfaceTest {
             compose.onNodeWithTag("library-search").performImeAction()
             compose.onNodeWithContentDescription("排序").performClick()
             compose.onNodeWithText("最近导入").performClick()
-            assertTrue(compose.onNodeWithText(songs.last().title).fetchSemanticsNode().boundsInRoot.top < compose.onNodeWithText(songs[3].title).fetchSemanticsNode().boundsInRoot.top)
+            assertTrue(
+                compose
+                    .onNodeWithText(songs.last().title)
+                    .fetchSemanticsNode()
+                    .boundsInRoot.top <
+                    compose
+                        .onNodeWithText(songs[3].title)
+                        .fetchSemanticsNode()
+                        .boundsInRoot.top,
+            )
             compose.onNodeWithContentDescription("排序").performClick()
             compose.onNodeWithText("默认排序").performClick()
             compose.onNodeWithText("本地喜欢").performClick()
@@ -248,7 +332,8 @@ class InterfaceTest {
             compose.runOnIdle { assertFalse(compose.activity.window.isNavigationBarContrastEnforced) }
             val distance = mini.top * .85f
             compose.onNodeWithTag("player-header").performTouchInput {
-                down(center); moveBy(Offset(0f, distance), delayMillis = 400)
+                down(center)
+                moveBy(Offset(0f, distance), delayMillis = 400)
             }
             compose.mainClock.advanceTimeBy(32)
             val face = compose.onNodeWithTag("player-mini-face", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
@@ -257,11 +342,20 @@ class InterfaceTest {
             screenshot("player-collapse-handoff")
             compose.runOnIdle { assertFalse(compose.activity.window.isNavigationBarContrastEnforced) }
             compose.onNodeWithTag("player-header").performTouchInput {
-                moveBy(Offset(0f, -distance), delayMillis = 400); advanceEventTime(400); up()
+                moveBy(Offset(0f, -distance), delayMillis = 400)
+                advanceEventTime(400)
+                up()
             }
             compose.mainClock.autoAdvance = true
             compose.waitForIdle()
-            assertEquals(0f, compose.onNodeWithTag("player-sheet").fetchSemanticsNode().boundsInRoot.top, 1f)
+            assertEquals(
+                0f,
+                compose
+                    .onNodeWithTag("player-sheet")
+                    .fetchSemanticsNode()
+                    .boundsInRoot.top,
+                1f,
+            )
             File(perf, "player-collapse-reverse-gfxinfo.txt").writeText(shell("dumpsys gfxinfo ${compose.activity.packageName} framestats"))
             compose.onNodeWithTag("full-player").assertIsDisplayed()
             compose.onNodeWithContentDescription("切换到歌词").assertIsDisplayed().performClick()
@@ -285,7 +379,9 @@ class InterfaceTest {
             compose.onNodeWithContentDescription("收起播放页").performClick()
             compose.onNodeWithTag("mini-player").assertIsDisplayed()
             val landed = compose.onNodeWithTag("mini-player").fetchSemanticsNode().boundsInRoot
-            assertEquals(mini.left, landed.left, 1f); assertEquals(mini.top, landed.top, 1f); assertEquals(mini.width, landed.width, 1f)
+            assertEquals(mini.left, landed.left, 1f)
+            assertEquals(mini.top, landed.top, 1f)
+            assertEquals(mini.width, landed.width, 1f)
             screenshot("player-minibar-corners")
             compose.onNodeWithTag("mini-player").performClick()
             compose.onNodeWithTag("player-header").performTouchInput {
@@ -301,49 +397,82 @@ class InterfaceTest {
             compose.onNodeWithTag("mini-player").assertIsDisplayed()
         } catch (failure: Throwable) {
             val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-            val windows = ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand("dumpsys window windows"))
-                .bufferedReader().use { it.readText() }
-            val focus = windows.lineSequence().filter {
-                it.contains("mCurrentFocus") || it.contains("mFocusedApp") || it.contains("Window #")
-            }.joinToString("\n")
+            val windows =
+                ParcelFileDescriptor
+                    .AutoCloseInputStream(automation.executeShellCommand("dumpsys window windows"))
+                    .bufferedReader()
+                    .use { it.readText() }
+            val focus =
+                windows
+                    .lineSequence()
+                    .filter {
+                        it.contains("mCurrentFocus") || it.contains("mFocusedApp") || it.contains("Window #")
+                    }.joinToString("\n")
             throw AssertionError("${failure.message}\nWindows at failure:\n$focus", failure)
         } finally {
-            compose.runOnIdle { model.player.pause(); songs.forEach { model.player.remove(it.id) } }
-            songs.forEach { model.repository.db.remove(it.id) }; model.repository.reload()
+            compose.runOnIdle {
+                model.player.pause()
+                songs.forEach { model.player.remove(it.id) }
+            }
+            songs.forEach { model.repository.db.remove(it.id) }
+            model.repository.reload()
         }
     }
-    private fun shell(command: String): String = ParcelFileDescriptor.AutoCloseInputStream(
-        InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)).bufferedReader().use { it.readText() }
+
+    private fun shell(command: String): String =
+        ParcelFileDescriptor.AutoCloseInputStream(InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)).bufferedReader().use {
+            it.readText()
+        }
+
     private fun pressSystemBack() {
         recoverEmulatorSystemUiOverlay()
         // Route through the system so native sheets and the activity receive the same Back
         // action as accessibility/navigation controls, without Espresso choosing an old root.
-        assertTrue(InstrumentationRegistry.getInstrumentation().uiAutomation
-            .performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK))
+        assertTrue(
+            InstrumentationRegistry
+                .getInstrumentation()
+                .uiAutomation
+                .performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK),
+        )
         compose.waitForIdle()
     }
 
     private fun recoverEmulatorSystemUiOverlay() {
-        val automation=InstrumentationRegistry.getInstrumentation().uiAutomation
-        automation.serviceInfo=automation.serviceInfo.apply { flags=flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS }
-        val root=(automation.windows.mapNotNull { it.root }+listOfNotNull(automation.rootInActiveWindow)).firstOrNull { window ->
-            window.findAccessibilityNodeInfosByText("System UI isn't responding")
-                .any { it.packageName?.toString()=="android" && it.text?.toString()=="System UI isn't responding" }
-        } ?: return
-        val emulator=ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand("getprop ro.kernel.qemu"))
-            .bufferedReader().use { it.readText().trim() }
-        check(emulator=="1") { "System UI ANR recovery is emulator-only" }
-        val output=File(compose.activity.filesDir,"qa/performance").apply { mkdirs() }
-        val stamp=System.nanoTime()
-        File(output,"system-ui-anr-$stamp.txt").writeText(ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand("dumpsys window windows"))
-            .bufferedReader().use { it.readText() })
-        automation.takeScreenshot()?.let { bitmap -> File(output,"system-ui-anr-$stamp.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) };bitmap.recycle() }
-        val wait=root.findAccessibilityNodeInfosByText("Wait")
-            .single { it.packageName?.toString()=="android" && it.text?.toString()=="Wait" }
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        automation.serviceInfo = automation.serviceInfo.apply { flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS }
+        val root =
+            (automation.windows.mapNotNull { it.root } + listOfNotNull(automation.rootInActiveWindow)).firstOrNull { window ->
+                window
+                    .findAccessibilityNodeInfosByText("System UI isn't responding")
+                    .any { it.packageName?.toString() == "android" && it.text?.toString() == "System UI isn't responding" }
+            } ?: return
+        val emulator =
+            ParcelFileDescriptor
+                .AutoCloseInputStream(automation.executeShellCommand("getprop ro.kernel.qemu"))
+                .bufferedReader()
+                .use { it.readText().trim() }
+        check(emulator == "1") { "System UI ANR recovery is emulator-only" }
+        val output = File(compose.activity.filesDir, "qa/performance").apply { mkdirs() }
+        val stamp = System.nanoTime()
+        File(output, "system-ui-anr-$stamp.txt").writeText(
+            ParcelFileDescriptor
+                .AutoCloseInputStream(automation.executeShellCommand("dumpsys window windows"))
+                .bufferedReader()
+                .use { it.readText() },
+        )
+        automation.takeScreenshot()?.let { bitmap ->
+            File(output, "system-ui-anr-$stamp.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+        }
+        val wait =
+            root
+                .findAccessibilityNodeInfosByText("Wait")
+                .single { it.packageName?.toString() == "android" && it.text?.toString() == "Wait" }
         check(wait.performAction(AccessibilityNodeInfo.ACTION_CLICK)) { "System UI Wait action failed" }
         compose.waitUntil(10000) {
-            automation.rootInActiveWindow?.findAccessibilityNodeInfosByText("System UI isn't responding")
-                ?.none { it.packageName?.toString()=="android" }==true
+            automation.rootInActiveWindow
+                ?.findAccessibilityNodeInfosByText("System UI isn't responding")
+                ?.none { it.packageName?.toString() == "android" } == true
         }
     }
 
