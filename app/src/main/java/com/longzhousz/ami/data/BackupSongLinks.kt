@@ -74,16 +74,21 @@ internal fun LibraryDatabase.applyBackupLinks() =
     transaction {
         val sql = writableDatabase
         if (!sql.rawQuery("SELECT 1 FROM backup_song_links WHERE applied_to IS NULL LIMIT 1", null).use { it.moveToFirst() }) return@transaction
-        val matches = mutableMapOf<String, MutableList<String>>()
+        val matches = mutableMapOf<String, MutableSet<String>>()
         sql.rawQuery("SELECT id,title,artist,album,duration,start,end,track,disc,COALESCE(user_order,-1),favorite FROM songs", null).use { rows ->
-            while (rows.moveToNext()) matches.getOrPut(songFingerprint(rows)) { mutableListOf() }.add(rows.getString(0))
+            while (rows.moveToNext()) matches.getOrPut(songFingerprint(rows)) { mutableSetOf() }.add(rows.getString(0))
         }
+        // Group once; large sets of identical metadata must not cause repeated full scans.
+        val duplicateCounts =
+            sql.rawQuery("SELECT fingerprint,COUNT(*) FROM backup_song_links GROUP BY fingerprint", null).use { rows ->
+                buildMap { while (rows.moveToNext()) put(rows.getString(0), rows.getInt(1)) }
+            }
         val pending =
             sql.rawQuery("SELECT reference FROM backup_song_links WHERE applied_to IS NULL", null).use { rows ->
                 buildList { while (rows.moveToNext()) add(rows.getString(0)) }
             }
         for (pendingReference in pending) {
-            applyBackupLink(pendingReference, matches)
+            applyBackupLink(pendingReference, matches, duplicateCounts)
         }
     }
 
@@ -94,7 +99,8 @@ internal fun LibraryDatabase.translationAliases(id: String): List<String> =
 
 private fun LibraryDatabase.applyBackupLink(
     pendingReference: String,
-    matches: Map<String, List<String>>,
+    matches: Map<String, Set<String>>,
+    duplicateCounts: Map<String, Int>,
 ) {
     val sql = writableDatabase
     sql.rawQuery("SELECT reference,fingerprint,aliases,favorite,user_order,original,translated,name FROM backup_song_links WHERE reference=?", arrayOf(pendingReference)).use { rows ->
@@ -102,12 +108,8 @@ private fun LibraryDatabase.applyBackupLink(
         val reference = rows.getString(0)
         val candidates = matches[rows.getString(1)].orEmpty()
         val aliases = JSONArray(rows.getString(2)).let { a -> (0 until a.length()).map { a.getString(it) } }
-        val exact = candidates.filter { it in aliases }
-        val duplicates =
-            sql.rawQuery("SELECT COUNT(*) FROM backup_song_links WHERE fingerprint=?", arrayOf(rows.getString(1))).use {
-                it.moveToFirst()
-                it.getInt(0)
-            }
+        val exact = aliases.filter { it in candidates }.distinct()
+        val duplicates = duplicateCounts.getValue(rows.getString(1))
         val id = exact.singleOrNull() ?: candidates.singleOrNull()?.takeIf { duplicates == 1 } ?: return@use
         sql.execSQL("UPDATE songs SET favorite=MAX(favorite,?),user_order=COALESCE(user_order,?) WHERE id=?", arrayOf<Any?>(rows.getInt(3), if (rows.isNull(4)) null else rows.getInt(4), id))
         val hasLyrics = sql.rawQuery("SELECT 1 FROM lyric_overrides WHERE song_id=?", arrayOf(id)).use { it.moveToFirst() }

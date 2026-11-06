@@ -165,7 +165,11 @@ import kotlinx.coroutines.withContext
             GlassAlertDialog(
                 { dialog = null },
                 title = { Text(stringResource(R.string.backup_title)) },
-                text = { Text(stringResource(R.string.backup_description)) },
+                text = {
+                    Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState())) {
+                        Text(stringResource(R.string.backup_description))
+                    }
+                },
                 confirmButton = {
                     TextButton({
                         dialog = null
