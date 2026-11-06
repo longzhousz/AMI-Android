@@ -85,7 +85,7 @@ jobs:
             app/build/reports/lint-results-debug.html
   device-tests:
     if: ${{ github.event.inputs.smoke_run_id == '' && github.event.inputs.smoke_release_tag == '' && github.event.inputs.upload_apk_commit == '' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.api == '33' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -129,7 +129,7 @@ jobs:
           ram-size: ${{ matrix.api == '33' && '4096M' || '' }}
           # Gesture reversals and spring settling are part of the UI contract.
           disable-animations: false
-          emulator-options: -no-window -gpu swiftshader_indirect ${{ matrix.api == '33' && '-feature -Vulkan' || '' }} -noaudio -no-boot-anim -no-snapshot -camera-back none
+          emulator-options: -no-window -gpu ${{ matrix.api == '33' && 'swiftshader' || 'swiftshader_indirect' }} ${{ matrix.api == '33' && '-feature -Vulkan' || '' }} -noaudio -no-boot-anim -no-snapshot -camera-back none
           script: bash .github/scripts/android-device-test.sh
       - uses: actions/upload-artifact@v4
         if: always()

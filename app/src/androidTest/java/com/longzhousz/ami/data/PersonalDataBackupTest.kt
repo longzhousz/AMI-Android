@@ -94,6 +94,7 @@ class PersonalDataBackupTest {
             val a = database()
             val b = database()
             a.upsert(song)
+            a.favorite(song.id, true)
             record(a, 1000)
             val old = export(a)
             store(a).clear()
@@ -158,6 +159,7 @@ class PersonalDataBackupTest {
     @Test fun favoriteAndManualLyricsWaitForFolderScanAndSurviveAnotherMove() {
         val a = database()
         a.upsert(song)
+        a.favorite(song.id, true)
         a.setLyrics(song.id, LocalLyrics("[00:00]原文", "译文"), "关联歌词")
         val key = digest("saved-translation")
         a.cacheTranslation(key, "[\"保留译文\"]")
@@ -189,6 +191,7 @@ class PersonalDataBackupTest {
     @Test fun identicalMetadataDoesNotAttachFavoritesToAnArbitraryDuplicate() {
         val a = database()
         a.upsert(song)
+        a.favorite(song.id, true)
         val saved = export(a)
         val b = database()
         b.upsert(song.copy(id = "duplicate-a", favorite = false))
