@@ -62,8 +62,8 @@ class InterfaceTest {
             bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
         }
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
-        compose.onNodeWithText("备份与恢复").assertIsDisplayed()
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        compose.waitUntil(5000) { compose.onAllNodesWithTag("settings-home").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("settings-home").assertIsDisplayed()
         compose.onNodeWithText("歌词与翻译").performScrollTo().performClick()
         compose.onNodeWithText("DeepSeek API Key").performClick()

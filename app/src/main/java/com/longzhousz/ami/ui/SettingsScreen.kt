@@ -94,16 +94,16 @@ import kotlinx.coroutines.withContext
             }
         }
     }
-    BackHandler(settingsVisible && dialog == null && section != SettingsSection.HOME) { section = SettingsSection.HOME }
+    // Keep this callback active while a dialog closes, so a second back cannot escape Settings.
+    BackHandler(settingsVisible && section != SettingsSection.HOME) {
+        if (dialog != null) dialog = null else section = SettingsSection.HOME
+    }
     AnimatedContent(section, transitionSpec = { AmiMotion.page(targetState != SettingsSection.HOME) }, label = "settings-section") { current ->
         SettingsMenu(current, { section = SettingsSection.HOME }) {
             when (current) {
                 SettingsSection.HOME -> {
                     item {
                         SettingsHome(model.cloud.direct, { dialog = "account" }, onListening, { dialog = "theme" }, { section = it })
-                    }
-                    item {
-                        Text("AMI ${com.longzhousz.ami.BuildConfig.VERSION_NAME}", Modifier.padding(start = 6.dp, top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
 
@@ -170,6 +170,9 @@ import kotlinx.coroutines.withContext
                                 }
                             })
                         }
+                    }
+                    item {
+                        Text("AMI ${com.longzhousz.ami.BuildConfig.VERSION_NAME}", Modifier.padding(start = 6.dp, top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

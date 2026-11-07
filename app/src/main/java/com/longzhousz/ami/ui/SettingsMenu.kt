@@ -35,7 +35,10 @@ internal fun SettingsMenu(
 ) {
     Column(Modifier.fillMaxSize().testTag("settings-${section.name.lowercase(java.util.Locale.ROOT)}")) {
         Row(Modifier.fillMaxWidth().padding(start = if (section == SettingsSection.HOME) 28.dp else 8.dp, end = 24.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (section != SettingsSection.HOME) ActionIcon(Icons.Rounded.ArrowBack, stringResource(R.string.settings_back), onBack)
+            if (section != SettingsSection.HOME) {
+                ActionIcon(Icons.Rounded.ArrowBack, stringResource(R.string.settings_back), onBack)
+                Spacer(Modifier.width(8.dp))
+            }
             Text(stringResource(section.title), style = MaterialTheme.typography.headlineSmall)
         }
         LazyColumn(
