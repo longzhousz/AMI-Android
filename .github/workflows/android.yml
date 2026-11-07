@@ -90,8 +90,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - api: '33'
-            target: google_apis
           - api: '37.0'
             target: default
     steps:
