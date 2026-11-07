@@ -66,7 +66,17 @@
     <string name="settings_scan" formatted="false">重新扫描</string>
     <string name="settings_folders" formatted="false">管理音乐文件夹</string>
     <string name="settings_folder_summary" formatted="false">只读取你选择的文件夹</string>
-    <string name="settings_storage_section" formatted="false">存储与隐私</string>
+    <string name="settings_storage_section" formatted="false">存储与数据</string>
+    <string name="settings_more" formatted="false">更多设置</string>
+    <string name="settings_back" formatted="false">返回设置</string>
+    <string name="settings_sign_in" formatted="false">登录</string>
+    <string name="settings_key_not_saved" formatted="false">尚未保存密钥</string>
+    <string name="settings_test_info" formatted="false">“测试连接”会使用已保存的密钥发送一条简短消息，检查翻译服务是否可用。</string>
+    <string name="settings_notifications" formatted="false">导入进度通知</string>
+    <string name="settings_import_result" formatted="false">最近导入结果</string>
+    <string name="settings_local_info">%1$d 个已授权文件夹 · %2$d 首歌曲\n\n支持音频、LRC、CUE 与经典 NCM。只读取你选择的文件夹，保留已导入的曲库与收藏。开启导入进度通知后，可在后台查看导入进度。</string>
+    <string name="settings_cache_limit_info" formatted="false">近 7 天有效收听至少 3 次的在线歌曲会自动缓存，下次优先使用本地副本，移动网络也可缓存。连续 7 天未听或超出上限时回收较旧的缓存。这里仅限制常听歌曲缓存，不包含原始音乐。</string>
+    <string name="settings_cache_info">音乐转换与封面缓存：%1$s · %2$d 个文件\n可安全清理：%3$s\n\n只清理未被曲库引用的应用缓存。正在使用的音频缓存和原始音乐都会保留。</string>
     <string name="settings_cache_limit" formatted="false">常听歌曲缓存上限</string>
     <string name="settings_cache" formatted="false">缓存管理</string>
     <string name="settings_agent" formatted="false">Agent 与自动化</string>

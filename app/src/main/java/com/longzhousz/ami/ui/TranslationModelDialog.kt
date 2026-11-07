@@ -35,6 +35,7 @@ internal fun TranslationModelDialog(
         text = {
             Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()).testTag("translation-model-dialog")) {
                 Text("跟随官方最新模型，无需更新 AMI。已有译文会保留，重新翻译时使用当前模型。", style = MaterialTheme.typography.bodyMedium)
+                Text(state.summary, Modifier.padding(top = 12.dp), style = MaterialTheme.typography.titleSmall)
                 Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f).padding(end = 8.dp)) {
                         Text("自动更新预设", style = MaterialTheme.typography.titleSmall)

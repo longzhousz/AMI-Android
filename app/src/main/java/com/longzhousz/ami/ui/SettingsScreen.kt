@@ -1,20 +1,22 @@
 package com.longzhousz.ami.ui
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
@@ -48,6 +50,7 @@ import kotlinx.coroutines.withContext
     val songs by repo.songs.collectAsStateWithLifecycle()
     val importState by repo.importState.collectAsStateWithLifecycle()
     val theme by model.theme.collectAsStateWithLifecycle()
+    var section by rememberSaveable { mutableStateOf(SettingsSection.HOME) }
     var dialog by remember { mutableStateOf<String?>(null) }
     var roots by remember { mutableStateOf(repo.roots()) }
     var lyricRoots by remember { mutableStateOf(repo.lyricRoots()) }
@@ -72,92 +75,104 @@ import kotlinx.coroutines.withContext
     val scope = rememberCoroutineScope()
     UpdatePrompt(
         (LocalContext.current.applicationContext as com.longzhousz.ami.AmiApplication).updates,
-        settingsVisible && dialog == null,
+        settingsVisible && section == SettingsSection.HOME && dialog == null,
         onInstallUpdate,
     )
-    LaunchedEffect(importState.running) {
-        cache = withContext(Dispatchers.IO) { repo.cacheInfo() }
-        lyricCount = withContext(Dispatchers.IO) { repo.db.lyricsCount() }
-        roots = repo.roots()
-        lyricRoots = repo.lyricRoots()
+    LaunchedEffect(section, importState.running) {
+        when (section) {
+            SettingsSection.LOCAL -> {
+                roots = repo.roots()
+            }
+
+            SettingsSection.LYRICS -> {
+                lyricCount = withContext(Dispatchers.IO) { repo.db.lyricsCount() }
+                lyricRoots = repo.lyricRoots()
+            }
+
+            else -> {
+                Unit
+            }
+        }
     }
-    LazyColumn(contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 18.dp, bottom = 30.dp)) {
-        item {
-            if (model.cloud.direct) {
-                SectionLabel(stringResource(R.string.settings_account_section))
-                SettingsGroup {
-                    SettingRow(Icons.Rounded.PersonOutline, stringResource(R.string.settings_account), if (configured) stringResource(R.string.settings_logged_in) else stringResource(R.string.settings_sign_in_summary), {
-                        if (configured) dialog = "account" else signIn()
-                    })
+    BackHandler(settingsVisible && dialog == null && section != SettingsSection.HOME) { section = SettingsSection.HOME }
+    AnimatedContent(section, transitionSpec = { AmiMotion.page(targetState != SettingsSection.HOME) }, label = "settings-section") { current ->
+        SettingsMenu(current, { section = SettingsSection.HOME }) {
+            when (current) {
+                SettingsSection.HOME -> {
+                    item {
+                        SettingsHome(model.cloud.direct, { dialog = "account" }, onListening, { dialog = "theme" }, { section = it })
+                    }
+                    item {
+                        Text("AMI ${com.longzhousz.ami.BuildConfig.VERSION_NAME}", Modifier.padding(start = 6.dp, top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+
+                SettingsSection.LYRICS -> {
+                    item {
+                        SettingsGroup {
+                            SettingRow(Icons.Rounded.Lyrics, stringResource(R.string.settings_netease_lyrics), { dialog = "neteaseLyrics" })
+                            SettingRow(Icons.Rounded.Key, "DeepSeek API Key", { dialog = "key" })
+                            SettingRow(Icons.Rounded.AutoAwesome, stringResource(R.string.settings_model), {
+                                model.refreshModels()
+                                dialog = "model"
+                            })
+                            SettingRow(Icons.Rounded.EditNote, stringResource(R.string.settings_style), { dialog = "style" })
+                            SettingRow(Icons.Rounded.NetworkCheck, stringResource(R.string.settings_test), { model.testConnection() })
+                        }
+                    }
+                }
+
+                SettingsSection.LOCAL -> {
+                    item {
+                        SettingsGroup {
+                            SettingRow(Icons.Rounded.LibraryMusic, stringResource(R.string.settings_local_browse), onLocalLibrary)
+                            SettingRow(Icons.Rounded.CreateNewFolder, stringResource(R.string.settings_import), onImport)
+                            SettingRow(Icons.Rounded.Sync, stringResource(R.string.settings_scan), { if (roots.isNotEmpty()) repo.scan() else onImport() }, trailing = {
+                                if (importState.running) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.ChevronRight, null)
+                            })
+                            SettingRow(Icons.Rounded.FolderOpen, stringResource(R.string.settings_folders), {
+                                roots = repo.roots()
+                                dialog = "roots"
+                            })
+                            SettingRow(Icons.Rounded.NotificationsNone, stringResource(R.string.settings_notifications), onNotifications)
+                            if (importState.message.isNotEmpty() && !importState.running) SettingRow(Icons.Rounded.FactCheck, stringResource(R.string.settings_import_result), { dialog = "import" })
+                        }
+                    }
+                    item { SettingsNote(stringResource(R.string.settings_local_info, roots.size, songs.size)) }
+                }
+
+                SettingsSection.STORAGE -> {
+                    item {
+                        SettingsGroup {
+                            SettingRow(Icons.Rounded.LibraryMusic, stringResource(R.string.settings_cache_limit), { dialog = "audioCacheLimit" })
+                            SettingRow(Icons.Rounded.Storage, stringResource(R.string.settings_cache), {
+                                scope.launch {
+                                    cache = withContext(Dispatchers.IO) { repo.cacheInfo() }
+                                    dialog = "cache"
+                                }
+                            })
+                            SettingRow(Icons.Rounded.SaveAlt, stringResource(R.string.backup_title), {
+                                if (!backupBusy && !importState.running) dialog = "backup"
+                            })
+                        }
+                    }
+                }
+
+                SettingsSection.MORE -> {
+                    item {
+                        SettingsGroup {
+                            SettingRow(Icons.Rounded.Security, stringResource(R.string.settings_privacy), { dialog = "privacy" })
+                            SettingRow(Icons.Rounded.SmartToy, stringResource(R.string.settings_agent), { dialog = "agent" })
+                            SettingRow(Icons.Rounded.History, stringResource(R.string.settings_history), {
+                                scope.launch {
+                                    logs = withContext(Dispatchers.IO) { repo.db.actionLog() }
+                                    dialog = "logs"
+                                }
+                            })
+                        }
+                    }
                 }
             }
-            Spacer(Modifier.height(12.dp))
-            SettingsGroup {
-                SettingRow(Icons.Rounded.Insights, stringResource(R.string.settings_listening), stringResource(R.string.settings_listening_summary), onListening)
-            }
-            SectionLabel(stringResource(R.string.settings_translation_section))
-            SettingsGroup {
-                SettingRow(Icons.Rounded.Lyrics, stringResource(R.string.settings_netease_lyrics), "$lyricCount 份歌词 · 按歌曲 ID 自动关联", {
-                    lyricRoots = repo.lyricRoots()
-                    dialog = "neteaseLyrics"
-                })
-                SettingRow(Icons.Rounded.Key, "DeepSeek API Key", if (savedKey) stringResource(R.string.settings_saved_key) else stringResource(R.string.settings_key_summary), { dialog = "key" })
-                SettingRow(Icons.Rounded.AutoAwesome, stringResource(R.string.settings_model), modelState.summary, {
-                    model.refreshModels()
-                    dialog = "model"
-                })
-                SettingRow(Icons.Rounded.EditNote, stringResource(R.string.settings_style), stringResource(R.string.settings_style_summary), { dialog = "style" })
-                SettingRow(Icons.Rounded.NetworkCheck, stringResource(R.string.settings_test), stringResource(R.string.settings_test_summary), { model.testConnection() })
-            }
-            SectionLabel(stringResource(R.string.settings_appearance_section))
-            SettingsGroup {
-                SettingRow(
-                    Icons.Rounded.Palette,
-                    stringResource(R.string.settings_theme),
-                    when (theme) {
-                        "light" -> stringResource(R.string.settings_light)
-                        "dark" -> stringResource(R.string.settings_dark)
-                        else -> stringResource(R.string.settings_system)
-                    },
-                    { dialog = "theme" },
-                )
-            }
-            SectionLabel(stringResource(R.string.settings_local_section))
-            SettingsGroup {
-                SettingRow(Icons.Rounded.LibraryMusic, stringResource(R.string.settings_local_browse), stringResource(R.string.settings_local_summary), onLocalLibrary)
-                SettingRow(Icons.Rounded.CreateNewFolder, stringResource(R.string.settings_import), "音频、LRC、CUE 与经典 NCM", onImport)
-                SettingRow(Icons.Rounded.Sync, stringResource(R.string.settings_scan), "${roots.size} 个已授权文件夹 · ${songs.size} 首歌曲", { if (roots.isNotEmpty()) repo.scan() else onImport() }, trailing = {
-                    if (importState.running) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.ChevronRight, null)
-                })
-                SettingRow(Icons.Rounded.FolderOpen, stringResource(R.string.settings_folders), stringResource(R.string.settings_folder_summary), {
-                    roots = repo.roots()
-                    dialog = "roots"
-                })
-                SettingRow(Icons.Rounded.NotificationsNone, "导入进度通知", "允许后台导入时显示进度", onNotifications)
-                if (importState.message.isNotEmpty() && !importState.running) SettingRow(Icons.Rounded.FactCheck, "最近导入结果", importState.message, { dialog = "import" })
-            }
-            SectionLabel(stringResource(R.string.settings_storage_section))
-            SettingsGroup {
-                SettingRow(Icons.Rounded.SaveAlt, stringResource(R.string.backup_title), stringResource(R.string.backup_summary), {
-                    if (!backupBusy && !importState.running) dialog = "backup"
-                })
-                SettingRow(Icons.Rounded.LibraryMusic, stringResource(R.string.settings_cache_limit), cacheLimitLabel(audioCacheLimit), { dialog = "audioCacheLimit" })
-                SettingRow(Icons.Rounded.Storage, stringResource(R.string.settings_cache), "${megabytes(cache.bytes)} · ${cache.files} 个文件", {
-                    scope.launch {
-                        cache = withContext(Dispatchers.IO) { repo.cacheInfo() }
-                        dialog = "cache"
-                    }
-                })
-                SettingRow(Icons.Rounded.SmartToy, stringResource(R.string.settings_agent), stringResource(R.string.settings_agent_summary), { dialog = "agent" })
-                SettingRow(Icons.Rounded.History, stringResource(R.string.settings_history), stringResource(R.string.settings_history_summary), {
-                    scope.launch {
-                        logs = withContext(Dispatchers.IO) { repo.db.actionLog() }
-                        dialog = "logs"
-                    }
-                })
-                SettingRow(Icons.Rounded.Security, stringResource(R.string.settings_privacy), stringResource(R.string.settings_privacy_summary), { dialog = "privacy" })
-            }
-            Text("AMI ${com.longzhousz.ami.BuildConfig.VERSION_NAME}", Modifier.padding(top = 24.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
     when (dialog) {
@@ -195,6 +210,7 @@ import kotlinx.coroutines.withContext
                     dialog = null
                 },
                 { dialog = null },
+                description = stringResource(R.string.settings_cache_limit_info),
             )
         }
 
@@ -202,29 +218,41 @@ import kotlinx.coroutines.withContext
             GlassAlertDialog(
                 { dialog = null },
                 title = { Text(stringResource(R.string.settings_account)) },
-                text = { Text(stringResource(R.string.settings_account_actions)) },
+                text = {
+                    Text(
+                        if (configured) {
+                            stringResource(R.string.settings_logged_in) + "\n\n" + stringResource(R.string.settings_account_actions)
+                        } else {
+                            stringResource(R.string.settings_sign_in_summary)
+                        },
+                    )
+                },
                 confirmButton = {
                     TextButton({
                         dialog = null
                         signIn()
-                    }) { Text(stringResource(R.string.settings_sign_in_again)) }
+                    }) { Text(stringResource(if (configured) R.string.settings_sign_in_again else R.string.settings_sign_in)) }
                 },
                 dismissButton = {
-                    TextButton({
-                        scope.launch {
-                            try {
-                                model.cancelCloudPreparation()
-                                if (model.findSong(model.player.state.value.id)?.isCloudSong() == true) model.player.pause()
-                                model.resetOnlineLibrary()
-                                model.cloud.disconnect()
-                                dialog = null
-                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                                throw cancelled
-                            } catch (_: Exception) {
-                                model.showMessage("退出登录未完成，请重试")
+                    if (configured) {
+                        TextButton({
+                            scope.launch {
+                                try {
+                                    model.cancelCloudPreparation()
+                                    if (model.findSong(model.player.state.value.id)?.isCloudSong() == true) model.player.pause()
+                                    model.resetOnlineLibrary()
+                                    model.cloud.disconnect()
+                                    dialog = null
+                                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                    throw cancelled
+                                } catch (_: Exception) {
+                                    model.showMessage("退出登录未完成，请重试")
+                                }
                             }
-                        }
-                    }) { Text(stringResource(R.string.settings_sign_out)) }
+                        }) { Text(stringResource(R.string.settings_sign_out)) }
+                    } else {
+                        TextButton({ dialog = null }) { Text(stringResource(R.string.common_cancel)) }
+                    }
                 },
             )
         }
@@ -270,8 +298,11 @@ import kotlinx.coroutines.withContext
         "key" -> {
             var key by remember { mutableStateOf("") }
             GlassAlertDialog({ dialog = null }, title = { Text("DeepSeek API Key") }, text = {
-                Column {
+                Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState())) {
+                    Text(stringResource(if (savedKey) R.string.settings_saved_key else R.string.settings_key_not_saved), style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.settings_key_summary), Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodyMedium)
                     Text("密钥使用设备密钥加密。AMI 不会显示已保存的密钥。", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.settings_test_info), Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedTextField(key, { key = it }, Modifier.fillMaxWidth().padding(top = 16.dp), label = { Text("粘贴新的 API Key") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false), singleLine = true)
                     if (savedKey) {
                         TextButton({
@@ -364,7 +395,11 @@ import kotlinx.coroutines.withContext
             GlassAlertDialog(
                 { dialog = null },
                 title = { Text(stringResource(R.string.settings_cache)) },
-                text = { Text("音乐转换与封面缓存：${megabytes(cache.bytes)}\n可安全清理：${megabytes(cache.reclaimable)}\n\n只清理未被曲库引用的应用缓存。正在使用的音频缓存和原始音乐都会保留。") },
+                text = {
+                    Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState())) {
+                        Text(stringResource(R.string.settings_cache_info, megabytes(cache.bytes), cache.files, megabytes(cache.reclaimable)))
+                    }
+                },
                 confirmButton = {
                     TextButton({
                         scope.launch {
@@ -378,7 +413,7 @@ import kotlinx.coroutines.withContext
         }
 
         "logs" -> {
-            InfoDialog(stringResource(R.string.settings_history), logs.joinToString("\n\n").ifBlank { "还没有操作记录" }, { dialog = null })
+            InfoDialog(stringResource(R.string.settings_history), stringResource(R.string.settings_history_summary) + "\n\n" + logs.joinToString("\n\n").ifBlank { "还没有操作记录" }, { dialog = null })
         }
 
         "agent" -> {
@@ -402,7 +437,8 @@ import kotlinx.coroutines.withContext
     val scope = rememberCoroutineScope()
     GlassAlertDialog(onDismiss, title = { Text(stringResource(R.string.settings_agent)) }, text = {
         Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
-            Text("应用在前台时，每 3 秒检查交换文件夹。请求需携带令牌，操作记录仅保存在本机。", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.settings_agent_summary), style = MaterialTheme.typography.bodyMedium)
+            Text("应用在前台时，每 3 秒检查交换文件夹。请求需携带令牌，操作记录仅保存在本机。", Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodySmall)
             Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Text("启用外部调用", Modifier.weight(1f))
                 Switch(enabled, {
@@ -434,19 +470,17 @@ import kotlinx.coroutines.withContext
     }, confirmButton = { TextButton(onDismiss) { Text(stringResource(R.string.common_done)) } })
 }
 
-@Composable private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().liquidGlass(RoundedCornerShape(24.dp)), content = content)
-}
-
 @Composable private fun ChoiceDialog(
     title: String,
     choices: List<Pair<String, String>>,
     selected: String,
     onChoice: (String) -> Unit,
     onDismiss: () -> Unit,
+    description: String? = null,
 ) {
     GlassAlertDialog(onDismiss, title = { Text(title) }, text = {
         Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState())) {
+            if (description != null) Text(description, Modifier.padding(bottom = 12.dp), style = MaterialTheme.typography.bodyMedium)
             choices.forEach { (value, label) ->
                 Row(Modifier.fillMaxWidth().clickable { onChoice(value) }.padding(vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     RadioButton(selected == value, { onChoice(value) })

@@ -79,11 +79,11 @@ x1, y1, x2, y2 = map(int, re.findall(r'\d+', node.get('bounds')))
 subprocess.run(['adb', 'shell', 'input', 'tap', str((x1+x2)//2), str((y1+y2)//2)], check=True)
 PY
 sleep 2
-python3 .github/scripts/android-wait-for-window.py preview-smoke-results/settings.xml "$package" 'DeepSeek API Key'
+python3 .github/scripts/android-wait-for-window.py preview-smoke-results/settings.xml "$package" '我的聆听'
 python3 - <<'PY'
 import xml.etree.ElementTree as ET
 nodes = list(ET.parse('preview-smoke-results/settings.xml').iter('node'))
-assert any(n.get('text') == 'DeepSeek API Key' for n in nodes), 'Settings did not render'
+assert any(n.get('text') == '我的聆听' for n in nodes), 'Settings did not render'
 assert any(n.get('text') == '网易云账号' for n in nodes), 'Account entry is missing from settings'
 PY
 python3 - "$package" <<'PY'
@@ -113,13 +113,15 @@ path = wait('listening-date-picker', '选择日期')
 tap(path, '取消')
 wait('listening-return', '听过的歌')
 subprocess.run(['adb', 'shell', 'input', 'keyevent', '4'], check=True)
-wait('settings', 'DeepSeek API Key')
+wait('settings', '我的聆听')
+tap('preview-smoke-results/settings.xml', '歌词与翻译')
+wait('settings-lyrics', '网易云歌词')
 PY
 python3 - <<'PY'
 import re
 import subprocess
 import xml.etree.ElementTree as ET
-node = next(n for n in ET.parse('preview-smoke-results/settings.xml').iter('node') if n.get('text') == '网易云歌词')
+node = next(n for n in ET.parse('preview-smoke-results/settings-lyrics.xml').iter('node') if n.get('text') == '网易云歌词')
 x1, y1, x2, y2 = map(int, re.findall(r'\d+', node.get('bounds')))
 subprocess.run(['adb', 'shell', 'input', 'tap', str((x1+x2)//2), str((y1+y2)//2)], check=True)
 PY

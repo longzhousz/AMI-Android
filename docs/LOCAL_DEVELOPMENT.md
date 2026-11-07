@@ -115,7 +115,7 @@ adb -s YOUR_SERIAL install -r app/build/outputs/apk/debug/app-debug.apk
 adb -s YOUR_SERIAL shell am start -n com.longzhousz.ami/.MainActivity
 ```
 
-在 Debug 应用中通过「设置 → 导入音乐」授权样本文件夹；旧 Preview 的 SAF 文件夹权限不会自动转给另一个包名。可以直接在 Android Studio 选择手机和 Debug 变体运行，或用可选的 scrcpy 查看/控制屏幕；ADB 本身已能截图、点击、滑动、读取界面与日志。
+在 Debug 应用中通过「设置 → 本地音乐 → 导入音乐」授权样本文件夹；旧 Preview 的 SAF 文件夹权限不会自动转给另一个包名。可以直接在 Android Studio 选择手机和 Debug 变体运行，或用可选的 scrcpy 查看/控制屏幕；ADB 本身已能截图、点击、滑动、读取界面与日志。
 
 项目已有 UI 树助手，以下命令适用于当前屏幕：
 

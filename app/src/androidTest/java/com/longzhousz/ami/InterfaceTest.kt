@@ -44,8 +44,15 @@ import java.io.File
 class InterfaceTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
-    @Test fun backupEntryExplainsBothDirectionsAndDoesNotOpenAnUnrelatedTaskPanel() {
+    @Test fun titleOnlySettingsKeepBackupInformationAndSubmenuBackNavigation() {
         compose.onNodeWithContentDescription("设置").performClick()
+        compose.onNodeWithText("我的聆听").assertIsDisplayed()
+        compose.onNodeWithText("备份与恢复").assertDoesNotExist()
+        compose.onNodeWithText("周、月、年 · 回看音乐留下的足迹").assertDoesNotExist()
+        screenshot("settings-home")
+        compose.onNodeWithText("存储与数据").performScrollTo().performClick()
+        compose.onNodeWithTag("settings-storage").assertIsDisplayed()
+        screenshot("settings-storage")
         compose.onNodeWithText("备份与恢复").performScrollTo().performClick()
         compose.onNodeWithText("导出数据").assertIsDisplayed()
         compose.onNodeWithText("导入恢复").assertIsDisplayed()
@@ -56,6 +63,17 @@ class InterfaceTest {
         }
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
         compose.onNodeWithText("备份与恢复").assertIsDisplayed()
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        compose.onNodeWithTag("settings-home").assertIsDisplayed()
+        compose.onNodeWithText("歌词与翻译").performScrollTo().performClick()
+        compose.onNodeWithText("DeepSeek API Key").performClick()
+        compose.onNodeWithText("用于翻译与获取官方模型列表").assertIsDisplayed()
+        compose.onNodeWithText("密钥使用设备密钥加密", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("取消").performClick()
+        compose.onNodeWithTag("settings-lyrics").assertIsDisplayed()
+        screenshot("settings-lyrics")
+        compose.onNodeWithContentDescription("返回设置").performClick()
+        compose.onNodeWithText("我的聆听").assertIsDisplayed()
     }
 
     @Test fun consumingAnOlderSnackbarCannotEraseANewerFailure() {
@@ -117,6 +135,9 @@ class InterfaceTest {
 
     private fun openLocalLibrary() {
         compose.onNodeWithContentDescription("设置").performClick()
+        if (compose.onAllNodesWithTag("settings-home").fetchSemanticsNodes().isNotEmpty()) {
+            compose.onNodeWithText("本地音乐").performScrollTo().performClick()
+        }
         compose.onNodeWithText("浏览本地音乐").performScrollTo().performClick()
     }
 
@@ -195,6 +216,7 @@ class InterfaceTest {
         try {
             compose.runOnIdle { model.repository.setAudioCacheLimit(512L * 1024 * 1024) }
             compose.onNodeWithContentDescription("设置").performClick()
+            compose.onNodeWithText("存储与数据").performScrollTo().performClick()
             compose.onNodeWithText("常听歌曲缓存上限").performScrollTo().performClick()
             compose.onNodeWithText("1 GB").performClick()
             compose.runOnIdle {
@@ -248,9 +270,11 @@ class InterfaceTest {
         compose.onNodeWithText("登录网易云").assertIsDisplayed()
         compose.onNodeWithContentDescription("设置").performClick()
         compose.onNodeWithText("网易云账号").assertIsDisplayed()
+        compose.onNodeWithText("歌词与翻译").performScrollTo().performClick()
         compose.onNodeWithText("网易云歌词").performScrollTo().performClick()
         compose.onNodeWithText("选择歌词文件夹").assertIsDisplayed()
         compose.onNodeWithText("完成").performClick()
+        compose.onNodeWithContentDescription("返回设置").performClick()
         compose.onNodeWithText("外观").performScrollTo().performClick()
         compose.onNodeWithText("深色").performClick()
         compose.onNodeWithText("外观").assertIsDisplayed()
