@@ -1,6 +1,6 @@
 # AMI 当前交接
 
-当前开发版本 **0.2.9 / versionCode 31**，最低 Android 13 / API 33，compile / target API 37。数据库 schema 6、在线音频缓存 schema 1 不变。上一版的交付与验证保存在 [0.2.8 交接](archive/LOCAL_HANDOFF_0.2.8.md)。
+当前版本 **0.2.9 / versionCode 31**，最低 Android 13 / API 33，compile / target API 37。数据库 schema 6、在线音频缓存 schema 1 不变。应用源码 `a65857597fc7174f701d9cf220a07a1c65bca995`，之后的提交只更新交付文档。上一版的交付与验证保存在 [0.2.8 交接](archive/LOCAL_HANDOFF_0.2.8.md)。
 
 ## 设置整理
 
@@ -12,6 +12,25 @@
 
 现有登录、播放、导入、翻译、备份合并规则和自动缓存行为不变。使用路径见 [使用说明](USER_GUIDE.md)。
 
-## 验证与交付状态
+## 验证范围
 
-正在运行格式、静态检查、单元测试、构建与模拟器验证；未完成的结果不计为通过。没有连接真实手机。
+- Spotless、detekt、115 项 JVM 测试、Lint、调试与优化构建通过。
+- [完整回归](https://github.com/longzhousz/AMI-Android/actions/runs/42434658603)：Android 13／17 各 164 项原生测试通过，逐项核对数量与测试名，无失败、错误或跳过；后台回收与媒体恢复检查通过。
+- 已核对两套系统的设置截图，查看首页、歌词子菜单、存储子菜单、备份说明和深色外观。覆盖直接进入“我的聆听”、子菜单与对话框返回、备份信息保留、缓存上限持久化，以及原有歌词入口。
+- [实际签名包覆盖验证](https://github.com/longzhousz/AMI-Android/actions/runs/42434717147)：Android 13／17 从 0.2.8 覆盖更新，完成两次启动、设置、聆听周期及歌词子菜单检查。实际安装文件摘要与交付一致，崩溃缓冲区为空。
+
+前两轮曾遇到组件下载截断、Android 13 截图读取超时，以及返回测试未等待弹窗交还焦点；这些结果不计为通过。保留子菜单返回回调，并让测试在确认弹窗已关闭、主窗口恢复焦点后再发送下一次返回，专项验证和最终完整回归分别计数。历史结果见 [首轮](https://github.com/longzhousz/AMI-Android/actions/runs/42387395608) 和 [第二轮](https://github.com/longzhousz/AMI-Android/actions/runs/42389691164)。
+
+没有连接真实手机；不新增真机触感、帧率、音质、耗电或厂商能力结论。使用既有 Android 13 ANGLE + SwiftShader 和 Android 17 图形配置，未降低应用动效或材质来通过检查。
+
+## 安装包
+
+`AMI-Android-0.2.9-online-preview.apk`，5,597,978 bytes；包名 `com.longzhousz.ami.musicpreview`，版本 `0.2.9-music-preview` / versionCode 31。SHA-256：
+
+```text
+8a3811c44d83eba88c2737ef660d66013aca2f4b994ea46600302fa3a7cd24f5
+```
+
+证书 SHA-256：`238e0c33d7deebc6dd873ae8f0e844cf626b873f2ddf2ea8900d4916e2dd6f39`，与云端 0.2.8 相同。可直接覆盖云端 0.1.14～0.2.8，保留登录、设置、曲库、歌词和聆听记录；不卸载或清除数据。包名、版本、最低系统、v2 签名、16 KiB 对齐、嵌入源码和附件摘要已核对。
+
+[0.2.9 发布](https://github.com/longzhousz/AMI-Android/releases/tag/android-v0.2.9-preview) 提供 APK、使用说明与校验清单。上一版发布与本地交付已归档；Git 历史和标签保留，main 不放 APK，稳定的中英 README 未改变。
