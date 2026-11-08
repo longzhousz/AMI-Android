@@ -62,6 +62,9 @@ class InterfaceTest {
             bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
         }
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        compose.waitUntil(5000) { compose.activity.hasWindowFocus() }
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.onNodeWithTag("settings-storage").assertIsDisplayed()
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
         compose.waitUntil(5000) { compose.onAllNodesWithTag("settings-home").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("settings-home").assertIsDisplayed()
