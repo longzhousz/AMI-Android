@@ -89,14 +89,7 @@ class PlaybackIntegrationTest {
                 assertEquals(visited.first(), controller.currentMediaItemIndex)
                 assertEquals(songs.map { it.id }, (0 until controller.mediaItemCount).map { controller.getMediaItemAt(it).mediaId })
                 assertTrue("The shuffle should break up groups of the same artist", visited.zipWithNext().count { (a, b) -> a / 3 == b / 3 } <= 3)
-                model.player.mode(PlayMode.Ordered)
             }
-            await("Ordered mode disables both loop and random") { !controller.shuffleModeEnabled && controller.repeatMode == Player.REPEAT_MODE_OFF }
-            instrumentation.runOnMainSync {
-                controller.seekTo(songs.lastIndex, 5800)
-                controller.play()
-            }
-            await("Ordered mode stops at the queue end") { controller.playbackState == Player.STATE_ENDED }
             instrumentation.runOnMainSync {
                 model.player.mode(PlayMode.Loop)
                 controller.seekTo(songs.lastIndex, 5800)

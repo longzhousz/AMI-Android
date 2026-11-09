@@ -69,7 +69,7 @@ class OnlineArtworkCacheTest {
                                 loader.execute(
                                     ImageRequest
                                         .Builder(context)
-                                        .data(url)
+                                        .data(if (size == 48) url else url.replace("p1.", "p2.") + "?param=${size}y$size")
                                         .size(size)
                                         .allowHardware(false)
                                         .build(),
@@ -78,6 +78,8 @@ class OnlineArtworkCacheTest {
                         }.awaitAll()
                 assertTrue(results.all { it is SuccessResult })
                 assertEquals(1, calls.get())
+                assertNotNull(cache.preview(url.replace("p1.", "p2.") + "?param=48y48"))
+                assertEquals(1L, cache.revision.value)
                 assertArrayEquals("The original file must not be recompressed", png, dir.listFiles()!!.single().readBytes())
             } finally {
                 loader.shutdown()

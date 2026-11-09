@@ -76,6 +76,11 @@ class CloudMusic internal constructor(
 
     // Search/playlists keep one page per tab. Stable album metadata has a separate 1 MiB LRU;
     // it survives visiting other albums, but adds no disk files or background refresh work.
+    private val albumCovers =
+        object : LinkedHashMap<String, String>(512, .75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 512
+        }
+
     private val pages = arrayOfNulls<Pair<String, CloudTracks>>(2)
 
     private data class AlbumPage(
@@ -123,6 +128,7 @@ class CloudMusic internal constructor(
     }
 
     @Synchronized fun clearPages() {
+        albumCovers.clear()
         pages.fill(null)
         albumPages.evictAll()
     }
@@ -223,6 +229,7 @@ class CloudMusic internal constructor(
             (0 until rows.length()).map { rows.getJSONObject(it) }.map {
                 CloudPlaylist(id(it.getString("id")), it.getString("title").take(200), picture(it), it.optInt("count"), "album", it.optString("artist").take(200))
             }
+        synchronized(this) { albums.forEach { album -> album.cover?.let { albumCovers[album.id] = it } } }
         return CloudLibrary(albums + playlists.filter { it.kind == "created" }, playlists.firstOrNull { it.kind == "liked" })
     }
 
@@ -231,7 +238,15 @@ class CloudMusic internal constructor(
         offset: Int = 0,
     ): CloudTracks =
         if (collection.kind == "album") {
-            page(request("albumTracks", JSONObject().put("id", id(collection.id)).put("offset", offset)))
+            synchronized(this) { collection.cover?.let { albumCovers[collection.id] = it } }
+            page(request("albumTracks", JSONObject().put("id", id(collection.id)).put("offset", offset))).let { page ->
+                page.copy(
+                    tracks =
+                        page.tracks.map { track ->
+                            if (track.albumId == null || track.albumId == collection.id) track.copy(cover = track.cover ?: collection.cover, albumId = track.albumId ?: collection.id) else track
+                        },
+                )
+            }
         } else {
             tracks(collection.id, offset)
         }
@@ -254,7 +269,17 @@ class CloudMusic internal constructor(
     private fun page(result: JSONObject): CloudTracks {
         val rows = result.getJSONArray("tracks")
         require(rows.length() <= 500)
-        return CloudTracks((0 until rows.length()).map { track(rows.getJSONObject(it)) }, result.getInt("nextOffset"), result.optBoolean("more"))
+        return CloudTracks(
+            (0 until rows.length()).map { row ->
+                val track = track(rows.getJSONObject(row))
+                synchronized(this) {
+                    track.albumId?.let { albumId -> track.cover?.let { albumCovers[albumId] = it } }
+                    track.copy(cover = track.cover ?: track.albumId?.let { albumCovers[it] })
+                }
+            },
+            result.getInt("nextOffset"),
+            result.optBoolean("more"),
+        )
     }
 
     private fun id(raw: String): String = raw.uppercase(java.util.Locale.ROOT).also { require(it.matches(Regex("[A-F0-9]{32}")) || (direct && it.matches(Regex("[1-9][0-9]{0,19}")))) { "歌曲或歌单标识无效" } }
@@ -363,7 +388,14 @@ class CloudMusic internal constructor(
                         val root = text.takeIf { it.trimStart().startsWith('{') }?.let(::JSONObject)
                         val rows = root?.getJSONArray("tracks") ?: JSONArray(text)
                         require(rows.length() <= 1000)
-                        queueTracks = (0 until rows.length()).map { track(rows.getJSONObject(it)) }
+                        queueTracks =
+                            (0 until rows.length()).map { row ->
+                                val track = track(rows.getJSONObject(row))
+                                synchronized(this) {
+                                    track.albumId?.let { albumId -> track.cover?.let { albumCovers[albumId] = it } }
+                                    track.copy(cover = track.cover ?: track.albumId?.let { albumCovers[it] })
+                                }
+                            }
                         catalog.value = queueTracks.map { it.song() }.associateBy { it.id }
                         radio.value =
                             root?.optString("radio")?.takeIf {

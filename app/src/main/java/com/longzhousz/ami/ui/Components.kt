@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.imageLoader
 import coil.memory.MemoryCache
@@ -62,14 +63,17 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
     modifier: Modifier = Modifier,
     animateChanges: Boolean = false,
 ) {
+    val imagePath =
+        com.longzhousz.ami.data.ArtworkDownloader
+            .sharedUrl(path) ?: path
     val context = LocalContext.current
     var previousImage by remember { mutableStateOf<MemoryCache.Key?>(null) }
     var previousPainter by remember { mutableStateOf<Painter?>(null) }
-    var failed by remember(path) { mutableStateOf(false) }
-    val latestPath by rememberUpdatedState(path)
+    var failed by remember(imagePath) { mutableStateOf(false) }
+    val latestPath by rememberUpdatedState(imagePath)
     val cachedPainter =
-        remember(path, context) {
-            path?.takeIf { it.startsWith("https://") }?.let { url ->
+        remember(imagePath, context) {
+            imagePath?.takeIf { it.startsWith("https://") }?.let { url ->
                 (
                     context.imageLoader.memoryCache
                         ?.get(MemoryCache.Key(url))
@@ -78,8 +82,20 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
                 )?.let { BitmapPainter(it.asImageBitmap()) }
             }
         }
+    val artwork = (context.applicationContext as? com.longzhousz.ami.AmiApplication)?.artwork
+    // Only failed visible covers observe later successes; successful rows never subscribe.
+    if (failed && imagePath != null && artwork != null) {
+        val revision by artwork.revision.collectAsStateWithLifecycle()
+        LaunchedEffect(imagePath, revision) {
+            artwork.preview(imagePath)?.let {
+                previousPainter = BitmapPainter(it.asImageBitmap())
+                previousImage = MemoryCache.Key(imagePath)
+                failed = false
+            }
+        }
+    }
     val color = CoverPalette[(title.hashCode().toLong().let { if (it < 0) -it else it } % CoverPalette.size).toInt()]
-    val fallback = path == null || failed
+    val fallback = imagePath == null || failed
     val placeholder = if (fallback) Modifier.background(Brush.linearGradient(listOf(color.copy(alpha = 0.65f), color))) else Modifier
     Box(modifier.then(placeholder), contentAlignment = Alignment.Center) {
         if (fallback) {
@@ -110,7 +126,7 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
                 )
             }
         }
-        if (path != null) {
+        if (imagePath != null) {
             // Draw synchronously on re-entry, even before AsyncImage's first request frame.
             // A tiny preview covers a full-bitmap eviction without holding the whole shelf in RAM.
             val retained = previousPainter ?: cachedPainter
@@ -118,12 +134,18 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
             // One request and one retained painter. Fade only after decoding succeeds, so a slow
             // request cannot fade the old image into an empty frame; memory hits remain immediate.
             val request =
-                remember(path, context, animateChanges) {
+                remember(imagePath, context, animateChanges) {
                     ImageRequest
                         .Builder(context)
-                        .data(if (path.startsWith("https://")) path else File(path))
-                        .apply { if (path.startsWith("https://")) memoryCacheKey(path) }
-                        .placeholderMemoryCacheKey(previousImage ?: path.takeIf { it.startsWith("https://") }?.let { MemoryCache.Key(it) })
+                        .data(
+                            if (imagePath.startsWith("https://")) {
+                                com.longzhousz.ami.data.ArtworkDownloader
+                                    .originalUrl(path) ?: imagePath
+                            } else {
+                                File(imagePath)
+                            },
+                        ).apply { if (imagePath.startsWith("https://")) memoryCacheKey(imagePath) }
+                        .placeholderMemoryCacheKey(previousImage ?: imagePath.takeIf { it.startsWith("https://") }?.let { MemoryCache.Key(it) })
                         .apply {
                             if (previousPainter != null && animateChanges) {
                                 transitionFactory { target, result ->
@@ -144,7 +166,7 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
                 }
             // A new painter starts independently; cancellation of a slow old request must not
             // block the current cover. The retained placeholder stays outside this keyed scope.
-            key(path) {
+            key(imagePath) {
                 AsyncImage(
                     request,
                     "《$title》封面",
@@ -152,13 +174,24 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
                     contentScale = ContentScale.Fit,
                     placeholder = retained,
                     onSuccess = {
-                        if (path == latestPath) {
+                        if (imagePath == latestPath) {
                             previousImage = it.result.memoryCacheKey
                             previousPainter = it.painter
                             failed = false
                         }
                     },
-                    onError = { if (path == latestPath) failed = true },
+                    onError = {
+                        if (imagePath == latestPath) {
+                            val preview = (context.applicationContext as? com.longzhousz.ami.AmiApplication)?.artwork?.preview(imagePath)
+                            if (preview != null) {
+                                previousPainter = BitmapPainter(preview.asImageBitmap())
+                                previousImage = MemoryCache.Key(imagePath)
+                                failed = false
+                            } else {
+                                failed = true
+                            }
+                        }
+                    },
                 )
             }
         }

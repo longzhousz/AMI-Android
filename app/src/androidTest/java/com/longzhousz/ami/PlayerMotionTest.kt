@@ -103,8 +103,9 @@ class PlayerMotionTest {
             val current = PlayMode.from(playback.shuffle, playback.repeat)
             compose.onNodeWithContentDescription("播放模式：${current.label}").performClick()
             PlayMode.entries.forEach { compose.onNodeWithText(it.label).assertIsDisplayed() }
-            compose.onNodeWithText("播完队列后停止").assertIsDisplayed()
-            compose.onNodeWithText("播完队列后从头继续").assertIsDisplayed()
+            compose.onNodeWithText("顺序播放").assertDoesNotExist()
+            compose.onNodeWithText("播完队列后停止").assertDoesNotExist()
+            compose.onNodeWithText("播完队列后从头继续").assertDoesNotExist()
             compose.onNodeWithText(mode.label).performClick()
             compose.onNodeWithContentDescription("播放模式：${mode.label}").assertIsDisplayed()
         }

@@ -13,6 +13,9 @@ import coil.fetch.SourceResult
 import coil.memory.MemoryCache
 import coil.request.Options
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -35,6 +38,17 @@ internal class OnlineArtworkCache(
     // ponytail: 16 striped locks bound memory and merge duplicate requests; widen only if contended.
     private val locks = Array(16) { Mutex() }
     private val sweptAt = AtomicLong(0)
+    private val previewRevision = MutableStateFlow(0L)
+    val revision = previewRevision.asStateFlow()
+
+    private fun savePreview(
+        url: String,
+        bitmap: Bitmap,
+    ) {
+        previews[MemoryCache.Key(url)] = MemoryCache.Value(bitmap)
+        previewRevision.update { it + 1 }
+    }
+
     private val writing =
         java.util.concurrent.ConcurrentHashMap
             .newKeySet<String>()
@@ -48,7 +62,7 @@ internal class OnlineArtworkCache(
             .weakReferencesEnabled(false)
             .build()
 
-    fun preview(url: String): Bitmap? = previews[MemoryCache.Key(url)]?.bitmap
+    fun preview(url: String): Bitmap? = previews[MemoryCache.Key(ArtworkDownloader.sharedUrl(url) ?: url)]?.bitmap
 
     fun clearMemory() = previews.clear()
 
@@ -84,19 +98,19 @@ internal class OnlineArtworkCache(
 
     internal suspend fun load(raw: String): SourceResult =
         withContext(Dispatchers.IO) {
-            val url = requireNotNull(ArtworkDownloader.url(raw))
+            val url = requireNotNull(ArtworkDownloader.sharedUrl(raw))
             val hash = key(url)
             val file = File(dir, "$hash.img")
             cached(file, url, hash)?.let { return@withContext it }
             lock(hash).withLock {
                 cached(file, url, hash)?.let { return@withLock it }
-                val bytes = download(url)
+                val bytes = download(requireNotNull(ArtworkDownloader.originalUrl(raw)))
                 require(bytes.size in 1..ArtworkDownloader.MAX_BYTES)
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
                 require(bounds.outWidth > 0 && bounds.outHeight > 0)
                 val preview = requireNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size, previewOptions(bounds)))
-                previews[MemoryCache.Key(url)] = MemoryCache.Value(preview)
+                savePreview(url, preview)
                 // Persist best-effort; low storage must not prevent the image being displayed now.
                 runCatching {
                     dir.mkdirs()
@@ -147,9 +161,12 @@ internal class OnlineArtworkCache(
             if (preview(url) == null) {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeFile(file.path, bounds)
-                if (bounds.outWidth > 0 && bounds.outHeight > 0) {
-                    BitmapFactory.decodeFile(file.path, previewOptions(bounds))?.let { previews[MemoryCache.Key(url)] = MemoryCache.Value(it) }
+                val preview = if (bounds.outWidth > 0 && bounds.outHeight > 0) BitmapFactory.decodeFile(file.path, previewOptions(bounds)) else null
+                if (preview == null) {
+                    source.close()
+                    return null
                 }
+                savePreview(url, preview)
             }
             return SourceResult(ImageSource(source, context), null, DataSource.DISK)
         } catch (error: Throwable) {
@@ -160,7 +177,7 @@ internal class OnlineArtworkCache(
 
     suspend fun touch(raw: String) =
         withContext(Dispatchers.IO) {
-            val url = ArtworkDownloader.url(raw) ?: return@withContext
+            val url = ArtworkDownloader.sharedUrl(raw) ?: return@withContext
             val hash = key(url)
             lock(hash).withLock {
                 val file = File(dir, "$hash.img")

@@ -57,6 +57,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.longzhousz.ami.AmiViewModel
 import com.longzhousz.ami.NeteaseLoginActivity
 import com.longzhousz.ami.core.*
@@ -311,23 +313,25 @@ internal fun OnlineLibraryContent(
                 GlassCanvas()
             }
         }) {
-            Column(Modifier.fillMaxSize().testTag(if (favorites) "online-favorites" else "online-library")) {
-                if (!favorites) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(start = if (selected != null || searching) 8.dp else 24.dp, end = 24.dp, top = 12.dp, bottom = 12.dp).testTag("collection-toolbar"),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (selected != null || searching) {
-                            ActionIcon(Icons.Rounded.ArrowBack, "返回曲库", ::back)
-                            Spacer(Modifier.width(8.dp))
-                        }
+            val shelfBackdrop = rememberLayerBackdrop()
+            val floatingToolbar = !favorites && selected == null && !searching
+            val toolbar: @Composable () -> Unit = {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = if (selected != null || searching) 8.dp else 24.dp, end = 24.dp, top = 12.dp, bottom = 12.dp).testTag("collection-toolbar"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (selected != null || searching) {
+                        ActionIcon(Icons.Rounded.ArrowBack, "返回曲库", ::back)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    if (selected != null || searching) {
                         Text(
                             if (favorites) {
                                 "我喜欢"
                             } else if (searching) {
                                 "搜索结果"
                             } else {
-                                selected?.title ?: "曲库"
+                                selected?.title.orEmpty()
                             },
                             style = if (selected == null && !searching) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleLarge,
                             maxLines = 1,
@@ -341,273 +345,285 @@ internal fun OnlineLibraryContent(
                                     }
                                 }),
                         )
-                        if (!favorites && selected == null && !searching && configured) {
-                            Box {
-                                ActionIcon(Icons.Rounded.Explore, "发现音乐", { discoveryMenu = true }, enabled = !discovering)
-                                GlassDropdownMenu(discoveryMenu, { discoveryMenu = false }) {
-                                    DropdownMenuItem({ Text("私人 FM") }, {
-                                        discoveryMenu = false
-                                        onDiscover("fm")
-                                    }, leadingIcon = { Icon(Icons.Rounded.Radio, null) })
-                                    DropdownMenuItem({ Text("每日推荐") }, {
-                                        discoveryMenu = false
-                                        onDiscover("daily")
-                                    }, leadingIcon = { Icon(Icons.Rounded.WbSunny, null) })
-                                }
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
+                    if (!favorites && selected == null && !searching && configured) {
+                        Box {
+                            ActionIcon(Icons.Rounded.Explore, "发现音乐", { discoveryMenu = true }, enabled = !discovering)
+                            GlassDropdownMenu(discoveryMenu, { discoveryMenu = false }) {
+                                DropdownMenuItem({ Text("私人 FM") }, {
+                                    discoveryMenu = false
+                                    onDiscover("fm")
+                                }, leadingIcon = { Icon(Icons.Rounded.Radio, null) })
+                                DropdownMenuItem({ Text("每日推荐") }, {
+                                    discoveryMenu = false
+                                    onDiscover("daily")
+                                }, leadingIcon = { Icon(Icons.Rounded.WbSunny, null) })
                             }
                         }
-                        if (!favorites && selected == null && configured) {
-                            ActionIcon(
-                                if (searchExpanded) Icons.Rounded.Close else Icons.Rounded.Search,
-                                if (searchExpanded) "收起搜索" else "搜索音乐",
-                                {
-                                    if (searchExpanded) back() else searchExpanded = true
-                                },
-                            )
-                        }
                     }
-                }
-                if (!configured) {
-                    if (favorites) FavoritesHero(emptyList())
-                    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Icon(if (favorites) Icons.Rounded.FavoriteBorder else Icons.Rounded.LibraryMusic, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
-                            Text("登录后，音乐就在这里", style = MaterialTheme.typography.titleMedium)
-                            GlassButton(onLogin) { Text("登录网易云") }
-                        }
-                    }
-                } else {
-                    AnimatedVisibility(!favorites && selected == null && searchExpanded, enter = expandVertically(), exit = shrinkVertically()) {
-                        OutlinedTextField(
-                            query,
-                            { query = it },
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(start = 24.dp, end = 24.dp, bottom = 18.dp)
-                                .liquidGlass(RoundedCornerShape(22.dp))
-                                .focusRequester(searchFocus)
-                                .testTag("online-search"),
-                            placeholder = { Text("搜索歌曲、艺人") },
-                            leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                            trailingIcon = {
-                                if (query.isNotEmpty()) {
-                                    ActionIcon(Icons.Rounded.Close, "清空搜索", {
-                                        query = ""
-                                        submitted = ""
-                                        offset = 0
-                                    })
-                                }
+                    if (!favorites && selected == null && configured) {
+                        ActionIcon(
+                            if (searchExpanded) Icons.Rounded.Close else Icons.Rounded.Search,
+                            if (searchExpanded) "收起搜索" else "搜索音乐",
+                            {
+                                if (searchExpanded) back() else searchExpanded = true
                             },
-                            singleLine = true,
-                            shape = RoundedCornerShape(22.dp),
-                            colors =
-                                OutlinedTextFieldDefaults.colors(
-                                    unfocusedBorderColor = Color.Transparent,
-                                    focusedBorderColor = Color.Transparent,
-                                    unfocusedContainerColor = Color.Transparent,
-                                    focusedContainerColor = Color.Transparent,
-                                ),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions =
-                                KeyboardActions(onSearch = {
-                                    focus.clearFocus()
-                                    submitted = query.trim()
-                                    selectedKey = null
-                                    offset = 0
-                                    reload++
-                                }),
                         )
                     }
-                    val failure = error ?: state.error
-                    if (failure != null) {
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(failure, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            TextButton({
-                                if (state.error != null) {
-                                    onRefresh()
-                                } else {
-                                    reload++
-                                }
-                            }) { Text("重试") }
-                        }
-                    }
-                    val pullState = rememberPullToRefreshState()
-                    val refreshing = state.refreshing || (loading && offset == 0)
-                    PullToRefreshBox(
-                        isRefreshing = refreshing,
-                        onRefresh = ::refresh,
-                        state = pullState,
-                        indicator = {
-                            if (favorites || !showingTracks) {
-                                PullToRefreshDefaults.Indicator(
-                                    modifier = Modifier.align(Alignment.TopCenter).testTag("online-refresh-indicator"),
-                                    isRefreshing = refreshing,
-                                    state = pullState,
-                                )
+                }
+            }
+            Box(Modifier.fillMaxSize().testTag(if (favorites) "online-favorites" else "online-library")) {
+                Column(Modifier.fillMaxSize().then(if (floatingToolbar) Modifier.layerBackdrop(shelfBackdrop) else Modifier).padding(top = if (floatingToolbar && searchExpanded) 76.dp else 0.dp)) {
+                    if (!favorites && !floatingToolbar) toolbar()
+                    if (!configured) {
+                        if (favorites) FavoritesHero(emptyList())
+                        Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Icon(if (favorites) Icons.Rounded.FavoriteBorder else Icons.Rounded.LibraryMusic, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                                Text("登录后，音乐就在这里", style = MaterialTheme.typography.titleMedium)
+                                GlassButton(onLogin) { Text("登录网易云") }
                             }
-                        },
-                        modifier =
-                            Modifier.weight(1f).semantics {
-                                customActions =
-                                    listOf(
-                                        CustomAccessibilityAction(if (favorites) "刷新我喜欢" else "刷新曲库") {
-                                            refresh()
-                                            true
-                                        },
-                                    )
-                            },
-                    ) {
-                        SharedTransitionLayout(Modifier.fillMaxSize()) {
-                            AnimatedContent(
-                                CollectionScene(selected, selectedVisit),
-                                Modifier.fillMaxSize(),
-                                contentKey = { it.collection?.let { card -> "${card.key}:${it.visit}" } ?: "shelf" },
-                                transitionSpec = {
-                                    fadeIn(tween(200, 80)) togetherWith fadeOut(tween(140))
+                        }
+                    } else {
+                        AnimatedVisibility(!favorites && selected == null && searchExpanded, enter = expandVertically(), exit = shrinkVertically()) {
+                            OutlinedTextField(
+                                query,
+                                { query = it },
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 24.dp, end = 24.dp, bottom = 18.dp)
+                                    .liquidGlass(RoundedCornerShape(22.dp))
+                                    .focusRequester(searchFocus)
+                                    .testTag("online-search"),
+                                placeholder = { Text("搜索歌曲、艺人") },
+                                leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                                trailingIcon = {
+                                    if (query.isNotEmpty()) {
+                                        ActionIcon(Icons.Rounded.Close, "清空搜索", {
+                                            query = ""
+                                            submitted = ""
+                                            offset = 0
+                                        })
+                                    }
                                 },
-                                label = "collection-transition",
-                            ) { scene ->
-                                val destination = scene.collection
-                                // Exiting details retain their own list, including during rapid reversal.
-                                val pageList = remember(destination?.key, scene.visit, searching, submitted) { list }
-                                val pageKey =
-                                    if (searching) {
-                                        "search:$submitted"
-                                    } else if (favorites) {
-                                        collection?.key
+                                singleLine = true,
+                                shape = RoundedCornerShape(22.dp),
+                                colors =
+                                    OutlinedTextFieldDefaults.colors(
+                                        unfocusedBorderColor = Color.Transparent,
+                                        focusedBorderColor = Color.Transparent,
+                                        unfocusedContainerColor = Color.Transparent,
+                                        focusedContainerColor = Color.Transparent,
+                                    ),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions =
+                                    KeyboardActions(onSearch = {
+                                        focus.clearFocus()
+                                        submitted = query.trim()
+                                        selectedKey = null
+                                        offset = 0
+                                        reload++
+                                    }),
+                            )
+                        }
+                        val failure = error ?: state.error
+                        if (failure != null) {
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(failure, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                TextButton({
+                                    if (state.error != null) {
+                                        onRefresh()
                                     } else {
-                                        destination?.key
+                                        reload++
                                     }
-                                val pageTracks = tracks.takeIf { loadedKey == pageKey }.orEmpty()
-                                if (!favorites && destination == null && !searching) {
-                                    LazyVerticalGrid(
-                                        GridCells.Adaptive(145.dp),
-                                        state = shelf,
-                                        modifier = Modifier.fillMaxSize().testTag("online-shelf"),
-                                        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 4.dp, bottom = bottomInset),
-                                        horizontalArrangement = Arrangement.spacedBy(18.dp),
-                                        verticalArrangement = Arrangement.spacedBy(22.dp),
-                                    ) {
-                                        items(state.library.collections, key = { it.key }) { card ->
-                                            Column(
-                                                Modifier
-                                                    .animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = spring(stiffness = 320f))
-                                                    .clickable {
-                                                        selectedVisit++
-                                                        selectedKey = card.key
-                                                        submitted = ""
-                                                        offset = 0
-                                                        reload = 0
-                                                        error = null
-                                                        searchExpanded = false
-                                                        focus.clearFocus()
-                                                    }.testTag("collection-${card.key}"),
-                                            ) {
-                                                Cover(
-                                                    card.cover,
-                                                    card.title,
-                                                    Modifier.fillMaxWidth().aspectRatio(1f).then(
-                                                        if (card.key in visibleCards) {
-                                                            Modifier.sharedElement(
-                                                                rememberSharedContentState("cover:${card.key}"),
-                                                                animatedVisibilityScope = this@AnimatedContent,
-                                                                boundsTransform = { _, _ -> spring(dampingRatio = .9f, stiffness = 320f) },
-                                                            )
-                                                        } else {
-                                                            Modifier
-                                                        },
-                                                    ),
-                                                )
-                                                Text(
-                                                    card.title,
-                                                    Modifier.padding(top = 10.dp, start = 2.dp),
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    maxLines = 2,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                )
-                                                Text(
-                                                    if (card.kind == "album") card.artist.ifBlank { "专辑" } else "歌单 · ${card.count} 首",
-                                                    Modifier.padding(start = 2.dp, top = 4.dp),
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                )
-                                            }
+                                }) { Text("重试") }
+                            }
+                        }
+                        val pullState = rememberPullToRefreshState()
+                        val refreshing = state.refreshing || (loading && offset == 0)
+                        PullToRefreshBox(
+                            isRefreshing = refreshing,
+                            onRefresh = ::refresh,
+                            state = pullState,
+                            indicator = {
+                                if (favorites || !showingTracks) {
+                                    PullToRefreshDefaults.Indicator(
+                                        modifier = Modifier.align(Alignment.TopCenter).testTag("online-refresh-indicator"),
+                                        isRefreshing = refreshing,
+                                        state = pullState,
+                                    )
+                                }
+                            },
+                            modifier =
+                                Modifier.weight(1f).semantics {
+                                    customActions =
+                                        listOf(
+                                            CustomAccessibilityAction(if (favorites) "刷新我喜欢" else "刷新曲库") {
+                                                refresh()
+                                                true
+                                            },
+                                        )
+                                },
+                        ) {
+                            SharedTransitionLayout(Modifier.fillMaxSize()) {
+                                AnimatedContent(
+                                    CollectionScene(selected, selectedVisit),
+                                    Modifier.fillMaxSize(),
+                                    contentKey = { it.collection?.let { card -> "${card.key}:${it.visit}" } ?: "shelf" },
+                                    transitionSpec = {
+                                        fadeIn(tween(200, 80)) togetherWith fadeOut(tween(140))
+                                    },
+                                    label = "collection-transition",
+                                ) { scene ->
+                                    val destination = scene.collection
+                                    // Exiting details retain their own list, including during rapid reversal.
+                                    val pageList = remember(destination?.key, scene.visit, searching, submitted) { list }
+                                    val pageKey =
+                                        if (searching) {
+                                            "search:$submitted"
+                                        } else if (favorites) {
+                                            collection?.key
+                                        } else {
+                                            destination?.key
                                         }
-                                        if (state.loaded && state.library.collections.isEmpty() && failure == null) {
-                                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                                ShelfEmpty("收藏的专辑和你创建的歌单，会出现在这里")
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    LazyColumn(
-                                        state = pageList,
-                                        modifier = Modifier.fillMaxSize().testTag("online-tracks"),
-                                        contentPadding = PaddingValues(start = if (favorites) 0.dp else 24.dp, end = if (favorites) 0.dp else 24.dp, bottom = bottomInset),
-                                    ) {
-                                        if (favorites) {
-                                            item(key = "favorites-album-wall") {
-                                                FavoritesHero(pageTracks.take(30))
-                                            }
-                                        }
-                                        if (destination != null) {
-                                            item(key = "collection-header") {
-                                                Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    val pageTracks = tracks.takeIf { loadedKey == pageKey }.orEmpty()
+                                    if (!favorites && destination == null && !searching) {
+                                        LazyVerticalGrid(
+                                            GridCells.Adaptive(145.dp),
+                                            state = shelf,
+                                            modifier = Modifier.fillMaxSize().testTag("online-shelf"),
+                                            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = if (searchExpanded) 4.dp else 76.dp, bottom = bottomInset),
+                                            horizontalArrangement = Arrangement.spacedBy(18.dp),
+                                            verticalArrangement = Arrangement.spacedBy(22.dp),
+                                        ) {
+                                            items(state.library.collections, key = { it.key }) { card ->
+                                                Column(
+                                                    Modifier
+                                                        .animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = spring(stiffness = 320f))
+                                                        .clickable {
+                                                            selectedVisit++
+                                                            selectedKey = card.key
+                                                            submitted = ""
+                                                            offset = 0
+                                                            reload = 0
+                                                            error = null
+                                                            searchExpanded = false
+                                                            focus.clearFocus()
+                                                        }.testTag("collection-${card.key}"),
+                                                ) {
                                                     Cover(
-                                                        destination.cover,
-                                                        destination.title,
-                                                        Modifier
-                                                            .fillMaxWidth(.68f)
-                                                            .widthIn(max = 280.dp)
-                                                            .aspectRatio(1f)
-                                                            .sharedElement(
-                                                                rememberSharedContentState("cover:${destination.key}"),
-                                                                animatedVisibilityScope = this@AnimatedContent,
-                                                                boundsTransform = { _, _ -> spring(dampingRatio = .9f, stiffness = 320f) },
-                                                            ).testTag("collection-cover"),
+                                                        card.cover,
+                                                        card.title,
+                                                        Modifier.fillMaxWidth().aspectRatio(1f).then(
+                                                            if (card.key in visibleCards) {
+                                                                Modifier.sharedElement(
+                                                                    rememberSharedContentState("cover:${card.key}"),
+                                                                    animatedVisibilityScope = this@AnimatedContent,
+                                                                    boundsTransform = { _, _ -> spring(dampingRatio = .9f, stiffness = 320f) },
+                                                                )
+                                                            } else {
+                                                                Modifier
+                                                            },
+                                                        ),
                                                     )
                                                     Text(
-                                                        if (destination.kind == "album") destination.artist else "${destination.count} 首",
-                                                        Modifier.padding(top = 12.dp),
+                                                        card.title,
+                                                        Modifier.padding(top = 10.dp, start = 2.dp),
+                                                        style = MaterialTheme.typography.titleMedium,
+                                                        maxLines = 2,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                    )
+                                                    Text(
+                                                        if (card.kind == "album") card.artist.ifBlank { "专辑" } else "歌单 · ${card.count} 首",
+                                                        Modifier.padding(start = 2.dp, top = 4.dp),
                                                         style = MaterialTheme.typography.bodySmall,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
                                                     )
                                                 }
                                             }
-                                        }
-                                        itemsIndexed(pageTracks, key = { _, it -> it.id }) { index, track ->
-                                            SongRow(
-                                                track.song().copy(favorite = track.originalId in likes.ids || (favorites && !likes.ready)),
-                                                currentId == "netease:${track.id}",
-                                                {
-                                                    if (track.available) onPlay(pageTracks, index) else error = "当前账号暂时无法播放这首歌"
-                                                },
-                                                { onFavorite(track) },
-                                                modifier =
-                                                    Modifier
-                                                        .animateItem()
-                                                        .then(if (favorites) Modifier.padding(horizontal = 24.dp) else Modifier)
-                                                        .alpha(if (track.available) 1f else .5f),
-                                                favoriteEnabled = cloud.direct && likes.ready && track.originalId !in likes.pending,
-                                                showFavorite = !favorites,
-                                            )
-                                        }
-                                        if (more && loadedKey == key) {
-                                            item {
-                                                Spacer(Modifier.fillMaxWidth().height(20.dp))
+                                            if (state.loaded && state.library.collections.isEmpty() && failure == null) {
+                                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                                    ShelfEmpty("收藏的专辑和你创建的歌单，会出现在这里")
+                                                }
                                             }
                                         }
-                                        if (pageTracks.isEmpty() && !loading && !state.refreshing && state.loaded && failure == null) {
-                                            item {
-                                                ShelfEmpty(if (favorites) "还没有红心歌曲" else "没有找到歌曲")
+                                    } else {
+                                        LazyColumn(
+                                            state = pageList,
+                                            modifier = Modifier.fillMaxSize().testTag("online-tracks"),
+                                            contentPadding = PaddingValues(start = if (favorites) 0.dp else 24.dp, end = if (favorites) 0.dp else 24.dp, bottom = bottomInset),
+                                        ) {
+                                            if (favorites) {
+                                                item(key = "favorites-album-wall") {
+                                                    FavoritesHero(pageTracks.take(30))
+                                                }
+                                            }
+                                            if (destination != null) {
+                                                item(key = "collection-header") {
+                                                    Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                                        Cover(
+                                                            destination.cover,
+                                                            destination.title,
+                                                            Modifier
+                                                                .fillMaxWidth(.68f)
+                                                                .widthIn(max = 280.dp)
+                                                                .aspectRatio(1f)
+                                                                .sharedElement(
+                                                                    rememberSharedContentState("cover:${destination.key}"),
+                                                                    animatedVisibilityScope = this@AnimatedContent,
+                                                                    boundsTransform = { _, _ -> spring(dampingRatio = .9f, stiffness = 320f) },
+                                                                ).testTag("collection-cover"),
+                                                        )
+                                                        Text(
+                                                            if (destination.kind == "album") destination.artist else "${destination.count} 首",
+                                                            Modifier.padding(top = 12.dp),
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            itemsIndexed(pageTracks, key = { _, it -> it.id }) { index, track ->
+                                                SongRow(
+                                                    track.song().copy(favorite = track.originalId in likes.ids || (favorites && !likes.ready)),
+                                                    currentId == "netease:${track.id}",
+                                                    {
+                                                        if (track.available) onPlay(pageTracks, index) else error = "当前账号暂时无法播放这首歌"
+                                                    },
+                                                    { onFavorite(track) },
+                                                    modifier =
+                                                        Modifier
+                                                            .animateItem()
+                                                            .then(if (favorites) Modifier.padding(horizontal = 24.dp) else Modifier)
+                                                            .alpha(if (track.available) 1f else .5f),
+                                                    favoriteEnabled = cloud.direct && likes.ready && track.originalId !in likes.pending,
+                                                    showFavorite = !favorites,
+                                                )
+                                            }
+                                            if (more && loadedKey == key) {
+                                                item {
+                                                    Spacer(Modifier.fillMaxWidth().height(20.dp))
+                                                }
+                                            }
+                                            if (pageTracks.isEmpty() && !loading && !state.refreshing && state.loaded && failure == null) {
+                                                item {
+                                                    ShelfEmpty(if (favorites) "还没有红心歌曲" else "没有找到歌曲")
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
+                    }
+                }
+                if (floatingToolbar) {
+                    Box(Modifier.align(Alignment.TopEnd)) {
+                        CompositionLocalProvider(LocalGlassBackdrop provides shelfBackdrop) { toolbar() }
                     }
                 }
             }

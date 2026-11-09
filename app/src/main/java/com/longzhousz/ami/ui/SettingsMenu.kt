@@ -34,16 +34,18 @@ internal fun SettingsMenu(
     content: LazyListScope.() -> Unit,
 ) {
     Column(Modifier.fillMaxSize().testTag("settings-${section.name.lowercase(java.util.Locale.ROOT)}")) {
-        Row(Modifier.fillMaxWidth().padding(start = if (section == SettingsSection.HOME) 28.dp else 8.dp, end = 24.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (section != SettingsSection.HOME) {
-                ActionIcon(Icons.Rounded.ArrowBack, stringResource(R.string.settings_back), onBack)
-                Spacer(Modifier.width(8.dp))
+        if (section != SettingsSection.HOME) {
+            Row(Modifier.fillMaxWidth().padding(start = if (section == SettingsSection.HOME) 28.dp else 8.dp, end = 24.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (section != SettingsSection.HOME) {
+                    ActionIcon(Icons.Rounded.ArrowBack, stringResource(R.string.settings_back), onBack)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(stringResource(section.title), style = MaterialTheme.typography.headlineSmall)
             }
-            Text(stringResource(section.title), style = MaterialTheme.typography.headlineSmall)
         }
         LazyColumn(
             Modifier.weight(1f),
-            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 30.dp),
+            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = if (section == SettingsSection.HOME) 12.dp else 0.dp, bottom = 30.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             content = content,
         )

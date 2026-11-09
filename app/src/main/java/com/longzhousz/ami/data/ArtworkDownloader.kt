@@ -36,6 +36,25 @@ internal class ArtworkDownloader(
                 }
                 URI("https://$host${uri.rawPath}${uri.rawQuery?.let { "?$it" }.orEmpty()}").toASCIIString()
             }.getOrNull()
+
+        /** NetEase CDN shards and resize variants refer to the same original image. */
+        fun originalUrl(raw: String?): String? =
+            url(raw)?.let {
+                val uri = URI(it)
+                val query =
+                    uri.rawQuery
+                        ?.split('&')
+                        ?.filterNot { part -> part.substringBefore('=').equals("param", ignoreCase = true) }
+                        ?.joinToString("&")
+                        ?.takeIf(String::isNotEmpty)
+                "https://${uri.host}${uri.rawPath}${query?.let { value -> "?$value" }.orEmpty()}"
+            }
+
+        fun sharedUrl(raw: String?): String? =
+            originalUrl(raw)?.let {
+                val uri = URI(it)
+                "https://p1.music.126.net${uri.rawPath}${uri.rawQuery?.let { value -> "?$value" }.orEmpty()}"
+            }
     }
 
     private val closer = Dispatchers.IO.limitedParallelism(1)

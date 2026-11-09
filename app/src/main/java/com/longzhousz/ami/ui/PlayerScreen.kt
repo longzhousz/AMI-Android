@@ -378,18 +378,7 @@ private fun PlayerControls(
                         GlassDropdownMenu(modeMenu, { modeMenu = false }) {
                             PlayMode.entries.forEach { option ->
                                 DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(option.label)
-                                            if (option == PlayMode.Ordered || option == PlayMode.Loop) {
-                                                Text(
-                                                    if (option == PlayMode.Ordered) stringResource(R.string.player_ordered_description) else stringResource(R.string.player_repeat_description),
-                                                    fontSize = 12.sp,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                            }
-                                        }
-                                    },
+                                    text = { Text(option.label) },
                                     leadingIcon = { Icon(option.icon(), null) },
                                     trailingIcon = { if (mode == option) Icon(Icons.Rounded.Check, stringResource(R.string.player_current_mode)) },
                                     onClick = {
@@ -468,7 +457,6 @@ private fun PlayerControls(
 
 private fun PlayMode.icon(): ImageVector =
     when (this) {
-        PlayMode.Ordered -> Icons.Rounded.ArrowForward
         PlayMode.Loop -> Icons.Rounded.Repeat
         PlayMode.One -> Icons.Rounded.RepeatOne
         PlayMode.Shuffle -> Icons.Rounded.Shuffle

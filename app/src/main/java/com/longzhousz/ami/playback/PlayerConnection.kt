@@ -15,7 +15,6 @@ enum class PlayMode(
     val repeat: Int,
     val shuffle: Boolean = false,
 ) {
-    Ordered("顺序播放", Player.REPEAT_MODE_OFF),
     Loop("列表循环", Player.REPEAT_MODE_ALL),
     One("单曲循环", Player.REPEAT_MODE_ONE),
     Shuffle("随机播放", Player.REPEAT_MODE_ALL, true),
@@ -30,7 +29,7 @@ enum class PlayMode(
                 repeat == Player.REPEAT_MODE_ONE -> One
                 shuffle -> Shuffle
                 repeat == Player.REPEAT_MODE_ALL -> Loop
-                else -> Ordered
+                else -> Loop
             }
     }
 }
