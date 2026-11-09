@@ -70,6 +70,7 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
     var previousImage by remember { mutableStateOf<MemoryCache.Key?>(null) }
     var previousPainter by remember { mutableStateOf<Painter?>(null) }
     var failed by remember(imagePath) { mutableStateOf(false) }
+    var cacheRetry by remember(imagePath) { mutableIntStateOf(0) }
     val latestPath by rememberUpdatedState(imagePath)
     val cachedPainter =
         remember(imagePath, context) {
@@ -90,6 +91,7 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
             artwork.preview(imagePath)?.let {
                 previousPainter = BitmapPainter(it.asImageBitmap())
                 previousImage = MemoryCache.Key(imagePath)
+                cacheRetry = 1
                 failed = false
             }
         }
@@ -134,7 +136,7 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
             // One request and one retained painter. Fade only after decoding succeeds, so a slow
             // request cannot fade the old image into an empty frame; memory hits remain immediate.
             val request =
-                remember(imagePath, context, animateChanges) {
+                remember(imagePath, context, animateChanges, cacheRetry) {
                     ImageRequest
                         .Builder(context)
                         .data(
@@ -166,7 +168,7 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
                 }
             // A new painter starts independently; cancellation of a slow old request must not
             // block the current cover. The retained placeholder stays outside this keyed scope.
-            key(imagePath) {
+            key(imagePath, cacheRetry) {
                 AsyncImage(
                     request,
                     "《$title》封面",
@@ -186,6 +188,7 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
                             if (preview != null) {
                                 previousPainter = BitmapPainter(preview.asImageBitmap())
                                 previousImage = MemoryCache.Key(imagePath)
+                                cacheRetry = 1
                                 failed = false
                             } else {
                                 failed = true
