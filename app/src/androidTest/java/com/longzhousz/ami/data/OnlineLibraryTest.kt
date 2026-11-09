@@ -1000,10 +1000,11 @@ class OnlineLibraryTest {
                     compose.mainClock.advanceTimeByFrame()
                     val heart = compose.onNodeWithContentDescription("专辑曲目 20：加入喜欢")
                     heart.assertIsEnabled()
-                    val point = if (tapHeartPosition) heart.fetchSemanticsNode().boundsInRoot.center else bounds.center
-                    assertTrue("The old heart must overlap the returned album card", bounds.contains(point))
+                    val oldHeart = heart.fetchSemanticsNode().boundsInRoot.center
+                    assertTrue("The old heart must overlap the resting album card", bounds.contains(oldHeart))
                     compose.onNodeWithContentDescription("返回曲库").performClick()
                     compose.mainClock.advanceTimeBy(elapsed)
+                    val point = if (tapHeartPosition) oldHeart else card.fetchSemanticsNode().boundsInRoot.center
                     val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
                     // Real pointer hit testing: semantic performClick would bypass the overlapping page.
                     compose.onRoot().performTouchInput { click(point - root.topLeft) }
@@ -1013,12 +1014,14 @@ class OnlineLibraryTest {
                         assertEquals("A returned cover tap must not play an outgoing song ($elapsed ms, heart=$tapHeartPosition)", 0, plays)
                         assertEquals("A returned cover tap must not favorite an outgoing song ($elapsed ms, heart=$tapHeartPosition)", 0, hearts)
                     }
-                    try {
+                    if (!tapHeartPosition) {
                         compose.onNodeWithTag("collection-cover").assertIsDisplayed()
-                    } catch (failure: AssertionError) {
-                        throw AssertionError("Cover tap at $point after $elapsed ms, heart=$tapHeartPosition\n${compose.onRoot().printToString()}", failure)
                     }
-                    compose.onNodeWithContentDescription("返回曲库").performClick()
+                    // The old heart can fall in an empty gap while bounds are animating.
+                    // It must never act on the outgoing list, whether or not it hits a card.
+                    if (compose.onAllNodesWithTag("collection-cover").fetchSemanticsNodes().isNotEmpty()) {
+                        compose.onNodeWithContentDescription("返回曲库").performClick()
+                    }
                     card.assertIsDisplayed()
                 }
             }
