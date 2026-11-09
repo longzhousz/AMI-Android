@@ -60,7 +60,7 @@ import xml.etree.ElementTree as ET
 package, path = sys.argv[1:]
 nodes = list(ET.parse(path).iter('node'))
 assert any(n.get('package') == package for n in nodes), 'App window is not visible'
-assert any(n.get('text') == '曲库' for n in nodes), 'Library did not render'
+assert not any(n.get('text') == '曲库' for n in nodes), 'The removed library heading is still visible'
 assert any(n.get('text') == '登录网易云' for n in nodes), 'Online sign-in entry is missing'
 assert all(any(n.get('content-desc') == label for n in nodes) for label in ('曲库', '我喜欢', '设置')), 'Icon navigation is missing'
 assert not any(n.get('text') in ('我喜欢', '设置') for n in nodes), 'Bottom navigation still has text labels'
