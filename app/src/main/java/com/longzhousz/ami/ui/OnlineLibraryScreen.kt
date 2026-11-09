@@ -267,6 +267,22 @@ internal fun OnlineLibraryContent(
                 return@LaunchedEffect
             }
         }
+        val pageOffset = offset
+        val pageVisit = selectedVisit
+        val pageSession = cloud.likes.value.session
+        val previous = if (pageOffset == 0 || loadedKey != key) emptyList() else tracks
+
+        fun isCurrentPage(): Boolean {
+            val currentKey =
+                if (submitted.isNotBlank()) {
+                    "search:$submitted"
+                } else if (favorites) {
+                    collection?.key
+                } else {
+                    selectedKey
+                }
+            return currentKey == key && selectedVisit == pageVisit && cloud.configured.value && cloud.likes.value.session == pageSession
+        }
         loading = true
         error = null
         if (loadedKey != key) {
@@ -275,9 +291,10 @@ internal fun OnlineLibraryContent(
             list.scrollToItem(0)
         }
         try {
-            val page = if (searching) cloud.search(submitted, offset) else cloud.tracks(collection!!, offset)
-            val previous = if (offset == 0 || loadedKey != key) emptyList() else tracks
-            tracks = withContext(Dispatchers.Default) { (previous + page.tracks).distinctBy { it.id }.take(20000) }
+            val page = if (searching) cloud.search(submitted, pageOffset) else cloud.tracks(collection!!, pageOffset)
+            val merged = withContext(Dispatchers.Default) { (previous + page.tracks).distinctBy { it.id }.take(20000) }
+            if (!isCurrentPage()) return@LaunchedEffect
+            tracks = merged
             loadedKey = key
             next = page.nextOffset
             more = page.more
@@ -286,9 +303,9 @@ internal fun OnlineLibraryContent(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            error = failure.message?.take(150) ?: "音乐暂时无法载入"
+            if (isCurrentPage()) error = failure.message?.take(150) ?: "音乐暂时无法载入"
         } finally {
-            if (currentCoroutineContext().isActive) loading = false
+            if (currentCoroutineContext().isActive && isCurrentPage()) loading = false
         }
     }
     LaunchedEffect(key, list) {

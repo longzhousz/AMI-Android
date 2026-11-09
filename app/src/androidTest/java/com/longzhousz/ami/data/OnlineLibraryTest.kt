@@ -965,9 +965,9 @@ class OnlineLibraryTest {
 
     @Test fun returningShelfOwnsRapidCoverTapsInsteadOfOutgoingSongsAndHearts() {
         val shelf = library()
+        val album = shelf.collections.first { it.key == "album:201" }
         runBlocking {
             cloud.refreshLikes()
-            val album = shelf.collections.first { it.key == "album:201" }
             cloud.savePage(false, album.key, cloud.tracks(album))
         }
         var plays = 0
@@ -1013,6 +1013,15 @@ class OnlineLibraryTest {
                     compose.runOnIdle {
                         assertEquals("A returned cover tap must not play an outgoing song ($elapsed ms, heart=$tapHeartPosition)", 0, plays)
                         assertEquals("A returned cover tap must not favorite an outgoing song ($elapsed ms, heart=$tapHeartPosition)", 0, hearts)
+                        assertEquals(
+                            "A late tail page must not replace the cached album prefix",
+                            (1..30).map(Int::toString),
+                            cloud
+                                .savedPage(false, album.key)
+                                ?.tracks
+                                ?.take(30)
+                                ?.map { it.id },
+                        )
                     }
                     if (!tapHeartPosition) {
                         compose.onNodeWithTag("collection-cover").assertIsDisplayed()
