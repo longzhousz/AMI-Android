@@ -488,7 +488,7 @@ internal fun OnlineLibraryContent(
                                         } else {
                                             destination?.key
                                         }
-                                    val pageTracks = tracks.takeIf { loadedKey == pageKey }.orEmpty()
+                                    val pageTracks = tracks.takeIf { loadedKey == pageKey } ?: pageKey?.let { cloud.savedPage(favorites, it)?.tracks }.orEmpty()
                                     if (!favorites && destination == null && !searching) {
                                         LazyVerticalGrid(
                                             GridCells.Adaptive(145.dp),

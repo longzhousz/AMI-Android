@@ -393,7 +393,7 @@ class OnlineLibraryTest {
         }
         val firstBounds = compose.onNodeWithTag("collection-${state.library.collections.first().key}").fetchSemanticsNode().boundsInRoot
         val gridBounds = compose.onNodeWithTag("online-shelf").fetchSemanticsNode().boundsInRoot
-        assertTrue("Refresh must anchor the new first row", firstBounds.top - gridBounds.top < 20)
+        assertEquals("Refresh must anchor the first row below the floating controls", 76f * context.resources.displayMetrics.density, firstBounds.top - gridBounds.top, 2f * context.resources.displayMetrics.density)
     }
 
     @Test fun streamRequestsHighQualityWithoutWritingUrlsOrCredentialsToTheQueue() =
