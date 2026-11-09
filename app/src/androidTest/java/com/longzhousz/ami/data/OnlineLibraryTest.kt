@@ -963,6 +963,70 @@ class OnlineLibraryTest {
         compose.onAllNodesWithTag("online-shelf").assertCountEquals(1)
     }
 
+    @Test fun returningShelfOwnsRapidCoverTapsInsteadOfOutgoingSongsAndHearts() {
+        val shelf = library()
+        runBlocking {
+            cloud.refreshLikes()
+            val album = shelf.collections.first { it.key == "album:201" }
+            cloud.savePage(false, album.key, cloud.tracks(album))
+        }
+        var plays = 0
+        var hearts = 0
+        compose.setContent {
+            AmiTheme("light") {
+                Surface {
+                    OnlineLibraryContent(
+                        cloud,
+                        CloudLibraryState(shelf, loaded = true),
+                        false,
+                        null,
+                        {},
+                        { _, _ -> plays++ },
+                        {},
+                        onFavorite = { hearts++ },
+                    )
+                }
+            }
+        }
+        val card = compose.onNodeWithTag("collection-album:201")
+        val bounds = card.fetchSemanticsNode().boundsInRoot
+        try {
+            for (elapsed in listOf(16L, 96L, 240L)) {
+                for (tapHeartPosition in listOf(false, true)) {
+                    compose.mainClock.autoAdvance = false
+                    card.performClick()
+                    compose.mainClock.advanceTimeBy(96)
+                    compose.onNodeWithTag("online-tracks").performScrollToIndex(20)
+                    compose.mainClock.advanceTimeByFrame()
+                    val heart = compose.onNodeWithContentDescription("专辑曲目 20：加入喜欢")
+                    heart.assertIsEnabled()
+                    val point = if (tapHeartPosition) heart.fetchSemanticsNode().boundsInRoot.center else bounds.center
+                    assertTrue("The old heart must overlap the returned album card", bounds.contains(point))
+                    compose.onNodeWithContentDescription("返回曲库").performClick()
+                    compose.mainClock.advanceTimeBy(elapsed)
+                    val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+                    // Real pointer hit testing: semantic performClick would bypass the overlapping page.
+                    compose.onRoot().performTouchInput { click(point - root.topLeft) }
+                    compose.mainClock.advanceTimeBy(1500)
+                    compose.mainClock.autoAdvance = true
+                    compose.runOnIdle {
+                        assertEquals("A returned cover tap must not play an outgoing song ($elapsed ms, heart=$tapHeartPosition)", 0, plays)
+                        assertEquals("A returned cover tap must not favorite an outgoing song ($elapsed ms, heart=$tapHeartPosition)", 0, hearts)
+                    }
+                    try {
+                        compose.onNodeWithTag("collection-cover").assertIsDisplayed()
+                    } catch (failure: AssertionError) {
+                        throw AssertionError("Cover tap at $point after $elapsed ms, heart=$tapHeartPosition\n${compose.onRoot().printToString()}", failure)
+                    }
+                    compose.onNodeWithContentDescription("返回曲库").performClick()
+                    card.assertIsDisplayed()
+                }
+            }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
     @Test fun validStreamUrlsAreReusedUntilInvalidatedAndUnspecifiedExpiryIsNeverCached() =
         runBlocking(Dispatchers.IO) {
             val song = cloud.tracks("100").tracks.first()

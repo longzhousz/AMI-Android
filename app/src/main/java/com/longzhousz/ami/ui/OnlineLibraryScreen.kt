@@ -50,6 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -73,7 +74,9 @@ import kotlinx.coroutines.withContext
 private data class CollectionScene(
     val collection: CloudPlaylist?,
     val visit: Int,
-)
+) {
+    val key get() = collection?.let { "${it.key}:$visit" } ?: "shelf"
+}
 
 @Composable internal fun rememberNeteaseLogin(model: AmiViewModel): () -> Unit {
     val context = LocalContext.current
@@ -468,16 +471,26 @@ internal fun OnlineLibraryContent(
                                 },
                         ) {
                             SharedTransitionLayout(Modifier.fillMaxSize()) {
+                                val targetScene = CollectionScene(selected, selectedVisit)
+                                val shelfTransform = remember { fadeIn(tween(200, 80)) togetherWith fadeOut(tween(140)) }
+                                val detailTransform = remember { fadeIn(tween(200, 80)) togetherWith fadeOut(tween(140)) }
+                                SideEffect {
+                                    // AnimatedContent reuses the shelf in its old stacking position on reversal.
+                                    shelfTransform.targetContentZIndex = if (selected == null) 1f else 0f
+                                    detailTransform.targetContentZIndex = if (selected == null) 0f else 1f
+                                }
                                 AnimatedContent(
-                                    CollectionScene(selected, selectedVisit),
+                                    targetScene,
                                     Modifier.fillMaxSize(),
-                                    contentKey = { it.collection?.let { card -> "${card.key}:${it.visit}" } ?: "shelf" },
+                                    contentKey = { it.key },
                                     transitionSpec = {
-                                        fadeIn(tween(200, 80)) togetherWith fadeOut(tween(140))
+                                        if (targetState.collection == null) shelfTransform else detailTransform
                                     },
                                     label = "collection-transition",
                                 ) { scene ->
                                     val destination = scene.collection
+                                    val active = scene.key == targetScene.key
+                                    val sceneModifier = if (active) Modifier else Modifier.clearAndSetSemantics {}
                                     // Exiting details retain their own list, including during rapid reversal.
                                     val pageList = remember(destination?.key, scene.visit, searching, submitted) { list }
                                     val pageKey =
@@ -493,7 +506,7 @@ internal fun OnlineLibraryContent(
                                         LazyVerticalGrid(
                                             GridCells.Adaptive(145.dp),
                                             state = shelf,
-                                            modifier = Modifier.fillMaxSize().testTag("online-shelf"),
+                                            modifier = sceneModifier.fillMaxSize().testTag("online-shelf"),
                                             contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = if (searchExpanded) 4.dp else 76.dp, bottom = bottomInset),
                                             horizontalArrangement = Arrangement.spacedBy(18.dp),
                                             verticalArrangement = Arrangement.spacedBy(22.dp),
@@ -502,7 +515,7 @@ internal fun OnlineLibraryContent(
                                                 Column(
                                                     Modifier
                                                         .animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = spring(stiffness = 320f))
-                                                        .clickable {
+                                                        .clickable(enabled = active) {
                                                             selectedVisit++
                                                             selectedKey = card.key
                                                             submitted = ""
@@ -554,7 +567,7 @@ internal fun OnlineLibraryContent(
                                     } else {
                                         LazyColumn(
                                             state = pageList,
-                                            modifier = Modifier.fillMaxSize().testTag("online-tracks"),
+                                            modifier = sceneModifier.fillMaxSize().testTag("online-tracks"),
                                             contentPadding = PaddingValues(start = if (favorites) 0.dp else 24.dp, end = if (favorites) 0.dp else 24.dp, bottom = bottomInset),
                                         ) {
                                             if (favorites) {
@@ -592,15 +605,17 @@ internal fun OnlineLibraryContent(
                                                     track.song().copy(favorite = track.originalId in likes.ids || (favorites && !likes.ready)),
                                                     currentId == "netease:${track.id}",
                                                     {
-                                                        if (track.available) onPlay(pageTracks, index) else error = "当前账号暂时无法播放这首歌"
+                                                        if (active) {
+                                                            if (track.available) onPlay(pageTracks, index) else error = "当前账号暂时无法播放这首歌"
+                                                        }
                                                     },
-                                                    { onFavorite(track) },
+                                                    { if (active) onFavorite(track) },
                                                     modifier =
                                                         Modifier
                                                             .animateItem()
                                                             .then(if (favorites) Modifier.padding(horizontal = 24.dp) else Modifier)
                                                             .alpha(if (track.available) 1f else .5f),
-                                                    favoriteEnabled = cloud.direct && likes.ready && track.originalId !in likes.pending,
+                                                    favoriteEnabled = active && cloud.direct && likes.ready && track.originalId !in likes.pending,
                                                     showFavorite = !favorites,
                                                 )
                                             }

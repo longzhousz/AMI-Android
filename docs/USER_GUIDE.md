@@ -6,9 +6,9 @@
 
 0.2.6 更新珍珠白／墨蓝音符图标，适配系统圆形、圆角方形和主题图标。若桌面暂时显示旧图标，可移除快捷方式后从应用列表重新添加；不要卸载或清除数据。
 
-从 [最新发布](https://github.com/longzhousz/AMI-Android/releases/latest) 下载 `AMI-Android-0.2.10-online-preview.apk`。最低 Android 13（API 33），包名为 `com.longzhousz.ami.musicpreview`。
+从 [最新发布](https://github.com/longzhousz/AMI-Android/releases/latest) 下载 `AMI-Android-0.2.11-online-preview.apk`。最低 Android 13（API 33），包名为 `com.longzhousz.ami.musicpreview`。
 
-云端 0.1.14～0.2.9 使用相同包名与签名，直接覆盖更新可保留登录、设置、曲库和译文。其他包名的旧试用包可并存，数据不自动共享；本地自行签名的同包名安装通常不能直接覆盖。不要为解决签名冲突卸载或清除已有应用，卸载会丢失应用私有数据。
+云端 0.1.14～0.2.10 使用相同包名与签名，直接覆盖更新可保留登录、设置、曲库和译文。其他包名的旧试用包可并存，数据不自动共享；本地自行签名的同包名安装通常不能直接覆盖。不要为解决签名冲突卸载或清除已有应用，卸载会丢失应用私有数据。
 
 在 AMI 打开「登录网易云」，由自己在网易云官方 HTTPS 页面输入账号、密码或验证码，完成后点击「完成登录」。之后运行只需要手机，无需网易云 App 后台播放、电脑服务、开放平台应用或私钥。账号管理位于设置。
 
