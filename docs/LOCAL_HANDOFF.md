@@ -1,6 +1,6 @@
 # AMI 当前交接
 
-当前开发版本 **0.2.10 / versionCode 32**，最低 Android 13，数据库与签名不变。上一版证据见 [0.2.9 交接](archive/LOCAL_HANDOFF_0.2.9.md)。
+当前版本 **0.2.10 / versionCode 32**，最低 Android 13，数据库 schema 6、在线音频缓存 schema 1 与签名不变。应用源码 `7caab953db6bfdecca8687bbf0469547ac8851c0`，之后的提交只更新交付文档。上一版证据见 [0.2.9 交接](archive/LOCAL_HANDOFF_0.2.9.md)。
 
 ## 本轮修改
 
@@ -12,6 +12,25 @@
 
 曲库首页删掉“曲库”大标题，搜索／发现按钮悬浮于列表上方，玻璃采样滚动内容；首屏为按钮留出空间，滚动后封面可从按钮下穿过。详情与搜索仍保留标题和返回入口。设置首页删掉“设置”标题，子菜单标题与返回保留。
 
-## 验证与交付状态
+## 验证范围
 
-正在完成检查；未完成的测试不计通过，没有连接真实手机。
+- Spotless、detekt、116 项 JVM 测试、Lint、调试与优化构建通过。
+- [完整回归](https://github.com/longzhousz/AMI-Android/actions/runs/42601167796)：Android 13／17 各 164 项原生测试通过，逐项核对测试名，无失败、错误或跳过；后台回收与媒体恢复检查通过。
+- 覆盖同图不同 CDN／尺寸共用一次下载、离线缓存复用、专辑重入、曲库刷新位置与三个纯标题播放模式；已检查两套系统的曲库和设置截图。
+- [实际签名包覆盖验证](https://github.com/longzhousz/AMI-Android/actions/runs/42602429609)：两套系统从 0.2.9 覆盖更新，完成两次启动、设置、聆听周期及歌词子菜单检查。实际安装包摘要与交付一致，崩溃缓冲区为空；界面树确认首页没有“曲库”“设置”文字标题。
+
+[首轮回归](https://github.com/longzhousz/AMI-Android/actions/runs/42595882972) 暴露旧曲库首项位置断言与缓存专辑重入的首帧空列表，已分别更新悬浮栏间距断言和同步缓存回显。Android 17 同轮另有系统 Launcher ANR 抢走焦点；首轮优化包检查仍使用已删除的“曲库”标题断言，已修正。上述失败及被后续提交取消的运行不计通过。
+
+没有连接真实手机；不新增真实账号、触感、帧率、音质、耗电或厂商能力结论。保留现有动效与材质配置，未降低视觉效果来通过检查。
+
+## 安装包
+
+`AMI-Android-0.2.10-online-preview.apk`，5,597,818 bytes；包名 `com.longzhousz.ami.musicpreview`，版本 `0.2.10-music-preview` / versionCode 32。SHA-256：
+
+```text
+3871e6f7b7ce936ed456fea55036670a7e8e1ee0285653ae8b3fc1e3f5ea038a
+```
+
+证书 SHA-256：`238e0c33d7deebc6dd873ae8f0e844cf626b873f2ddf2ea8900d4916e2dd6f39`，与云端 0.2.9 相同。可直接覆盖云端 0.1.14～0.2.9，保留登录、设置、曲库、歌词与聆听记录。包名、版本、最低系统、v2 签名、16 KiB 对齐、嵌入源码和附件摘要已核对。
+
+[0.2.10 发布](https://github.com/longzhousz/AMI-Android/releases/tag/android-v0.2.10-preview) 提供 APK、使用说明与校验清单；已匿名核对最新发布及全部附件内容。0.2.9 发布转为草稿，本地三个旧交付文件归档后共 96 项文件摘要核对一致。历史与标签保留，main 不放 APK，稳定中英 README 未改变。
