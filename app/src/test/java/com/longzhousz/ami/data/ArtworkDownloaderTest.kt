@@ -36,6 +36,27 @@ class ArtworkDownloaderTest {
         ).forEach { assertNull(it, ArtworkDownloader.url(it)) }
     }
 
+    @Test fun scaledUrlKeepsTheOriginalPathAndAddsABoundedResize() {
+        assertEquals("$address?param=800y800", ArtworkDownloader.scaledUrl(address))
+        assertEquals("$address?order=1&param=800y800", ArtworkDownloader.scaledUrl("$address?order=1"))
+        assertEquals("$address?param=800y800", ArtworkDownloader.scaledUrl("$address?param=130y130"))
+        assertNull(ArtworkDownloader.scaledUrl("https://attacker.test/cover.jpg"))
+        assertNull(ArtworkDownloader.scaledUrl(null))
+    }
+
+    @Test fun oversizedOriginalsSignalAFallbackInsteadOfBecomingCoverBytes() =
+        runBlocking {
+            val connection = ImageConnection(byteArrayOf(1), declaredSize = ArtworkDownloader.MAX_BYTES.toLong() + 1)
+            try {
+                ArtworkDownloader { connection }.download(address)
+                fail("Oversized original accepted")
+            } catch (_: ArtworkTooLarge) {
+                // The cache retries the same cover with a bounded CDN resize.
+            }
+            assertTrue(connection.disconnected)
+            assertFalse(connection.opened)
+        }
+
     @Test fun downloadsOverHttpsWithoutCredentialsAndClosesTheConnection() =
         runBlocking {
             val image = byteArrayOf(1, 2, 3)

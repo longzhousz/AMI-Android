@@ -14,6 +14,9 @@ import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+/** An original is larger than the display budget; the caller may retry with a CDN resize. */
+internal class ArtworkTooLarge : IOException("封面图片过大")
+
 /** NCM artwork is untrusted input. Only NetEase image hosts are contacted, without credentials. */
 internal class ArtworkDownloader(
     private val openConnection: (String) -> HttpURLConnection = {
@@ -55,6 +58,13 @@ internal class ArtworkDownloader(
                 val uri = URI(it)
                 "https://p1.music.126.net${uri.rawPath}${uri.rawQuery?.let { value -> "?$value" }.orEmpty()}"
             }
+
+        /** Oversized originals still get a cover: a bounded CDN resize keeps the same cache key. */
+        fun scaledUrl(raw: String?): String? =
+            originalUrl(raw)?.let { base ->
+                val separator = if (base.contains('?')) '&' else '?'
+                url("$base${separator}param=800y800")
+            }
     }
 
     private val closer = Dispatchers.IO.limitedParallelism(1)
@@ -75,7 +85,7 @@ internal class ArtworkDownloader(
                             if (connection.contentType?.substringBefore(';')?.startsWith("image/", ignoreCase = true) != true) {
                                 throw IOException("封面响应不是图片")
                             }
-                            if (connection.contentLengthLong > MAX_BYTES) throw IOException("封面图片过大")
+                            if (connection.contentLengthLong > MAX_BYTES) throw ArtworkTooLarge()
                             val deadline = System.nanoTime() + 15_000_000_000L
                             val bytes =
                                 connection.inputStream.use { input ->
@@ -86,7 +96,7 @@ internal class ArtworkDownloader(
                                         if (System.nanoTime() > deadline) throw SocketTimeoutException("封面下载超时")
                                         val count = input.read(buffer)
                                         if (count < 0) break
-                                        if (output.size() + count > MAX_BYTES) throw IOException("封面图片过大")
+                                        if (output.size() + count > MAX_BYTES) throw ArtworkTooLarge()
                                         output.write(buffer, 0, count)
                                     }
                                     output.toByteArray().also { if (it.isEmpty()) throw IOException("封面图片为空") }

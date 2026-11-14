@@ -104,7 +104,15 @@ internal class OnlineArtworkCache(
             cached(file, url, hash)?.let { return@withContext it }
             lock(hash).withLock {
                 cached(file, url, hash)?.let { return@withLock it }
-                val bytes = download(requireNotNull(ArtworkDownloader.originalUrl(raw)))
+                val original = requireNotNull(ArtworkDownloader.originalUrl(raw))
+                val bytes =
+                    try {
+                        download(original)
+                    } catch (
+                        tooLarge: ArtworkTooLarge,
+                    ) {
+                        download(requireNotNull(ArtworkDownloader.scaledUrl(raw)) { "不支持的封面地址" })
+                    }
                 require(bytes.size in 1..ArtworkDownloader.MAX_BYTES)
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
