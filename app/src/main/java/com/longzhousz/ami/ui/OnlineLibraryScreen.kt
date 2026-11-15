@@ -489,19 +489,17 @@ internal fun OnlineLibraryContent(
                         ) {
                             SharedTransitionLayout(Modifier.fillMaxSize()) {
                                 val targetScene = CollectionScene(selected, selectedVisit)
-                                val shelfTransform = remember { fadeIn(tween(200, 80)) togetherWith fadeOut(tween(140)) }
-                                val detailTransform = remember { fadeIn(tween(200, 80)) togetherWith fadeOut(tween(140)) }
-                                SideEffect {
-                                    // AnimatedContent reuses the shelf in its old stacking position on reversal.
-                                    shelfTransform.targetContentZIndex = if (selected == null) 1f else 0f
-                                    detailTransform.targetContentZIndex = if (selected == null) 0f else 1f
-                                }
                                 AnimatedContent(
                                     targetScene,
                                     Modifier.fillMaxSize(),
                                     contentKey = { it.key },
+                                    // Each navigation gets its own transform. Mutating a shared transform
+                                    // from a SideEffect also changed the z-index of a running reverse
+                                    // transition, which made the shared cover jump on the first frame.
                                     transitionSpec = {
-                                        if (targetState.collection == null) shelfTransform else detailTransform
+                                        (fadeIn(tween(200, 80)) togetherWith fadeOut(tween(140))).apply {
+                                            targetContentZIndex = 1f
+                                        }
                                     },
                                     label = "collection-transition",
                                 ) { scene ->

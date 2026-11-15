@@ -67,6 +67,39 @@ class NeteaseTransportTest {
         assertTrue(connection.body.toString("UTF-8").matches(Regex("params=[0-9A-F]+")))
     }
 
+    @Test fun likeWritesUseTheMobileClientEndpointWithTheEncryptedTrackAndLikeFlag() =
+        runBlocking {
+            val connection = Response("{\"code\":200,\"playlistId\":123}")
+            var address = ""
+            val client =
+                NeteaseTransport {
+                    address = it
+                    connection
+                }
+            val result =
+                client.postClient(
+                    "song/like",
+                    JSONObject().put("trackId", "1234").put("like", false),
+                    "MUSIC_U=test; __csrf=csrf; NMTID=session",
+                )
+            assertEquals(200, result.getInt("code"))
+            assertEquals("https://interface.music.163.com/eapi/song/like", address)
+            assertTrue(connection.getRequestProperty("Cookie").split("; ").contains("MUSIC_U=test"))
+            assertTrue(connection.getRequestProperty("User-Agent").startsWith("NeteaseMusic/9.5.61"))
+            assertFalse(connection.instanceFollowRedirects)
+            assertTrue(connection.closed)
+            val hex = connection.body.toString("UTF-8").removePrefix("params=")
+            val raw =
+                javax.crypto.Cipher.getInstance("AES/ECB/PKCS5Padding").run {
+                    init(javax.crypto.Cipher.DECRYPT_MODE, javax.crypto.spec.SecretKeySpec("e82ckenh8dichen8".toByteArray(), "AES"))
+                    doFinal(hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()).toString(Charsets.UTF_8)
+                }
+            val payload = JSONObject(raw.split("-36cd479b6b5-")[1])
+            assertEquals("1234", payload.getString("trackId"))
+            assertFalse(payload.getBoolean("like"))
+            assertEquals("csrf", payload.getString("csrf_token"))
+        }
+
     @Test fun bothClientContextsKeepCookieAndEncryptedHeaderConsistentWithoutUsingAmisVersion() {
         for (desktop in listOf(false, true)) {
             val connection = Response("{\"code\":200}")

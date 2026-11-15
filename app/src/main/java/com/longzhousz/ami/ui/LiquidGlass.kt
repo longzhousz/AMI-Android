@@ -5,8 +5,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
@@ -142,14 +145,35 @@ private fun Modifier.drawBehindGlassFallback(
     state: SnackbarHostState,
     modifier: Modifier = Modifier,
 ) {
+    // Material3's Snackbar draws its own Surface inside the glass, which shows a second
+    // rounded rectangle around the text. Compose the message directly in one glass surface.
     SnackbarHost(state, modifier) { data ->
-        Snackbar(
-            data,
-            Modifier.padding(12.dp).liquidGlass(RoundedCornerShape(22.dp), prominent = true),
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            actionColor = MaterialTheme.colorScheme.primary,
-        )
+        GlassSurface(
+            Modifier.padding(12.dp),
+            shape = RoundedCornerShape(22.dp),
+            prominent = true,
+        ) {
+            Row(
+                Modifier.padding(start = 16.dp, top = 10.dp, end = 8.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    data.visuals.message,
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                data.visuals.actionLabel?.let { label ->
+                    TextButton({ data.performAction() }) { Text(label, color = MaterialTheme.colorScheme.primary) }
+                }
+                if (data.visuals.withDismissAction) {
+                    IconButton({ data.dismiss() }) {
+                        Icon(Icons.Rounded.Close, "关闭提示", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
     }
 }
 

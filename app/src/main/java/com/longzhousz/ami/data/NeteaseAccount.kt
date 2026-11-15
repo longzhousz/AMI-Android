@@ -59,14 +59,13 @@ internal class NeteaseAccount(
             (0 until rows.length()).map { neteaseId(rows.optString(it)) }.toSet()
         }, write = { session, id, liked ->
             val auth = likeCredentials(session)
+            val songId = neteaseId(id)
+            // The web radio endpoint answers -460 for every parameter layout, so writes go
+            // through the official mobile client endpoint that still accepts like/unlike.
             val result =
-                web.post(
-                    "radio/like",
-                    JSONObject()
-                        .put("alg", "itembased")
-                        .put("trackId", neteaseId(id))
-                        .put("like", liked)
-                        .put("time", "3"),
+                web.postClient(
+                    "song/like",
+                    JSONObject().put("trackId", songId).put("like", liked),
                     auth.getString("cookie"),
                 )
             synchronized(authLock) {

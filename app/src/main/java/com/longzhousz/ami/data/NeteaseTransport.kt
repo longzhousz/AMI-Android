@@ -39,6 +39,22 @@ internal class NeteaseTransport(
         return open("https://music.163.com/weapi/$path?csrf_token=${URLEncoder.encode(csrf, "UTF-8")}")
     }
 
+    /** Official mobile client protocol for account writes; the web radio endpoint is rejected. */
+    suspend fun postClient(
+        path: String,
+        data: JSONObject,
+        cookie: String,
+    ): JSONObject =
+        withContext(Dispatchers.IO) {
+            require(path.matches(Regex("[a-z0-9/]+")) && !path.contains("//"))
+            val http = open("https://interface.music.163.com/eapi/$path")
+            try {
+                read(http, data, cookie, "/api/$path")
+            } finally {
+                http.disconnect()
+            }
+        }
+
     suspend fun post(
         path: String,
         data: JSONObject,
