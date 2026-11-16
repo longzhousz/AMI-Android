@@ -212,7 +212,7 @@ fun AmiApp(
                                     AmiMotion.page(if (targetState.page != initialState.page) targetState.page > initialState.page else targetState.albumKey != null)
                                 }, label = "app-destination") { destination ->
                                     val album = albumsByKey[destination.albumKey]
-                                    Box(Modifier.fillMaxSize().then(if (destination.page == 1 && model.cloud.direct && album == null) Modifier else Modifier.statusBarsPadding())) {
+                                    Box(Modifier.fillMaxSize().then(if (model.cloud.direct && destination.page in 0..1 && album == null) Modifier else Modifier.statusBarsPadding())) {
                                         when {
                                             album != null -> {
                                                 AlbumScreen(album, playback.id, model, { albumKey = null }, { remove = it }, floatingInset)

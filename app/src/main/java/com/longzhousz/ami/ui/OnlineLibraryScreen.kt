@@ -16,6 +16,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -45,6 +46,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -334,10 +336,15 @@ internal fun OnlineLibraryContent(
             }
         }) {
             val shelfBackdrop = rememberLayerBackdrop()
+            val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             val floatingToolbar = !favorites && selected == null && !searching
             val toolbar: @Composable () -> Unit = {
                 Row(
-                    Modifier.fillMaxWidth().padding(start = if (selected != null || searching) 8.dp else 24.dp, end = 24.dp, top = 12.dp, bottom = 12.dp).testTag("collection-toolbar"),
+                    Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(start = if (selected != null || searching) 8.dp else 24.dp, end = 24.dp, top = 12.dp, bottom = 12.dp)
+                        .testTag("collection-toolbar"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (selected != null || searching) {
@@ -395,7 +402,7 @@ internal fun OnlineLibraryContent(
                 }
             }
             Box(Modifier.fillMaxSize().testTag(if (favorites) "online-favorites" else "online-library")) {
-                Column(Modifier.fillMaxSize().then(if (floatingToolbar) Modifier.layerBackdrop(shelfBackdrop) else Modifier).padding(top = if (floatingToolbar && searchExpanded) 76.dp else 0.dp)) {
+                Column(Modifier.fillMaxSize().then(if (floatingToolbar) Modifier.layerBackdrop(shelfBackdrop) else Modifier).padding(top = if (floatingToolbar && searchExpanded) 76.dp + statusTop else 0.dp)) {
                     if (!favorites && !floatingToolbar) toolbar()
                     if (!configured) {
                         if (favorites) FavoritesHero(emptyList())
@@ -450,7 +457,13 @@ internal fun OnlineLibraryContent(
                         }
                         val failure = error ?: state.error
                         if (failure != null) {
-                            Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .then(if (favorites || (floatingToolbar && !searchExpanded)) Modifier.statusBarsPadding() else Modifier)
+                                    .padding(top = if (floatingToolbar && !searchExpanded) 76.dp else 0.dp, start = 24.dp, end = 24.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
                                 Text(failure, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 TextButton({
                                     if (state.error != null) {
@@ -522,7 +535,21 @@ internal fun OnlineLibraryContent(
                                             GridCells.Adaptive(145.dp),
                                             state = shelf,
                                             modifier = sceneModifier.fillMaxSize().testTag("online-shelf"),
-                                            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = if (searchExpanded) 4.dp else 76.dp, bottom = bottomInset),
+                                            contentPadding =
+                                                PaddingValues(
+                                                    start = 24.dp,
+                                                    end = 24.dp,
+                                                    top =
+                                                        when {
+                                                            searchExpanded -> 4.dp
+
+                                                            // The failure row already sits below the status bar and toolbar.
+                                                            failure != null -> 8.dp
+
+                                                            else -> 76.dp + statusTop
+                                                        },
+                                                    bottom = bottomInset,
+                                                ),
                                             horizontalArrangement = Arrangement.spacedBy(18.dp),
                                             verticalArrangement = Arrangement.spacedBy(22.dp),
                                         ) {
@@ -647,6 +674,21 @@ internal fun OnlineLibraryContent(
                                         }
                                     }
                                 }
+                            }
+                            if (floatingToolbar && !searchExpanded && failure == null) {
+                                Box(
+                                    Modifier
+                                        .align(Alignment.TopCenter)
+                                        .fillMaxWidth()
+                                        .height(statusTop + 24.dp)
+                                        .background(
+                                            Brush.verticalGradient(
+                                                0f to MaterialTheme.colorScheme.background.copy(alpha = .75f),
+                                                .68f to MaterialTheme.colorScheme.background.copy(alpha = .6f),
+                                                1f to Color.Transparent,
+                                            ),
+                                        ),
+                                )
                             }
                         }
                     }
