@@ -126,6 +126,37 @@ python3 qa/ui.py YOUR_SERIAL tap "设置"
 
 Windows 安装 Python 3 后可将 `python3` 替换为 `py -3`。本地开发助手的终端也需能找到 `adb`。连接后它仍需读取当前界面再操作，不根据旧截图盲点。
 
+## 无手机：本地模拟器与看图调试
+
+没有真机时用 Android 模拟器验证布局、状态栏沉浸和交互路径；本地开发助手可以直接读取 ADB 截图、日志和 UI 树自查界面，不必依赖手机。先安装模拟器与系统镜像，CPU 架构按电脑选择：Apple Silicon 用 `arm64-v8a`，Intel / AMD 用 `x86_64`。
+
+```sh
+sdkmanager "emulator" "system-images;android-36;google_apis;arm64-v8a"
+echo no | avdmanager create avd -n ami -k "system-images;android-36;google_apis;arm64-v8a" -d pixel_7
+emulator -avd ami -no-boot-anim -no-audio -gpu auto
+```
+
+首次启动需要 1–3 分钟，序列号为 `emulator-5554`；连接多台设备时始终指定目标。构建、安装与启动与真机相同：
+
+```sh
+./gradlew assembleDebug
+adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s emulator-5554 shell am start -W -n com.longzhousz.ami/.MainActivity
+```
+
+截图放已忽略的 `artifacts/`，查看界面文字与点击沿用 UI 树助手：
+
+```sh
+adb -s emulator-5554 exec-out sh -c 'sleep 2; screencap -p' > artifacts/emulator.png
+python3 qa/ui.py emulator-5554 dump
+```
+
+模拟器只作为布局与流程证据：AGSL 液态玻璃的渲染、帧率、耗电和听感以真机为准，本机镜像也可能不支持 AGSL。`connectedDebugAndroidTest` 会重建夹具曲库，仍只在专用模拟器或独立测试安装上运行。关闭模拟器：
+
+```sh
+adb -s emulator-5554 emu kill
+```
+
 ## 采集诊断
 
 在线播放失败优先用手机完成：更新至最新版本，重试原歌曲，点击错误提示上的「复制诊断」；提示消失后可在播放页右上角「… → 复制播放诊断」复制。本曲没有音源失败记录时不显示入口。将文字交给开发者并说明官方 App 同账号、同网络是否可完整播放；不需要 ADB 或导出 Cookie。
