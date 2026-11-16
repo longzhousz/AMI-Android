@@ -22,6 +22,7 @@ import com.longzhousz.ami.core.CloudTrack
 /** A single orderly mosaic, fading into the page. Only the already-loaded prefix is requested. */
 @Composable internal fun FavoritesHero(tracks: List<CloudTrack>) {
     val base = MaterialTheme.colorScheme.background
+    val dark = MaterialTheme.colorScheme.isDark
     BoxWithConstraints(Modifier.fillMaxWidth().testTag("favorites-hero")) {
         val width = maxWidth
         val height = (width * .9f + WindowInsets.statusBars.asPaddingValues().calculateTopPadding()).coerceIn(330.dp, 420.dp)
@@ -51,12 +52,12 @@ import com.longzhousz.ami.core.CloudTrack
                 }
             }
             Canvas(Modifier.fillMaxSize()) {
-                drawRect(Color.Black.copy(alpha = .08f))
+                if (dark) drawRect(Color.Black.copy(alpha = .08f))
                 drawRect(
                     Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = .42f),
-                        .4f to Color.Transparent,
-                        .64f to base.copy(alpha = .30f),
+                        0f to (if (dark) Color.Black.copy(alpha = .42f) else base.copy(alpha = .78f)),
+                        (if (dark) .4f else .14f) to Color.Transparent,
+                        .64f to base.copy(alpha = if (dark) .30f else .35f),
                         .9f to base.copy(alpha = .95f),
                         1f to base,
                     ),
@@ -68,7 +69,7 @@ import com.longzhousz.ami.core.CloudTrack
                 fontSize = 32.sp,
                 lineHeight = 40.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = if (dark) Color.White else MaterialTheme.colorScheme.onBackground,
             )
         }
     }

@@ -323,12 +323,14 @@ internal fun OnlineLibraryContent(
                 ) >= list.layoutInfo.totalItemsCount - 5
         }.collect { nearEnd -> if (nearEnd) offset = next }
     }
-    MaterialTheme(colorScheme = if (favorites) FavoritesColors else MaterialTheme.colorScheme) {
+    val appColors = MaterialTheme.colorScheme
+    val favoritesColors = if (appColors.isDark) FavoritesColors else appColors
+    MaterialTheme(colorScheme = if (favorites) favoritesColors else appColors) {
         GlassBackdropHost(Modifier.fillMaxSize(), background = {
             if (selected != null) {
                 PlayerBackdrop(selected.cover)
             } else if (favorites) {
-                androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) { drawRect(FavoritesColors.background) }
+                androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) { drawRect(favoritesColors.background) }
             } else {
                 GlassCanvas()
             }

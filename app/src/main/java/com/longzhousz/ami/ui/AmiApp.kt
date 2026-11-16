@@ -86,12 +86,13 @@ fun AmiApp(
     var fullPlayer by rememberSaveable { mutableStateOf(false) }
     var page by rememberSaveable { mutableIntStateOf(if (initialPage == 3 && model.cloud.direct) 0 else initialPage.coerceIn(0, 6)) }
     val immersiveFavorites = page == 1 && model.cloud.direct
+    val darkTheme = resolveDarkTheme(theme)
     var playerOverStatusBar by remember { mutableStateOf(false) }
     var playerOverNavigationBar by remember { mutableStateOf(false) }
     AmiTheme(
         theme,
-        statusBarImmersive = immersiveFavorites || (fullPlayer && playerOverStatusBar),
-        navigationBarImmersive = immersiveFavorites || (fullPlayer && playerOverNavigationBar),
+        statusBarImmersive = (immersiveFavorites && darkTheme) || (fullPlayer && playerOverStatusBar),
+        navigationBarImmersive = (immersiveFavorites && darkTheme) || (fullPlayer && playerOverNavigationBar),
     ) {
         val focus = LocalFocusManager.current
         val library by model.repository.library.collectAsStateWithLifecycle()
@@ -151,7 +152,7 @@ fun AmiApp(
         }
         val snackbar = remember { SnackbarHostState() }
         val contentBackdrop = rememberLayerBackdrop()
-        val floatingColors = if (immersiveFavorites) FavoritesColors else MaterialTheme.colorScheme
+        val floatingColors = if (immersiveFavorites && darkTheme) FavoritesColors else MaterialTheme.colorScheme
         LaunchedEffect(current?.id, loading) {
             if (!loading && current == null) {
                 fullPlayer = false

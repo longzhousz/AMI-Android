@@ -67,6 +67,13 @@ private val Type =
         labelLarge = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp),
     )
 
+@Composable internal fun resolveDarkTheme(preference: String): Boolean =
+    when (preference) {
+        "dark" -> true
+        "light" -> false
+        else -> isSystemInDarkTheme()
+    }
+
 @Composable fun AmiTheme(
     preference: String,
     immersive: Boolean = false,
@@ -74,12 +81,7 @@ private val Type =
     navigationBarImmersive: Boolean = immersive,
     content: @Composable () -> Unit,
 ) {
-    val dark =
-        when (preference) {
-            "dark" -> true
-            "light" -> false
-            else -> isSystemInDarkTheme()
-        }
+    val dark = resolveDarkTheme(preference)
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
