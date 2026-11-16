@@ -16,7 +16,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -46,7 +45,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -546,7 +544,8 @@ internal fun OnlineLibraryContent(
                                                             // The failure row already sits below the status bar and toolbar.
                                                             failure != null -> 8.dp
 
-                                                            else -> 76.dp + statusTop
+                                                            // The shelf is immersive: covers scroll under the status bar and floating controls.
+                                                            else -> 0.dp
                                                         },
                                                     bottom = bottomInset,
                                                 ),
@@ -674,21 +673,6 @@ internal fun OnlineLibraryContent(
                                         }
                                     }
                                 }
-                            }
-                            if (floatingToolbar && !searchExpanded && failure == null) {
-                                Box(
-                                    Modifier
-                                        .align(Alignment.TopCenter)
-                                        .fillMaxWidth()
-                                        .height(statusTop + 24.dp)
-                                        .background(
-                                            Brush.verticalGradient(
-                                                0f to MaterialTheme.colorScheme.background.copy(alpha = .75f),
-                                                .68f to MaterialTheme.colorScheme.background.copy(alpha = .6f),
-                                                1f to Color.Transparent,
-                                            ),
-                                        ),
-                                )
                             }
                         }
                     }

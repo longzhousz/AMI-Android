@@ -393,7 +393,7 @@ class OnlineLibraryTest {
         }
         val firstBounds = compose.onNodeWithTag("collection-${state.library.collections.first().key}").fetchSemanticsNode().boundsInRoot
         val toolbarBounds = compose.onNodeWithTag("collection-toolbar").fetchSemanticsNode().boundsInRoot
-        assertTrue("Refresh must anchor the first row below the floating controls", firstBounds.top >= toolbarBounds.bottom)
+        assertTrue("Refresh must return the first row under the floating controls", firstBounds.top <= toolbarBounds.bottom)
     }
 
     @Test fun streamRequestsHighQualityWithoutWritingUrlsOrCredentialsToTheQueue() =
