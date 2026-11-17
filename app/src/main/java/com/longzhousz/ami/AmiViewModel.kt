@@ -28,7 +28,7 @@ class AmiViewModel internal constructor(
     val theme = _theme.asStateFlow()
     val playback = PlaybackStateHolder(app, repository, viewModelScope, ::showMessage, clientFactory, catalogFactory)
     val online = OnlineStateHolder(repository, viewModelScope, playback, ::showMessage)
-    val library = LibraryStateHolder(app, repository, viewModelScope, playback, ::showMessage, ::restoreSettings)
+    val library = LibraryStateHolder(app, repository, viewModelScope, playback, online, ::showMessage, ::restoreSettings)
     val player get() = playback.player
     val playerSelection get() = playback.playerSelection
     val lyrics get() = playback.lyrics
@@ -43,6 +43,7 @@ class AmiViewModel internal constructor(
     val bridge get() = library.bridge
     val bridgeEnabled get() = library.bridgeEnabled
     val bridgeAlbum get() = library.bridgeAlbum
+    val bridgePermissions get() = library.bridgePermissions
 
     fun showMessage(value: String?) {
         _message.value = value
@@ -76,6 +77,11 @@ class AmiViewModel internal constructor(
     }
 
     fun setBridgeEnabled(value: Boolean) = library.setBridgeEnabled(value)
+
+    fun setBridgePermission(
+        key: String,
+        allowed: Boolean,
+    ) = library.setBridgePermission(key, allowed)
 
     fun consumeBridgeAlbum(value: String) = library.consumeBridgeAlbum(value)
 
@@ -158,6 +164,11 @@ class AmiViewModel internal constructor(
     fun testConnection() = playback.testConnection()
 
     suspend fun processBridge() = library.processBridge()
+
+    suspend fun confirmBridgePending(
+        requestId: String,
+        accept: Boolean,
+    ) = library.confirmBridgePending(requestId, accept)
 
     override fun onCleared() {
         playback.close()

@@ -4,7 +4,9 @@ import android.app.Application
 import android.net.Uri
 import com.longzhousz.ami.core.ErrorCode
 import com.longzhousz.ami.core.Song
+import com.longzhousz.ami.data.AgentActions
 import com.longzhousz.ami.data.AgentBridge
+import com.longzhousz.ami.data.AgentProtocol
 import com.longzhousz.ami.data.AppDiagnostics
 import com.longzhousz.ami.data.LibraryRepository
 import com.longzhousz.ami.data.LyricImporter
@@ -17,6 +19,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -25,9 +28,10 @@ import java.io.File
 
 class LibraryStateHolder internal constructor(
     private val app: Application,
-    private val repository: LibraryRepository,
+    internal val repository: LibraryRepository,
     private val scope: CoroutineScope,
     private val playback: PlaybackStateHolder,
+    private val online: OnlineStateHolder,
     private val message: (String?) -> Unit,
     private val restoreSettings: (Map<String, String>) -> Unit,
 ) {
@@ -159,65 +163,14 @@ class LibraryStateHolder internal constructor(
         persistAction("library.remove") { repository.remove(song) }
     }
 
-    suspend fun processBridge() =
-        bridge.process { action, payload ->
-            when (action) {
-                "player.pause" -> {
-                    player.pause()
-                }
+    private val agentActions by lazy { AgentActions(this, playback) }
 
-                "player.play" -> {
-                    player.resume()
-                }
+    suspend fun processBridge() = bridge.process { action, payload -> agentActions.execute(action, payload) }
 
-                "player.toggle" -> {
-                    player.toggle()
-                }
-
-                "player.next" -> {
-                    player.next()
-                }
-
-                "player.previous" -> {
-                    player.previous()
-                }
-
-                "player.seek" -> {
-                    val ms = payload.getLong("positionMs")
-                    require(ms >= 0 && ms <= player.state.value.duration)
-                    player.seek(ms)
-                }
-
-                "album.open", "album.play" -> {
-                    val album = repository.library.value.albumsByKey[payload.getString("albumKey")] ?: error("Album missing")
-                    if (action == "album.play") player.play(album.songs) else _bridgeAlbum.value = album.key
-                }
-
-                "album.reorderTracks" -> {
-                    val ids = payload.getJSONArray("songIds").let { array -> (0 until array.length()).map { array.getString(it) } }
-                    val album = repository.library.value.albumsByKey[payload.getString("albumKey")] ?: error("Album missing")
-                    require(ids.size == album.songs.size && ids.toSet() == album.songs.map { it.id }.toSet())
-                    withContext(Dispatchers.IO) { repository.reorder(ids) }
-                }
-
-                "lyrics.translateCurrent" -> {
-                    val song = repository.songs.value.find { it.id == player.state.value.id } ?: error("No song")
-                    playback.translateForBridge(song)
-                }
-
-                "cache.getStats", "cache.cleanupDryRun" -> {
-                    val stats = withContext(Dispatchers.IO) { repository.cacheInfo() }
-                    return@process AgentBridge.ActionResult(
-                        data = JSONObject().put("bytes", stats.bytes).put("files", stats.files).put("reclaimableBytes", stats.reclaimable),
-                    )
-                }
-
-                else -> {
-                    return@process AgentBridge.ActionResult("blocked")
-                }
-            }
-            AgentBridge.ActionResult()
-        }
+    suspend fun confirmBridgePending(
+        requestId: String,
+        accept: Boolean,
+    ) = bridge.confirm(requestId, accept) { action, payload -> agentActions.execute(action, payload) }
 
     fun favorite(song: Song) = persistAction("library.favorite") { repository.favorite(song) }
 
@@ -229,9 +182,12 @@ class LibraryStateHolder internal constructor(
         _bridgeEnabled.value = enabled
     }
 
-    private val permissionDefaults = mapOf("agentPlayback" to true, "agentReorder" to false, "agentTranslation" to false, "agentCache" to false)
+    private val permissionDefaults = AgentProtocol.permissionDefaults
+    internal val repositoryForAgent get() = repository
+    internal val contextForAgent get() = app
     private val _bridgePermissions = MutableStateFlow(permissionDefaults.mapValues { (key, default) -> repository.prefs.getBoolean(key, default) })
     val bridgePermissions = _bridgePermissions.asStateFlow()
+    val bridgePending get() = bridge.requestInfo().filter { it.state == AgentProtocol.STATUS_REQUIRES_CONFIRMATION }
 
     fun setBridgePermission(
         key: String,
@@ -269,4 +225,43 @@ class LibraryStateHolder internal constructor(
             val bytes = repository.cleanup()
             message("已清理 ${"%.1f MB".format(java.util.Locale.ROOT, bytes / 1048576.0)}")
         }
+
+    internal fun bridgeTokenConfigured() = bridge.tokenConfigured()
+
+    internal fun openBridgeAlbum(key: String) {
+        _bridgeAlbum.value = key
+    }
+
+    internal suspend fun cleanBridgePending(): AgentBridge.ActionResult {
+        val bytes =
+            withContext(Dispatchers.IO) {
+                currentCoroutineContext().ensureActive()
+                val freed = repository.cleanup()
+                currentCoroutineContext().ensureActive()
+                val coroutine = currentCoroutineContext()
+                repository.onlineCache.cleanup(System.currentTimeMillis(), active = { coroutine.isActive })
+                freed
+            }
+        return AgentBridge.ActionResult(data = JSONObject().put("freedBytes", bytes))
+    }
+
+    internal fun refreshBridgeOnlineLibrary() = online.refreshOnlineLibrary()
+
+    internal fun refreshBridgeCloudLikes() = online.refreshCloudLikes(true)
+
+    internal fun cancelBridgeCloudPreparation() = online.cancelCloudPreparation()
+
+    internal fun cancelBridgeTranslation() = playback.cancelTranslation()
+
+    internal fun bridgeRequests() = bridge.requestInfo()
+
+    internal fun playBridgeCloud(
+        tracks: List<com.longzhousz.ami.core.CloudTrack>,
+        index: Int,
+    ) = online.playCloud(tracks, index)
+
+    internal suspend fun clearBridgePending(): AgentBridge.ActionResult {
+        withContext(Dispatchers.IO) { repository.listeningStats.clear() }
+        return AgentBridge.ActionResult()
+    }
 }

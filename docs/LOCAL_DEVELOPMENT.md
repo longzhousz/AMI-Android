@@ -190,7 +190,7 @@ adb -s YOUR_SERIAL logcat -d -s AmiOriginOS
 
 ## 自动化测试边界
 
-JVM 单元测试和 Lint 无需手机。完整 `connectedDebugAndroidTest` 会写入夹具、清理/重建测试曲库并操作播放，应在专用模拟器或独立测试安装上运行，避免影响日常曲库。
+JVM 单元测试和 Lint 无需手机；`AgentProtocol` 的规则变化用 `./gradlew testDebugUnitTest --tests '*AgentProtocolTest' --no-daemon` 验证，SAF 往返按下方专用设备要求执行。完整 `connectedDebugAndroidTest` 会写入夹具、清理/重建测试曲库并操作播放，应在专用模拟器或独立测试安装上运行，避免影响日常曲库。
 
 只有一个专用测试设备连接时运行：
 

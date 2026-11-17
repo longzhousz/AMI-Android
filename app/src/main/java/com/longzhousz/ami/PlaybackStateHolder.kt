@@ -132,6 +132,21 @@ class PlaybackStateHolder internal constructor(
         }
     }
 
+    internal fun actForAgent(
+        name: String,
+        block: () -> Unit,
+    ) {
+        try {
+            act(name, block)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: IllegalStateException) {
+            throw failure
+        } catch (failure: IllegalArgumentException) {
+            throw failure
+        }
+    }
+
     private fun startTranslation(
         song: Song,
         force: Boolean,
@@ -350,7 +365,17 @@ class PlaybackStateHolder internal constructor(
         }
     }
 
-    internal suspend fun translateForBridge(song: Song) = (startTranslation(song, false) ?: error("当前歌曲已经切换")).await()
+    internal suspend fun translateForBridge(
+        song: Song,
+        force: Boolean = false,
+    ) = (startTranslation(song, force) ?: error("当前歌曲已经切换")).await()
+
+    internal fun cancelTranslation() {
+        translationEpoch++
+        translationJob?.cancel()
+        stateKey = null
+        publish(CurrentLyrics(player.state.value.id))
+    }
 
     fun reloadPersonalSettings() {
         translationEpoch++

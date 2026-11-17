@@ -150,6 +150,21 @@ class LibraryRepository(
 
     suspend fun favorite(song: Song) = withContext(Dispatchers.IO) { updateFavorite(song.id) }
 
+    suspend fun setFavorite(
+        id: String,
+        favorite: Boolean,
+    ) = withContext(Dispatchers.IO) {
+        db.favorite(id, favorite)
+        if (libraryRequested.get()) {
+            val before = library.value
+            val updated = before.withFavorite(id, favorite)
+            if (updated !== before) {
+                library.value = updated
+                songs.value = updated.songs
+            }
+        }
+    }
+
     @Synchronized private fun updateFavorite(id: String) {
         val favorite = db.toggleFavorite(id) ?: return
         if (!libraryRequested.get()) return

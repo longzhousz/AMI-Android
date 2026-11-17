@@ -5,10 +5,10 @@
 `AmiViewModel` 保留页面使用的协调入口与工厂兼容，内部由三个持有者分工：
 
 - `PlaybackStateHolder`：播放连接、当前曲目投影、歌词加载／预取、翻译及其设置。
-- `LibraryStateHolder`：本地写入、歌词关联、Agent 意图与手动备份恢复。
+- `LibraryStateHolder`：本地写入、歌词关联、Agent 意图与手动备份恢复；`AgentProtocol` 保存纯 JSON 契约，`AgentActions` 只映射现有持有者能力。
 - `OnlineStateHolder`：在线曲库、刷新请求、推荐队列及账号隔离的红心操作。
 
-界面消费只读 `StateFlow`，通过方法提交意图。主题、Agent 开关和权限不再由 UI 同时改流和写偏好；Snackbar 只消费相同内容的消息，旧 Snackbar 结束不会清掉更新的错误。原有异步取消、歌词轮次和账号保护继续生效。
+界面消费只读 `StateFlow`，通过方法提交意图。Agent 确认请求只在专用界面由用户决策，执行仍走同一持有者路径；请求级取消只影响尚未写结果的在途请求。协议、动作和测试边界见 [Agent Bridge](AGENT_BRIDGE.md)。主题、Agent 开关和权限不再由 UI 同时改流和写偏好；Snackbar 只消费相同内容的消息，旧 Snackbar 结束不会清掉更新的错误。原有异步取消、歌词轮次和账号保护继续生效。
 
 根组合只消费当前播放 ID 对应的歌曲投影，不订阅完整在线 catalog。catalog 或本地快照更新后，当前曲目没有变化就不向根组合发送新值。队列按需查找歌曲，不复制整份曲库。
 

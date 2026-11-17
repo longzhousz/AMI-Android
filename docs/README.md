@@ -5,6 +5,7 @@
 | 需要了解什么 | 文档 |
 | --- | --- |
 | 备份、换机、合并规则与格式边界 | [备份恢复](DATA_BACKUP.md) |
+| Agent 交换协议、权限、动作与确认取消 | [Agent Bridge](AGENT_BRIDGE.md) |
 | 状态边界、静态检查与安全诊断 | [开发约束](ENGINEERING.md) |
 | 长期产品取舍 | [产品约束](PRODUCT_CONSTRAINTS.md) |
 | 安装、登录、曲库、红心、歌词、音质、缓存 | [使用说明](USER_GUIDE.md) |

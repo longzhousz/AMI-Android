@@ -137,6 +137,19 @@ class CloudMusic internal constructor(
         if (direct && configured.value) account.likes.refresh(force)
     }
 
+    suspend fun setLike(
+        originalId: String,
+        liked: Boolean,
+        session: Long = likes.value.session,
+    ) {
+        check(direct && configured.value) { "请先登录网易云音乐" }
+        account.likes.set(originalId, liked, session) {
+            synchronized(this@CloudMusic) {
+                if (likes.value.session == session) likesRevision.value++
+            }
+        }
+    }
+
     suspend fun toggleLike(song: Song) {
         val session = likes.value.session
         val track =

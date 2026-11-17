@@ -177,6 +177,42 @@ class PlayerConnection(
         controller?.let { c -> (c.mediaItemCount - 1 downTo 0).filter { c.getMediaItemAt(it).mediaId == id }.forEach { c.removeMediaItem(it) } }
     }
 
+    fun stop() {
+        controller?.let {
+            it.pause()
+            it.seekTo(0)
+        }
+    }
+
+    fun add(
+        songs: List<Song>,
+        index: Int,
+    ) {
+        val c = controller ?: error("播放服务正在连接，请稍后再试")
+        require(songs.isNotEmpty() && index in 0..c.mediaItemCount)
+        c.addMediaItems(index, songs.map { it.mediaItem() })
+    }
+
+    fun clear() {
+        controller?.clearMediaItems()
+    }
+
+    fun reorder(ids: List<String>) {
+        val c = controller ?: error("播放服务正在连接，请稍后再试")
+        val items = (0 until c.mediaItemCount).map { c.getMediaItemAt(it) }
+        require(ids.size == items.size && ids.toSet() == items.map { it.mediaId }.toSet())
+        val playing = c.playWhenReady
+        val index =
+            c.currentMediaItem
+                ?.mediaId
+                ?.let(ids::indexOf)
+                ?.takeIf { it >= 0 } ?: 0
+        val position = c.currentPosition
+        c.setMediaItems(ids.map { id -> items.first { it.mediaId == id } }, index, position)
+        c.prepare()
+        if (playing) c.play()
+    }
+
     fun release() {
         controller?.removeListener(listener)
         MediaController.releaseFuture(future)

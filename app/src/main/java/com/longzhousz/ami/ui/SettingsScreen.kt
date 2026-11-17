@@ -25,13 +25,16 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.longzhousz.ami.AmiViewModel
 import com.longzhousz.ami.R
 import com.longzhousz.ami.core.isCloudSong
+import com.longzhousz.ami.data.AgentProtocol
 import com.longzhousz.ami.data.LibraryRepository
 import com.longzhousz.ami.data.OnlineAudioCache
 import com.longzhousz.ami.data.TranslationClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -435,7 +438,17 @@ import kotlinx.coroutines.withContext
     onDismiss: () -> Unit,
 ) {
     val enabled by model.bridgeEnabled.collectAsStateWithLifecycle()
-    val permissions by model.library.bridgePermissions.collectAsStateWithLifecycle()
+    val permissions by model.bridgePermissions.collectAsStateWithLifecycle()
+    var pending by remember { mutableStateOf(model.library.bridgePending) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            while (true) {
+                pending = model.library.bridgePending
+                delay(1000)
+            }
+        }
+    }
     var token by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     GlassAlertDialog(onDismiss, title = { Text(stringResource(R.string.settings_agent)) }, text = {
@@ -459,16 +472,42 @@ import kotlinx.coroutines.withContext
                 androidx.compose.foundation.text.selection
                     .SelectionContainer { Text(value, Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.bodySmall) }
             }
-            listOf(Triple("agentPlayback", "控制播放", true), Triple("agentReorder", "调整曲序", false), Triple("agentTranslation", "发起翻译（会使用 API）", false), Triple("agentCache", "读取缓存统计", false)).forEach { (key, label, default) ->
+            val labels =
+                mapOf(
+                    "agentPlayback" to "控制播放",
+                    "agentQueue" to "编排当前队列",
+                    "agentReorder" to "调整曲序",
+                    "agentTranslation" to "翻译与歌词",
+                    "agentCache" to "读取缓存统计",
+                    "agentOnline" to "读取网易云与红心",
+                    "agentLibrary" to "曲库与本地红心",
+                    "agentStats" to "聆听统计",
+                )
+            AgentProtocol.permissionDefaults.forEach { (key, default) ->
                 val allowed = permissions[key] ?: default
                 Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    Switch(allowed, {
-                        model.library.setBridgePermission(key, it)
-                    }, enabled = enabled)
+                    Text(labels.getValue(key), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(allowed, { model.setBridgePermission(key, it) }, enabled = enabled)
                 }
             }
-            Text("缓存删除始终需要你在应用中确认。令牌不会出现在结果或日志中。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            pending.forEach { request ->
+                Text("待确认：${request.action} · ${request.requestId}", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
+                Row {
+                    TextButton({
+                        scope.launch {
+                            model.confirmBridgePending(request.requestId, true)
+                            pending = model.library.bridgePending
+                        }
+                    }) { Text("确认") }
+                    TextButton({
+                        scope.launch {
+                            model.confirmBridgePending(request.requestId, false)
+                            pending = model.library.bridgePending
+                        }
+                    }) { Text("拒绝") }
+                }
+            }
+            Text("删除缓存、清除统计仍需确认；登录、文件夹授权、令牌、备份和 API Key 只能在这里操作。令牌不会出现在结果或日志中。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }, confirmButton = { TextButton(onDismiss) { Text(stringResource(R.string.common_done)) } })
 }
