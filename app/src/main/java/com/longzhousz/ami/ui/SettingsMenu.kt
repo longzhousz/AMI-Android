@@ -7,6 +7,8 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,6 +60,8 @@ internal fun SettingsHome(
     onAccount: () -> Unit,
     onListening: () -> Unit,
     onTheme: () -> Unit,
+    checkingUpdates: Boolean,
+    onCheckUpdates: () -> Unit,
     onSection: (SettingsSection) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -72,6 +76,9 @@ internal fun SettingsHome(
         SettingsGroup {
             SettingRow(Icons.Rounded.LibraryMusic, stringResource(R.string.settings_local_section), { onSection(SettingsSection.LOCAL) })
             SettingRow(Icons.Rounded.Storage, stringResource(R.string.settings_storage_section), { onSection(SettingsSection.STORAGE) })
+            SettingRow(Icons.Rounded.SystemUpdate, stringResource(R.string.settings_check_updates), onCheckUpdates, trailing = {
+                if (checkingUpdates) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            })
             SettingRow(Icons.Rounded.MoreHoriz, stringResource(R.string.settings_more), { onSection(SettingsSection.MORE) })
         }
     }

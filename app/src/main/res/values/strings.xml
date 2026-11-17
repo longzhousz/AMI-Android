@@ -68,6 +68,7 @@
     <string name="settings_folder_summary" formatted="false">只读取你选择的文件夹</string>
     <string name="settings_storage_section" formatted="false">存储与数据</string>
     <string name="settings_more" formatted="false">更多设置</string>
+    <string name="settings_check_updates" formatted="false">检查更新</string>
     <string name="settings_back" formatted="false">返回设置</string>
     <string name="settings_sign_in" formatted="false">登录</string>
     <string name="settings_key_not_saved" formatted="false">尚未保存密钥</string>

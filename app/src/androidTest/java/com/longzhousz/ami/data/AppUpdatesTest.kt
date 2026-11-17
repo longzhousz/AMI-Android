@@ -11,6 +11,9 @@ import com.longzhousz.ami.BuildConfig
 import com.longzhousz.ami.core.*
 import com.longzhousz.ami.ui.AmiTheme
 import com.longzhousz.ami.ui.UpdatePrompt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -24,6 +27,9 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(AndroidJUnit4::class)
 class AppUpdatesTest {
@@ -37,6 +43,7 @@ class AppUpdatesTest {
     private var apkRequests = 0
     private var truncated = false
     private var wrongDigest = false
+    private var invalidMetadata = false
     private var unavailable = false
     private var offeredVersion = actual
 
@@ -63,7 +70,7 @@ class AppUpdatesTest {
         folder.deleteRecursively()
     }
 
-    private fun updater() = AppUpdates(context, older.toString(), BuildConfig.VERSION_CODE.toLong() - 1, ::open, folder)
+    private fun updater() = AppUpdates(context, older.toString(), BuildConfig.VERSION_CODE.toLong() - 1, ::open, folder, manualSupported = true)
 
     private fun open(address: String) =
         object : HttpURLConnection(URL(address)) {
@@ -87,7 +94,7 @@ class AppUpdatesTest {
                                 "assets",
                                 JSONArray().put(
                                     JSONObject()
-                                        .put("name", name)
+                                        .put("name", if (invalidMetadata) "unexpected.apk" else name)
                                         .put("size", apk.length())
                                         .put("digest", "sha256:" + if (wrongDigest) "0".repeat(64) else digest)
                                         .put("browser_download_url", "https://github.com/$UPDATE_REPO/releases/download/android-v$offeredVersion/$name"),
@@ -157,6 +164,10 @@ class AppUpdatesTest {
             updates.check()
             val verified = updates.ready.value!!
             offeredVersion = actual.copy(patch = actual.patch + 1)
+            invalidMetadata = true
+            assertTrue("A newer release with invalid metadata must not be reported as current", runCatching { updates.check() }.isFailure)
+            assertEquals(verified, updates.ready.value)
+            invalidMetadata = false
             wrongDigest = true
             assertTrue(runCatching { updates.check() }.isFailure)
             assertEquals(verified, updates.ready.value)
@@ -177,6 +188,9 @@ class AppUpdatesTest {
         compose.runOnIdle { active = true }
         compose.onNodeWithText("发现新版本").assertDoesNotExist()
         assertEquals(0, installs)
+        compose.runOnIdle { updates.checkManually() }
+        compose.onNodeWithText("发现新版本").assertIsDisplayed()
+        compose.onNodeWithText("稍后").performClick()
         val nextSession = updater()
         runBlocking { nextSession.check() }
         compose.runOnIdle { updates = nextSession }
@@ -185,4 +199,68 @@ class AppUpdatesTest {
         compose.onNodeWithText("发现新版本").assertDoesNotExist()
         assertEquals(1, installs)
     }
+
+    @Test fun manualChecksReportFailuresAndCurrentVersionsWhenSettingsIsVisible() {
+        var updates by mutableStateOf(updater())
+        var active by mutableStateOf(false)
+        val messages = mutableStateListOf<String>()
+        unavailable = true
+        compose.setContent { AmiTheme("dark") { UpdatePrompt(updates, active, onMessage = { messages.add(it) }) {} } }
+        compose.runOnIdle { updates.checkManually() }
+        compose.waitUntil(10000) { updates.manualCheck.value == ManualUpdateCheck.FAILED }
+        assertTrue(messages.isEmpty())
+        compose.runOnIdle { active = true }
+        compose.waitUntil(5000) { messages.contains("检查更新未完成，请检查网络后重试") }
+        unavailable = false
+        compose.runOnIdle {
+            updates = AppUpdates(context, actual.toString(), BuildConfig.VERSION_CODE.toLong(), ::open, folder, manualSupported = true)
+            updates.checkManually()
+        }
+        compose.waitUntil(10000) { messages.contains("当前已是最新版本") }
+        compose.runOnIdle {
+            active = false
+            updates = updater()
+        }
+        runBlocking { updates.check() }
+        compose.runOnIdle { updates.checkManually() }
+        offeredVersion = older
+        runBlocking { updates.check() }
+        compose.runOnIdle { active = true }
+        compose.waitUntil(5000) { messages.contains("更新状态已变化，请重新检查") }
+    }
+
+    @Test fun overlappingChecksDoNotWriteTheDownloadAtTheSameTime() =
+        runBlocking {
+            val firstStarted = CountDownLatch(1)
+            val secondStarted = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val metadataRequests = AtomicInteger()
+            val updates =
+                AppUpdates(context, older.toString(), BuildConfig.VERSION_CODE.toLong() - 1, { address ->
+                    if (address == UPDATE_API && metadataRequests.incrementAndGet() == 1) {
+                        firstStarted.countDown()
+                        check(release.await(10, TimeUnit.SECONDS))
+                    }
+                    open(address)
+                }, folder, manualSupported = true)
+            val first = async(Dispatchers.IO) { updates.check() }
+            try {
+                assertTrue(firstStarted.await(10, TimeUnit.SECONDS))
+                val second =
+                    async(Dispatchers.IO) {
+                        secondStarted.countDown()
+                        updates.check()
+                    }
+                assertTrue(secondStarted.await(10, TimeUnit.SECONDS))
+                delay(200)
+                assertEquals(1, metadataRequests.get())
+                release.countDown()
+                first.await()
+                second.await()
+                assertEquals(1, apkRequests)
+                assertNotNull(updates.ready.value)
+            } finally {
+                release.countDown()
+            }
+        }
 }

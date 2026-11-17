@@ -16,11 +16,16 @@ import com.longzhousz.ami.AmiApplication
 import com.longzhousz.ami.BuildConfig
 import com.longzhousz.ami.core.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
@@ -36,18 +41,25 @@ internal data class ReadyUpdate(
     val digest: String,
 )
 
-/** A foreground-entry check and one OS-managed job; no timer, progress UI, or GitHub credentials. */
+internal enum class ManualUpdateCheck { IDLE, CHECKING, AVAILABLE, LATEST, FAILED, UNSUPPORTED }
+
+/** A foreground-entry check and one OS-managed job; no timer or GitHub credentials. */
 internal class AppUpdates(
     private val context: Context,
     currentName: String = BuildConfig.VERSION_NAME,
     private val currentCode: Long = BuildConfig.VERSION_CODE.toLong(),
     private val connect: (String) -> HttpURLConnection = { URL(it).openConnection() as HttpURLConnection },
     private val directory: File = File(context.filesDir, "updates"),
+    private val manualSupported: Boolean = BuildConfig.BUILD_TYPE == "musicPreview",
 ) {
     private val current = requireNotNull(AppVersion.parse(currentName))
     private val pointer = AtomicFile(File(directory, "pending"))
     private val pending = MutableStateFlow<ReadyUpdate?>(null)
     val ready = pending.asStateFlow()
+    private val manual = MutableStateFlow(ManualUpdateCheck.IDLE)
+    val manualCheck = manual.asStateFlow()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val checkLock = Mutex()
     private var lastStart = Long.MIN_VALUE
     private var offeredCode: Long? = null
     private var etag: String? = null
@@ -70,6 +82,34 @@ internal class AppUpdates(
         if (offeredCode == code) return false
         offeredCode = code
         return true
+    }
+
+    // Network, storage, JSON, and package verification failures all surface as a retryable result.
+    @Suppress("TooGenericExceptionCaught")
+    fun checkManually() {
+        if (manual.value == ManualUpdateCheck.CHECKING) return
+        if (!manualSupported) {
+            manual.value = ManualUpdateCheck.UNSUPPORTED
+        } else if (pending.value != null) {
+            manual.value = ManualUpdateCheck.AVAILABLE
+        } else {
+            manual.value = ManualUpdateCheck.CHECKING
+            scope.launch {
+                try {
+                    check()
+                    manual.value = if (pending.value != null) ManualUpdateCheck.AVAILABLE else ManualUpdateCheck.LATEST
+                } catch (cancelled: CancellationException) {
+                    manual.value = ManualUpdateCheck.IDLE
+                    throw cancelled
+                } catch (_: Exception) {
+                    manual.value = if (pending.value != null) ManualUpdateCheck.AVAILABLE else ManualUpdateCheck.FAILED
+                }
+            }
+        }
+    }
+
+    fun consumeManualCheck(result: ManualUpdateCheck) {
+        manual.compareAndSet(result, ManualUpdateCheck.IDLE)
     }
 
     private fun hash(file: File): String =
@@ -167,97 +207,101 @@ internal class AppUpdates(
 
     suspend fun check() =
         withContext(Dispatchers.IO) {
-            directory.mkdirs()
-            val previous = saved()
-            clean(setOfNotNull(previous?.file))
-            pending.value = previous
-            val metadata = response(UPDATE_API, etag)
-            val release =
-                try {
-                    when (metadata.responseCode) {
-                        304 -> {
-                            lastRelease
-                        }
+            checkLock.withLock {
+                directory.mkdirs()
+                val previous = saved()
+                clean(setOfNotNull(previous?.file))
+                pending.value = previous
+                val metadata = response(UPDATE_API, etag)
+                val release =
+                    try {
+                        when (metadata.responseCode) {
+                            304 -> {
+                                lastRelease
+                            }
 
-                        200 -> {
-                            val text = metadata.inputStream.use { it.readNBytes(512 * 1024 + 1) }
-                            check(text.size <= 512 * 1024)
-                            AppUpdate.fromRelease(JSONObject(text.toString(Charsets.UTF_8)), current).also {
-                                lastRelease = it
-                                etag = metadata.getHeaderField("ETag")
+                            200 -> {
+                                val text = metadata.inputStream.use { it.readNBytes(512 * 1024 + 1) }
+                                check(text.size <= 512 * 1024)
+                                val json = JSONObject(text.toString(Charsets.UTF_8))
+                                AppUpdate.fromRelease(json, current).also {
+                                    check(it != null || isCurrentRelease(json, current))
+                                    lastRelease = it
+                                    etag = metadata.getHeaderField("ETag")
+                                }
+                            }
+
+                            else -> {
+                                error("Update metadata unavailable")
                             }
                         }
-
-                        else -> {
-                            error("Update metadata unavailable")
-                        }
-                    }
-                } finally {
-                    metadata.disconnect()
-                }
-            if (release == null) {
-                pending.value = null
-                synchronized(pointer) { pointer.delete() }
-                clean(emptySet())
-                return@withContext
-            }
-            val digest =
-                release.digest ?: response(requireNotNull(release.checksumsUrl)).let { connection ->
-                    try {
-                        check(connection.responseCode == 200)
-                        val bytes = connection.inputStream.use { it.readNBytes(16385) }
-                        check(bytes.size <= 16384)
-                        bytes
-                            .toString(Charsets.UTF_8)
-                            .lineSequence()
-                            .map { it.trim().split(Regex("\\s+"), limit = 2) }
-                            .single { it.size == 2 && it[1].removePrefix("*") == release.filename }[0]
-                            .also { check(UpdateDigest.matches(it)) }
                     } finally {
-                        connection.disconnect()
+                        metadata.disconnect()
                     }
+                if (release == null) {
+                    pending.value = null
+                    synchronized(pointer) { pointer.delete() }
+                    clean(emptySet())
+                    return@withLock
                 }
-            if (previous?.digest == digest) return@withContext
-            check(directory.usableSpace >= release.bytes + 8 * 1024 * 1024)
-            val temporary = File(directory, "download.part.apk")
-            val connection = response(release.url)
-            try {
-                check(connection.responseCode == 200)
-                connection.inputStream.use { input ->
-                    temporary.outputStream().use { output ->
-                        val buffer = ByteArray(64 * 1024)
-                        var copied = 0L
-                        while (true) {
-                            currentCoroutineContext().ensureActive()
-                            val count = input.read(buffer)
-                            if (count < 0) break
-                            copied += count
-                            check(copied <= release.bytes)
-                            output.write(buffer, 0, count)
+                val digest =
+                    release.digest ?: response(requireNotNull(release.checksumsUrl)).let { connection ->
+                        try {
+                            check(connection.responseCode == 200)
+                            val bytes = connection.inputStream.use { it.readNBytes(16385) }
+                            check(bytes.size <= 16384)
+                            bytes
+                                .toString(Charsets.UTF_8)
+                                .lineSequence()
+                                .map { it.trim().split(Regex("\\s+"), limit = 2) }
+                                .single { it.size == 2 && it[1].removePrefix("*") == release.filename }[0]
+                                .also { check(UpdateDigest.matches(it)) }
+                        } finally {
+                            connection.disconnect()
                         }
-                        check(copied == release.bytes)
                     }
-                }
-                val candidate = verified(temporary, digest, release.version)
-                val apk = File(directory, "$digest.apk")
-                currentCoroutineContext().ensureActive()
-                check(temporary.renameTo(apk))
-                synchronized(pointer) {
-                    val output = pointer.startWrite()
-                    try {
-                        output.write(digest.toByteArray())
-                        pointer.finishWrite(output)
-                    } catch (error: Exception) {
-                        pointer.failWrite(output)
-                        throw error
+                if (previous?.digest == digest) return@withLock
+                check(directory.usableSpace >= release.bytes + 8 * 1024 * 1024)
+                val temporary = File(directory, "download.part.apk")
+                val connection = response(release.url)
+                try {
+                    check(connection.responseCode == 200)
+                    connection.inputStream.use { input ->
+                        temporary.outputStream().use { output ->
+                            val buffer = ByteArray(64 * 1024)
+                            var copied = 0L
+                            while (true) {
+                                currentCoroutineContext().ensureActive()
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                copied += count
+                                check(copied <= release.bytes)
+                                output.write(buffer, 0, count)
+                            }
+                            check(copied == release.bytes)
+                        }
                     }
+                    val candidate = verified(temporary, digest, release.version)
+                    val apk = File(directory, "$digest.apk")
+                    currentCoroutineContext().ensureActive()
+                    check(temporary.renameTo(apk))
+                    synchronized(pointer) {
+                        val output = pointer.startWrite()
+                        try {
+                            output.write(digest.toByteArray())
+                            pointer.finishWrite(output)
+                        } catch (error: Exception) {
+                            pointer.failWrite(output)
+                            throw error
+                        }
+                    }
+                    pending.value = candidate.copy(file = apk)
+                    // Retain the previous immutable file until the next check in case Android is opening it.
+                    clean(setOfNotNull(apk, previous?.file))
+                } finally {
+                    connection.disconnect()
+                    temporary.delete()
                 }
-                pending.value = candidate.copy(file = apk)
-                // Retain the previous immutable file until the next check in case Android is opening it.
-                clean(setOfNotNull(apk, previous?.file))
-            } finally {
-                connection.disconnect()
-                temporary.delete()
             }
         }
 }

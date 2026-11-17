@@ -33,26 +33,27 @@ private val Light =
         onSurfaceVariant = Color(0xFF727B90),
         outlineVariant = Color(0xFFE0E5F0),
     )
+private val DarkBackground = Color(0xFF0A0E1C)
 private val Dark =
     darkColorScheme(
         primary = Color(0xFFAFC4FF),
         onPrimary = Color(0xFF12307A),
         primaryContainer = Color(0xFF25395F),
         onPrimaryContainer = Color(0xFFD9E3FF),
-        background = Color(0xFF10141E),
-        onBackground = Color(0xFFE8EDFA),
-        surface = Color(0xFF10141E),
+        background = DarkBackground,
+        onBackground = Color.White,
+        surface = DarkBackground,
         surfaceContainer = Color(0xFF1C2230),
         surfaceContainerLow = Color(0xFF171C28),
         surfaceContainerHigh = Color(0xFF293044),
-        onSurface = Color(0xFFE8EDFA),
+        onSurface = Color.White,
         onSurfaceVariant = Color(0xFFA0AABE),
         outlineVariant = Color(0xFF343E52),
     )
 internal val FavoritesColors =
     PlayerColors.copy(
-        background = Color(0xFF0A0E1C),
-        surface = Color(0xFF0A0E1C),
+        background = DarkBackground,
+        surface = DarkBackground,
         surfaceContainer = Color(0xFF171D30),
         surfaceContainerHigh = Color(0xFF20273B),
     )

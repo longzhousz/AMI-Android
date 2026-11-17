@@ -27,6 +27,21 @@ internal const val UPDATE_REPO = "longzhousz/AMI-Android"
 internal const val UPDATE_API = "https://api.github.com/repos/$UPDATE_REPO/releases/latest"
 internal const val MAX_UPDATE_BYTES = 128L * 1024 * 1024
 internal val UpdateDigest = Regex("[a-f0-9]{64}")
+private val ReleaseTag = Regex("android-v(\\d+\\.\\d+(?:\\.\\d+)?)(-preview)?")
+
+internal fun isCurrentRelease(
+    json: JSONObject,
+    current: AppVersion,
+): Boolean {
+    if (json.optBoolean("draft", true) || json.optBoolean("prerelease", true)) return false
+    val version =
+        ReleaseTag
+            .matchEntire(json.optString("tag_name"))
+            ?.groupValues
+            ?.get(1)
+            ?.let(AppVersion::parse) ?: return false
+    return version <= current
+}
 
 internal data class AppUpdate(
     val version: AppVersion,
@@ -43,7 +58,7 @@ internal data class AppUpdate(
         ): AppUpdate? {
             if (json.optBoolean("draft", true) || json.optBoolean("prerelease", true)) return null
             val tag = json.optString("tag_name")
-            val match = Regex("android-v(\\d+\\.\\d+(?:\\.\\d+)?)(-preview)?").matchEntire(tag) ?: return null
+            val match = ReleaseTag.matchEntire(tag) ?: return null
             val text = match.groupValues[1]
             val preview = match.groupValues[2] == "-preview"
             val version = AppVersion.parse(text)?.takeIf { it > current } ?: return null

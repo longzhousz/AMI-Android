@@ -54,20 +54,22 @@ internal val ColorScheme.isDark: Boolean get() = surface.luminance() < .5f
     val base = MaterialTheme.colorScheme.background
     Canvas(Modifier.fillMaxSize()) {
         drawRect(base)
-        drawRect(
-            Brush.radialGradient(
-                listOf(Color(0xFF7A9EFF).copy(alpha = if (dark) .16f else .12f), Color.Transparent),
-                center = Offset(size.width * .08f, size.height * .12f),
-                radius = size.maxDimension * .7f,
-            ),
-        )
-        drawRect(
-            Brush.radialGradient(
-                listOf(Color(0xFFC49DBD).copy(alpha = if (dark) .13f else .10f), Color.Transparent),
-                center = Offset(size.width, size.height * .62f),
-                radius = size.maxDimension * .6f,
-            ),
-        )
+        if (!dark) {
+            drawRect(
+                Brush.radialGradient(
+                    listOf(Color(0xFF7A9EFF).copy(alpha = .12f), Color.Transparent),
+                    center = Offset(size.width * .08f, size.height * .12f),
+                    radius = size.maxDimension * .7f,
+                ),
+            )
+            drawRect(
+                Brush.radialGradient(
+                    listOf(Color(0xFFC49DBD).copy(alpha = .10f), Color.Transparent),
+                    center = Offset(size.width, size.height * .62f),
+                    radius = size.maxDimension * .6f,
+                ),
+            )
+        }
     }
 }
 

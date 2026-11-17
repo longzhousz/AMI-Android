@@ -222,17 +222,20 @@ fun AmiApp(
                                             destination.page == 2 -> {
                                                 pageState.SaveableStateProvider("settings") {
                                                     Box(Modifier.padding(bottom = floatingInset)) {
-                                                        SettingsScreen(
-                                                            model,
-                                                            onImport,
-                                                            onNotifications,
-                                                            onBridgeFolder,
-                                                            onLyricsFolder,
-                                                            onLocalLibrary = { page = 4 },
-                                                            onListening = { page = 6 },
-                                                            onInstallUpdate = onInstallUpdate,
-                                                            settingsVisible = page == 2 && !fullPlayer && !queue && selectedAlbum == null && remove == null,
-                                                        )
+                                                        val colors = MaterialTheme.colorScheme
+                                                        MaterialTheme(colorScheme = if (darkTheme) colors.copy(primary = Color.White, onSurfaceVariant = Color.White.copy(alpha = .72f)) else colors) {
+                                                            SettingsScreen(
+                                                                model,
+                                                                onImport,
+                                                                onNotifications,
+                                                                onBridgeFolder,
+                                                                onLyricsFolder,
+                                                                onLocalLibrary = { page = 4 },
+                                                                onListening = { page = 6 },
+                                                                onInstallUpdate = onInstallUpdate,
+                                                                settingsVisible = page == 2 && !fullPlayer && !queue && selectedAlbum == null && remove == null,
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }

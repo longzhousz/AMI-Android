@@ -45,6 +45,14 @@ class AppUpdateTest {
         assertNull(AppUpdate.fromRelease(duplicate, current))
     }
 
+    @Test fun currentReleaseIsDistinguishedFromAnInvalidNewerRelease() {
+        assertTrue(isCurrentRelease(release("0.2.3"), current))
+        assertTrue(isCurrentRelease(release("0.2.2", preview = true), current))
+        assertFalse(isCurrentRelease(release("0.2.4"), current))
+        assertFalse(isCurrentRelease(release("0.2.3").put("draft", true), current))
+        assertFalse(isCurrentRelease(release("0.2.3").put("tag_name", "unrecognized"), current))
+    }
+
     @Test fun twoPartVersionsAndTheOldPreviewNamingStillResolve() {
         val two = AppUpdate.fromRelease(release("0.3"), current)!!
         assertEquals(AppVersion(0, 3, 0), two.version)

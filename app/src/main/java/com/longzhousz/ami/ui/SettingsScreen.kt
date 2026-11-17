@@ -31,6 +31,7 @@ import com.longzhousz.ami.R
 import com.longzhousz.ami.core.isCloudSong
 import com.longzhousz.ami.data.AgentProtocol
 import com.longzhousz.ami.data.LibraryRepository
+import com.longzhousz.ami.data.ManualUpdateCheck
 import com.longzhousz.ami.data.OnlineAudioCache
 import com.longzhousz.ami.data.TranslationClient
 import kotlinx.coroutines.Dispatchers
@@ -76,10 +77,13 @@ import kotlinx.coroutines.withContext
         }
     val signIn = rememberNeteaseLogin(model)
     val scope = rememberCoroutineScope()
+    val updates = (LocalContext.current.applicationContext as com.longzhousz.ami.AmiApplication).updates
+    val manualUpdate by updates.manualCheck.collectAsStateWithLifecycle()
     UpdatePrompt(
-        (LocalContext.current.applicationContext as com.longzhousz.ami.AmiApplication).updates,
+        updates,
         settingsVisible && section == SettingsSection.HOME && dialog == null,
-        onInstallUpdate,
+        onMessage = model::showMessage,
+        onInstall = onInstallUpdate,
     )
     LaunchedEffect(section, importState.running) {
         when (section) {
@@ -106,7 +110,15 @@ import kotlinx.coroutines.withContext
             when (current) {
                 SettingsSection.HOME -> {
                     item {
-                        SettingsHome(model.cloud.direct, { dialog = "account" }, onListening, { dialog = "theme" }, { section = it })
+                        SettingsHome(
+                            model.cloud.direct,
+                            { dialog = "account" },
+                            onListening,
+                            { dialog = "theme" },
+                            manualUpdate == ManualUpdateCheck.CHECKING,
+                            updates::checkManually,
+                            { section = it },
+                        )
                     }
                 }
 
