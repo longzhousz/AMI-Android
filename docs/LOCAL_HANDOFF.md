@@ -1,6 +1,6 @@
 # AMI 当前交接
 
-当前版本 **0.3 / versionCode 37**，最低 Android 13，数据库 schema 6、在线音频缓存 schema 1 与签名不变。包名仍为 `com.longzhousz.ami.musicpreview`；版本名与发布文件不再带 preview。应用源码为本轮 0.3 发布提交（见 Git 标签 `android-v0.3`）。上一版证据见 [0.2.14 交接](archive/LOCAL_HANDOFF_0.2.14.md)。
+当前版本 **0.3 / versionCode 37**，最低 Android 13，数据库 schema 6、在线音频缓存 schema 1 与签名不变。包名仍为 `com.longzhousz.ami.musicpreview`；版本名与发布文件不再带 preview。应用源码为发布提交 `35af573`（Git 标签 `android-v0.3`）。上一版证据见 [0.2.14 交接](archive/LOCAL_HANDOFF_0.2.14.md)。
 
 ## 本轮修改
 
@@ -20,8 +20,12 @@
 
 ## 安装包
 
-`AMI-Android-0.3.apk`，包名 `com.longzhousz.ami.musicpreview`，版本 `0.3` / versionCode 37。大小与 SHA-256 发布后补充。
+`AMI-Android-0.3.apk`，5,646,958 bytes；包名 `com.longzhousz.ami.musicpreview`，版本 `0.3` / versionCode 37。SHA-256：
+
+```text
+4164e45994a25b35e4b9e7233515dd1238575146a1ebf5c01c9b9bb0c37beea5
+```
 
 证书 SHA-256：`238e0c33d7deebc6dd873ae8f0e844cf626b873f2ddf2ea8900d4916e2dd6f39`，与 0.2.14 相同。可覆盖云端 0.1.14～0.2.14，保留登录、设置、曲库、歌词与聆听记录。
 
-[0.3 发布](https://github.com/longzhousz/AMI-Android/releases/tag/android-v0.3) 提供 APK、使用说明与校验清单。历史与标签保留，main 不放 APK。
+[0.3 发布](https://github.com/longzhousz/AMI-Android/releases/tag/android-v0.3) 提供 APK、使用说明与校验清单；发布非草稿、非预发布，附件大小与 SHA-256 已核对。历史与标签保留，main 不放 APK。
