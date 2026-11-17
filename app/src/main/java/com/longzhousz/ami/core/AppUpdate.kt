@@ -14,9 +14,11 @@ internal data class AppVersion(
 
     companion object {
         fun parse(text: String): AppVersion? {
-            val parts = Regex("^(\\d+)\\.(\\d+)\\.(\\d+)(?:-[A-Za-z0-9.-]+)?$").matchEntire(text)?.groupValues?.drop(1) ?: return null
-            val values = parts.map { it.toIntOrNull() ?: return null }
-            return AppVersion(values[0], values[1], values[2])
+            val parts = Regex("^(\\d+)\\.(\\d+)(?:\\.(\\d+))?(?:-[A-Za-z0-9.-]+)?$").matchEntire(text) ?: return null
+            val major = parts.groupValues[1].toIntOrNull() ?: return null
+            val minor = parts.groupValues[2].toIntOrNull() ?: return null
+            val patch = parts.groupValues[3].ifBlank { "0" }.toIntOrNull() ?: return null
+            return AppVersion(major, minor, patch)
         }
     }
 }
@@ -28,13 +30,12 @@ internal val UpdateDigest = Regex("[a-f0-9]{64}")
 
 internal data class AppUpdate(
     val version: AppVersion,
+    val filename: String,
     val url: String,
     val bytes: Long,
     val digest: String?,
     val checksumsUrl: String?,
 ) {
-    val filename get() = "AMI-Android-$version-online-preview.apk"
-
     companion object {
         fun fromRelease(
             json: JSONObject,
@@ -42,22 +43,24 @@ internal data class AppUpdate(
         ): AppUpdate? {
             if (json.optBoolean("draft", true) || json.optBoolean("prerelease", true)) return null
             val tag = json.optString("tag_name")
-            val text = Regex("android-v(\\d+\\.\\d+\\.\\d+)-preview").matchEntire(tag)?.groupValues?.get(1) ?: return null
+            val match = Regex("android-v(\\d+\\.\\d+(?:\\.\\d+)?)(-preview)?").matchEntire(tag) ?: return null
+            val text = match.groupValues[1]
+            val preview = match.groupValues[2] == "-preview"
             val version = AppVersion.parse(text)?.takeIf { it > current } ?: return null
             val assets = json.optJSONArray("assets") ?: return null
             val rows = (0 until assets.length()).mapNotNull { assets.optJSONObject(it) }
-            val name = "AMI-Android-$version-online-preview.apk"
+            val name = if (preview) "AMI-Android-$text-online-preview.apk" else "AMI-Android-$text.apk"
             val apk = rows.singleOrNull { it.optString("name") == name } ?: return null
             val prefix = "https://github.com/$UPDATE_REPO/releases/download/$tag/"
             if (apk.optString("browser_download_url") != prefix + name || apk.optLong("size") !in 1..MAX_UPDATE_BYTES) return null
             val digest = apk.optString("digest").removePrefix("sha256:").takeIf { UpdateDigest.matches(it) }
             val checksums =
                 rows
-                    .singleOrNull { it.optString("name") == "AMI-$version-SHA256SUMS.txt" }
+                    .singleOrNull { it.optString("name") == "AMI-$text-SHA256SUMS.txt" }
                     ?.optString("browser_download_url")
-                    ?.takeIf { it == prefix + "AMI-$version-SHA256SUMS.txt" }
+                    ?.takeIf { it == prefix + "AMI-$text-SHA256SUMS.txt" }
             if (digest == null && checksums == null) return null
-            return AppUpdate(version, prefix + name, apk.optLong("size"), digest, checksums)
+            return AppUpdate(version, name, prefix + name, apk.optLong("size"), digest, checksums)
         }
     }
 }

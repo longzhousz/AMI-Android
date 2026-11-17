@@ -10,8 +10,8 @@ android {
         applicationId = "com.longzhousz.ami"
         minSdk = 33
         targetSdk = 37
-        versionCode = 36
-        versionName = "0.2.14"
+        versionCode = 37
+        versionName = "0.3"
         testInstrumentationRunner = "com.longzhousz.ami.RecoverySeedInstrumentation"
     }
     buildFeatures {
@@ -71,7 +71,6 @@ android {
             initWith(getByName("release"))
             signingConfig = signingConfigs.getByName("debug")
             applicationIdSuffix = ".musicpreview"
-            versionNameSuffix = "-music-preview"
             matchingFallbacks += "release"
         }
     }

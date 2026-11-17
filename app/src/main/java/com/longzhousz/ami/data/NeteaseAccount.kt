@@ -155,7 +155,8 @@ internal class NeteaseAccount(
                 "playlists" -> {
                     val all = JSONArray()
                     var offset = 0
-                    do {
+                    var more = true
+                    while (more && offset < 1000) {
                         val root =
                             web.post(
                                 "user/playlist",
@@ -167,7 +168,10 @@ internal class NeteaseAccount(
                                 cookie,
                             )
                         val rows = root.optJSONArray("playlist") ?: JSONArray()
-                        require(rows.length() <= 100)
+                        // NetEase appends the liked playlist outside `limit` on the first page; it
+                        // does not advance the page offset, so only normal rows count toward 100.
+                        val page = playlistPageCount(rows)
+                        require(page <= 100) { "歌单列表异常，请稍后重试" }
                         for (i in 0 until rows.length()) {
                             val row = rows.getJSONObject(i)
                             val kind =
@@ -190,9 +194,10 @@ internal class NeteaseAccount(
                                     .put("kind", kind),
                             )
                         }
-                        offset += rows.length()
-                    } while (rows.length() == 100 && root.optBoolean("more") && offset < 1000)
-                    require(all.length() <= 1000) { "歌单数量过多，请稍后分批读取" }
+                        offset += page
+                        more = page == 100 && root.optBoolean("more")
+                    }
+                    require(all.length() <= 1001) { "歌单数量过多，请稍后分批读取" }
                     JSONObject().put("playlists", all)
                 }
 
@@ -517,6 +522,8 @@ internal class NeteaseAccount(
     }
 
     companion object {
+        internal fun playlistPageCount(rows: JSONArray): Int = (0 until rows.length()).count { rows.getJSONObject(it).optInt("specialType") != 5 }
+
         private fun profile(root: JSONObject): Pair<String, String> {
             val row = root.optJSONObject("profile") ?: error("请先在官方页面完成登录")
             return neteaseId(row.optString("userId")) to row.optString("nickname", "网易云音乐").take(100)

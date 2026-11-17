@@ -1,6 +1,7 @@
 package com.longzhousz.ami.data
 
 import kotlinx.coroutines.*
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -222,6 +223,17 @@ class NeteaseTransportTest {
                 job.cancel()
             }
         }
+
+    @Test fun likedPlaylistAppendedOutsideThePageLimitDoesNotAdvanceOffset() {
+        val page = JSONArray()
+        repeat(100) { page.put(JSONObject().put("id", "${it + 1}")) }
+        page.put(JSONObject().put("id", "liked").put("specialType", 5))
+        assertEquals(100, NeteaseAccount.playlistPageCount(page))
+        assertEquals(0, NeteaseAccount.playlistPageCount(JSONArray().put(JSONObject().put("id", "liked").put("specialType", 5))))
+        val overflow = JSONArray()
+        repeat(101) { overflow.put(JSONObject().put("id", "${it + 1}")) }
+        assertEquals(101, NeteaseAccount.playlistPageCount(overflow))
+    }
 
     @Test fun nativeMetadataKeepsVipTracksAndRejectsTrialOrForeignAudio() {
         val row =

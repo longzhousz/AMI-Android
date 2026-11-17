@@ -77,10 +77,10 @@ class AppUpdatesTest {
 
             override fun getInputStream(): java.io.InputStream {
                 if (address == UPDATE_API) {
-                    val name = "AMI-Android-$offeredVersion-online-preview.apk"
+                    val name = "AMI-Android-$offeredVersion.apk"
                     val json =
                         JSONObject()
-                            .put("tag_name", "android-v$offeredVersion-preview")
+                            .put("tag_name", "android-v$offeredVersion")
                             .put("draft", false)
                             .put("prerelease", false)
                             .put(
@@ -90,7 +90,7 @@ class AppUpdatesTest {
                                         .put("name", name)
                                         .put("size", apk.length())
                                         .put("digest", "sha256:" + if (wrongDigest) "0".repeat(64) else digest)
-                                        .put("browser_download_url", "https://github.com/$UPDATE_REPO/releases/download/android-v$offeredVersion-preview/$name"),
+                                        .put("browser_download_url", "https://github.com/$UPDATE_REPO/releases/download/android-v$offeredVersion/$name"),
                                 ),
                             )
                     return ByteArrayInputStream(json.toString().toByteArray())

@@ -17,7 +17,7 @@ on:
         required: false
         default: ''
       smoke_release_tag:
-        description: 'Check the exact APK attached to a private prerelease'
+        description: 'Check the exact APK attached to a release'
         required: false
         default: ''
       upload_apk_commit:
@@ -153,7 +153,7 @@ jobs:
         run: |
           [[ "$APK_COMMIT" =~ ^[a-f0-9]{40}$ ]]
           [[ "$APK_SHA256" =~ ^[a-f0-9]{64}$ ]]
-          [[ "$RELEASE_TAG" =~ ^android-v[0-9]+\.[0-9]+\.[0-9]+-preview$ ]]
+          [[ "$RELEASE_TAG" =~ ^android-v[0-9]+\.[0-9]+(\.[0-9]+)?(-preview)?$ ]]
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.inputs.upload_apk_commit }}
@@ -221,7 +221,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           BASELINE_TAG: ${{ github.event.inputs.upgrade_from_tag }}
         run: |
-          [[ "$BASELINE_TAG" =~ ^android-v[0-9]+\.[0-9]+\.[0-9]+-preview$ ]]
+          [[ "$BASELINE_TAG" =~ ^android-v[0-9]+\.[0-9]+(\.[0-9]+)?(-preview)?$ ]]
           gh release download "$BASELINE_TAG" --pattern '*.apk' --dir baseline-apk
       - name: Enable emulator acceleration
         run: sudo chmod 666 /dev/kvm

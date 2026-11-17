@@ -227,7 +227,7 @@ class CloudMusic internal constructor(
 
     suspend fun playlists(): List<CloudPlaylist> =
         request("playlists").getJSONArray("playlists").let { rows ->
-            require(rows.length() <= 1000)
+            require(rows.length() <= 1001)
             (0 until rows.length()).map { rows.getJSONObject(it) }.map { row ->
                 CloudPlaylist(id(row.getString("id")), row.getString("title").take(200), picture(row), row.optInt("count"), row.optString("kind"))
             }

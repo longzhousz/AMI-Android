@@ -81,11 +81,11 @@ Windows PowerShell：
 | Preview | `com.longzhousz.ami.preview` | 压缩版体验、系统媒体接入；不可调试 |
 | Release | `com.longzhousz.ami` | 正式发行；默认产物未签名 |
 | PhonePreview | `com.longzhousz.ami.phonepreview` | 只用手机的网易云随播，`assemblePhonePreview` |
-| MusicPreview | `com.longzhousz.ami.musicpreview` | 当前云端交付的在线版，`assembleMusicPreview` |
+| MusicPreview | `com.longzhousz.ami.musicpreview` | 当前云端交付的在线版，`assembleMusicPreview`；0.3 起版本名与发布文件名不带 preview |
 | NeteasePreview | `com.longzhousz.ami.neteasepreview` | 保留旧本地签名安装的构建类型，`assembleNeteasePreview` |
 | CloudPreview | `com.longzhousz.ami.cloudpreview` | 历史 Windows 连接端试验，`assembleCloudPreview` |
 
-当前云端交付使用 MusicPreview 包，输出为 `app/build/outputs/apk/musicPreview/app-musicPreview.apk`。无需电脑服务、局域网权限或通知使用权；官方登录操作由用户在手机上完成，不通过 ADB 输入或导出登录凭据。详细流程与边界见 [使用说明](USER_GUIDE.md)。其余试验构建类型仍保留源码，历史使用和验证记录统一位于 [archive/](archive/README.md)。
+当前云端交付使用 MusicPreview 包，输出为 `app/build/outputs/apk/musicPreview/app-musicPreview.apk`。0.3 起发布文件名为 `AMI-Android-<version>.apk`，标签为 `android-v<version>`，版本名不再附加 preview；0.2.14 及更早版本需手动覆盖安装一次。无需电脑服务、局域网权限或通知使用权；官方登录操作由用户在手机上完成，不通过 ADB 输入或导出登录凭据。详细流程与边界见 [使用说明](USER_GUIDE.md)。其余试验构建类型仍保留源码，历史使用和验证记录统一位于 [archive/](archive/README.md)。
 
 Preview 使用本机开发签名。不同电脑或云端的开发签名通常不同，`adb install -r` 也不能绕过签名检查。Debug 与现有 Preview 包名不同，通常可以并存；如果手机已经有同包名的正式版，也要先核对签名。
 

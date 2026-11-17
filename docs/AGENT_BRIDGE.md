@@ -47,7 +47,7 @@ AMI 是 agent-music-interface。Agent 通过用户显式授权的 SAF 交换文�
 | `album.play` | `agentPlayback` |
 | `album.reorderTracks` | `agentReorder` |
 | `like.read` / `like.set` | `agentOnline` 或 `agentLibrary`，按 `target` |
-| `online.likes.read` / `online.search` / `online.discover` / `online.library.refresh` / `online.likes.refresh` / `online.prepare.cancel` | `agentOnline` |
+| `online.likes.read` / `online.library.read` / `online.tracks.read` / `online.search` / `online.discover` / `online.library.refresh` / `online.likes.refresh` / `online.prepare.cancel` | `agentOnline` |
 | `online.play` | `agentOnline`, `agentPlayback` |
 | `lyrics.translateCurrent` / `lyrics.clear` / `lyrics.models.read` / `lyrics.models.refresh` / `lyrics.model.set` / `lyrics.style.set` | `agentTranslation` |
 | `lyrics.import` | `agentLibrary` |
@@ -65,6 +65,8 @@ AMI 是 agent-music-interface。Agent 通过用户显式授权的 SAF 交换文�
 `like.read` / `like.set` 使用 `songId` 和显式 `liked`；`target` 省略时为本地红心，填 `cloud` 时为网易云红心。网易云红心返回 `ready` 为 false、存在未确认写入（`pending`）或未登录时拒绝执行。结果不会把封面或音源 URL 写回交换文件夹。
 
 `online.search` 使用 `query` 和可选 `offset`；`online.discover` 使用 `kind`（`fm` 或 `daily`）。两者返回可播放状态与元数据，调用 `online.play` 时传回 `tracks` 和 `index`。`online.library.refresh`、`online.likes.refresh` 和 `online.prepare.cancel` 分别刷新在线曲库、刷新红心和取消正在准备的在线队列。
+
+`online.library.read` 返回当前账号的收藏专辑与自建歌单 `collections`，以及「我喜欢的音乐」`liked`；每项含 `id`、`title`、`kind` 和 `count`，专辑另含 `artist`，不返回封面或音源 URL。`online.tracks.read` 使用 `id`、`kind`（`album`、`created`、`liked`，也可用 `playlist`）和可选 `offset`，按每页 30 首返回与搜索、发现相同的 `tracks`、`nextOffset` 和 `more`；取得后可直接传给 `online.play`。`online.likes.read` 仍返回红心歌曲 ID 与同步状态；需要歌曲资料时读取 `liked.id` 对应的歌单。
 
 ### 歌词、曲库、缓存与统计
 

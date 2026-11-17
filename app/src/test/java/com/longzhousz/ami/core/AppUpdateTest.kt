@@ -8,25 +8,30 @@ import org.junit.Test
 class AppUpdateTest {
     private val current = AppVersion(0, 2, 3)
 
-    private fun release(version: String = "0.2.4"): JSONObject {
-        val tag = "android-v$version-preview"
+    private fun release(
+        version: String = "0.2.4",
+        preview: Boolean = false,
+    ): JSONObject {
+        val tag = if (preview) "android-v$version-preview" else "android-v$version"
+        val name = if (preview) "AMI-Android-$version-online-preview.apk" else "AMI-Android-$version.apk"
         return JSONObject().put("tag_name", tag).put("draft", false).put("prerelease", false).put(
             "assets",
             JSONArray().put(
                 JSONObject()
-                    .put("name", "AMI-Android-$version-online-preview.apk")
+                    .put("name", name)
                     .put("size", 5000000)
                     .put("digest", "sha256:" + "a".repeat(64))
-                    .put("browser_download_url", "https://github.com/$UPDATE_REPO/releases/download/$tag/AMI-Android-$version-online-preview.apk"),
+                    .put("browser_download_url", "https://github.com/$UPDATE_REPO/releases/download/$tag/$name"),
             ),
         )
     }
 
     @Test fun versionOrderingIsNumericAndBuildSuffixesDoNotCreateUpdates() {
         assertEquals(current, AppVersion.parse("0.2.3-music-preview"))
+        assertEquals(AppVersion(0, 2, 0), AppVersion.parse("0.2"))
         assertTrue(AppVersion(0, 2, 10) > AppVersion(0, 2, 9))
         assertTrue(AppVersion(1, 0, 0) > AppVersion(0, 99, 99))
-        listOf("0.2", "-1.2.3", "2147483648.0.0", "0.2.4/other").forEach { assertNull(AppVersion.parse(it)) }
+        listOf("-1.2.3", "2147483648.0.0", "0.2.4/other").forEach { assertNull(AppVersion.parse(it)) }
     }
 
     @Test fun onlyANewerPublishedCompatibleAssetIsSelected() {
@@ -38,6 +43,15 @@ class AppUpdateTest {
         val duplicate = release()
         duplicate.getJSONArray("assets").put(duplicate.getJSONArray("assets").getJSONObject(0))
         assertNull(AppUpdate.fromRelease(duplicate, current))
+    }
+
+    @Test fun twoPartVersionsAndTheOldPreviewNamingStillResolve() {
+        val two = AppUpdate.fromRelease(release("0.3"), current)!!
+        assertEquals(AppVersion(0, 3, 0), two.version)
+        assertEquals("AMI-Android-0.3.apk", two.filename)
+        val legacy = AppUpdate.fromRelease(release("0.3", preview = true), current)!!
+        assertEquals(AppVersion(0, 3, 0), legacy.version)
+        assertEquals("AMI-Android-0.3-online-preview.apk", legacy.filename)
     }
 
     @Test fun foreignOriginsOversizedArchivesAndMissingIntegrityAreRejected() {
@@ -61,7 +75,7 @@ class AppUpdateTest {
         json.getJSONArray("assets").put(
             JSONObject()
                 .put("name", "AMI-0.2.4-SHA256SUMS.txt")
-                .put("browser_download_url", "https://github.com/$UPDATE_REPO/releases/download/android-v0.2.4-preview/AMI-0.2.4-SHA256SUMS.txt"),
+                .put("browser_download_url", "https://github.com/$UPDATE_REPO/releases/download/android-v0.2.4/AMI-0.2.4-SHA256SUMS.txt"),
         )
         assertNotNull(AppUpdate.fromRelease(json, current)?.checksumsUrl)
     }

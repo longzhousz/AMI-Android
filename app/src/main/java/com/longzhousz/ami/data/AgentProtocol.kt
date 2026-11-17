@@ -63,6 +63,8 @@ internal object AgentProtocol {
             "like.read" to emptySet<String>(),
             "like.set" to emptySet<String>(),
             "online.likes.read" to setOf("agentOnline"),
+            "online.library.read" to setOf("agentOnline"),
+            "online.tracks.read" to setOf("agentOnline"),
             "online.search" to setOf("agentOnline"),
             "online.discover" to setOf("agentOnline"),
             "online.library.refresh" to setOf("agentOnline"),

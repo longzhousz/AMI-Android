@@ -110,6 +110,7 @@ class AgentBridge(
                 } finally {
                     withContext(Dispatchers.IO) { deleteQuietly(request.destination) }
                     synchronized(pending) { pending.remove(requestId) }
+                    requestSize.remove(requestId)
                     completion.complete(Unit)
                 }
             }
@@ -192,13 +193,21 @@ class AgentBridge(
                     ActionResult(AgentProtocol.STATUS_UNAUTHORIZED, error = AgentProtocol.ERROR_INVALID_TOKEN)
                 }
 
-                isActiveRequest(id) || id in processed -> {
+                isActiveRequest(id) -> {
+                    return
+                }
+
+                id in processed -> {
                     ActionResult(AgentProtocol.STATUS_DUPLICATE)
                 }
 
                 !AgentProtocol.isKnown(action) -> {
                     val status = if (AgentProtocol.requiresUi(action)) AgentProtocol.STATUS_REQUIRES_UI else AgentProtocol.STATUS_UNKNOWN_ACTION
                     ActionResult(status)
+                }
+
+                AgentProtocol.requiresUi(action) -> {
+                    ActionResult(AgentProtocol.STATUS_REQUIRES_UI)
                 }
 
                 AgentProtocol.forbiddenPayloadField(payload) != null -> {
@@ -345,6 +354,7 @@ class AgentBridge(
             }
             if (!isActiveRequest(id)) reserve(id)
             synchronized(pending) { pending[id] = PendingRequest(action, payload, uri, destination, root, System.currentTimeMillis(), size) }
+            requestSize[id] = size
             ActionResult()
         }
 
@@ -371,6 +381,7 @@ class AgentBridge(
             }
         stale.forEach { (id, uri, _) ->
             synchronized(pending) { pending.remove(id) }
+            requestSize.remove(id)
             withContext(Dispatchers.IO) { deleteQuietly(uri) }
             finalize(root, id, "", uri, ActionResult(AgentProtocol.STATUS_TIMEOUT))
         }
@@ -382,6 +393,7 @@ class AgentBridge(
                     .map { (id, request) -> Triple(id, request.uri, request) }
             }
         memory.forEach { (id, uri, request) ->
+            requestSize.remove(id)
             withContext(Dispatchers.IO) { deleteQuietly(request.destination) }
             finalize(root, id, request.action, uri, ActionResult(AgentProtocol.STATUS_TIMEOUT))
         }

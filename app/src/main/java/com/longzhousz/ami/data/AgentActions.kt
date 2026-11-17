@@ -2,9 +2,11 @@ package com.longzhousz.ami.data
 
 import com.longzhousz.ami.LibraryStateHolder
 import com.longzhousz.ami.PlaybackStateHolder
+import com.longzhousz.ami.core.CloudPlaylist
 import com.longzhousz.ami.core.CloudTrack
 import com.longzhousz.ami.core.ListeningPeriod
 import com.longzhousz.ami.core.ListeningScale
+import com.longzhousz.ami.core.neteaseId
 import com.longzhousz.ami.playback.PlayMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -47,6 +49,8 @@ internal class AgentActions(
             "like.read" -> likeRead(payload)
             "like.set" -> likeSet(payload)
             "online.likes.read" -> cloudLikes()
+            "online.library.read" -> onlineLibrary()
+            "online.tracks.read" -> onlineTracks(payload)
             "online.search" -> onlineSearch(payload)
             "online.discover" -> onlineDiscover(payload)
             "online.library.refresh" -> unit { library.refreshBridgeOnlineLibrary() }
@@ -217,6 +221,39 @@ internal class AgentActions(
         return result(JSONObject().put("ready", likes.ready).put("revision", repository.cloud.likesRevision.value).put("ids", JSONArray(likes.ids)))
     }
 
+    private suspend fun onlineLibrary(): AgentBridge.ActionResult {
+        check(repository.cloud.direct && repository.cloud.configured.value) { "请先登录网易云音乐" }
+        val library = repository.cloud.library()
+        return result(
+            JSONObject()
+                .put("collections", JSONArray(library.collections.map(::collectionJson)))
+                .put("liked", library.liked?.let(::collectionJson)),
+        )
+    }
+
+    private fun collectionJson(collection: CloudPlaylist) =
+        JSONObject()
+            .put("id", collection.id)
+            .put("title", collection.title)
+            .put("kind", collection.kind)
+            .put("count", collection.count)
+            .apply { if (collection.artist.isNotBlank()) put("artist", collection.artist) }
+
+    private suspend fun onlineTracks(payload: JSONObject): AgentBridge.ActionResult {
+        check(repository.cloud.direct && repository.cloud.configured.value) { "请先登录网易云音乐" }
+        val id = neteaseId(payload.getString("id"))
+        val kind = payload.optString("kind").ifBlank { "playlist" }
+        require(kind in setOf("album", "playlist", "created", "liked", "collected"))
+        val offset = payload.optInt("offset", 0)
+        require(offset in 0..20_000)
+        val page =
+            repository.cloud.tracks(
+                CloudPlaylist(id, "", null, 0, if (kind == "album") "album" else "playlist"),
+                offset,
+            )
+        return result(tracksJson(page))
+    }
+
     private suspend fun onlineSearch(payload: JSONObject): AgentBridge.ActionResult {
         val query = payload.getString("query")
         val offset = payload.optInt("offset", 0).coerceIn(0, 10_000)
@@ -256,6 +293,11 @@ internal class AgentActions(
                             .put("album", track.album)
                             .put("durationMs", track.duration)
                             .put("available", track.available)
+                            .apply {
+                                track.primaryArtistId?.let { put("primaryArtistId", it) }
+                                track.primaryArtistName?.let { put("primaryArtistName", it) }
+                                track.albumId?.let { put("albumId", it) }
+                            }
                     },
                 ),
             ).put("nextOffset", page.nextOffset)

@@ -26,6 +26,20 @@ class AgentProtocolTest {
         assertTrue(AgentProtocol.permissionsFor("like.set")!!.isEmpty())
     }
 
+    @Test fun onlineLibraryAndTrackReadsRequireOnlinePermission() {
+        assertTrue(AgentProtocol.isKnown("online.library.read"))
+        assertTrue(AgentProtocol.isKnown("online.tracks.read"))
+        assertEquals(setOf("agentOnline"), AgentProtocol.permissionsFor("online.library.read"))
+        assertEquals(setOf("agentOnline"), AgentProtocol.permissionsFor("online.tracks.read"))
+        assertFalse(AgentProtocol.requiresUi("online.library.read"))
+        assertFalse(AgentProtocol.requiresUi("online.tracks.read"))
+        assertNull(
+            AgentProtocol.forbiddenPayloadField(
+                JSONObject().put("id", "123456").put("kind", "album").put("offset", 0),
+            ),
+        )
+    }
+
     @Test fun uiOnlyAndConfirmationActionsAreDistinct() {
         AgentProtocol.uiOnlyActions.forEach { action ->
             assertFalse("UI-only action must not be executable", action in AgentProtocol.permissions)
