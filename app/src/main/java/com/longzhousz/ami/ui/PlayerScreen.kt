@@ -59,6 +59,7 @@ internal data class PlayerActions(
     val next: () -> Unit = {},
     val mode: (PlayMode) -> Unit = {},
     val translate: () -> Unit = {},
+    val neteaseTranslation: () -> Unit = {},
     val retranslate: () -> Unit = translate,
     val restoreLyrics: () -> Unit = {},
     val external: Boolean = false,
@@ -114,6 +115,7 @@ internal data class PlayerActions(
             next = { model.act("player.next") { model.player.next() } },
             mode = { mode -> model.act("player.mode") { model.player.mode(mode) } },
             translate = { model.translate(song) },
+            neteaseTranslation = { model.showNeteaseTranslation(song) },
             retranslate = { model.translate(song, force = true) },
             restoreLyrics = { model.clearLyrics(song) },
             canFavorite = !song.isCloudSong() || (model.cloud.direct && likes.ready && song.neteaseId !in likes.pending),
@@ -276,6 +278,11 @@ internal val PlayerColors =
                     translation != null,
                     showTranslation,
                     onTranslation = { if (translation != null) showTranslation = !showTranslation else actions.translate() },
+                    onChooseTranslation = { netease ->
+                        showTranslation = true
+                        if (!lyricsMode) toggle()
+                        if (netease) actions.neteaseTranslation() else actions.translate()
+                    },
                     onLyrics = toggle,
                     position = displayedPosition,
                     modifier = Modifier.fillMaxWidth(),
@@ -329,6 +336,7 @@ private fun PlayerControls(
     translated: Boolean,
     showTranslation: Boolean,
     onTranslation: () -> Unit,
+    onChooseTranslation: (Boolean) -> Unit,
     onLyrics: () -> Unit,
     position: () -> Long,
     modifier: Modifier,
@@ -336,7 +344,6 @@ private fun PlayerControls(
     BoxWithConstraints(modifier) {
         val horizontal = if (maxWidth < 360.dp) 16.dp else 28.dp
         val compact = maxWidth - horizontal * 2 < 300.dp
-        var modeMenu by remember { mutableStateOf(false) }
         val mode = PlayMode.from(playback.shuffle, playback.repeat)
         Column(Modifier.fillMaxWidth().padding(horizontal = horizontal).padding(bottom = 6.dp)) {
             Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -370,26 +377,7 @@ private fun PlayerControls(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (actions.external) {
-                    Spacer(Modifier.size(48.dp))
-                } else {
-                    Box {
-                        TransportButton(mode.icon(), stringResource(R.string.player_mode, mode.label), { modeMenu = true }, tint = Color.White.copy(alpha = .65f))
-                        GlassDropdownMenu(modeMenu, { modeMenu = false }) {
-                            PlayMode.entries.forEach { option ->
-                                DropdownMenuItem(
-                                    text = { Text(option.label) },
-                                    leadingIcon = { Icon(option.icon(), null) },
-                                    trailingIcon = { if (mode == option) Icon(Icons.Rounded.Check, stringResource(R.string.player_current_mode)) },
-                                    onClick = {
-                                        modeMenu = false
-                                        actions.mode(option)
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
+                PlayerModeControl(actions.external, mode, actions.mode)
                 TransportButton(
                     Icons.Rounded.SkipPrevious,
                     stringResource(R.string.player_previous),
@@ -434,23 +422,75 @@ private fun PlayerControls(
                     tint = Color.White.copy(alpha = .65f),
                     glass = false,
                 )
-                ActionIcon(
-                    Icons.Rounded.Translate,
-                    if (translated) {
-                        if (showTranslation) {
-                            stringResource(R.string.player_hide_translation)
-                        } else {
-                            stringResource(R.string.player_show_translation)
-                        }
-                    } else {
-                        stringResource(R.string.player_translate)
-                    },
-                    onTranslation,
-                    enabled = !translating && song.lyrics.isNotBlank(),
-                    tint = Color.White.copy(alpha = if (translated && !showTranslation) .35f else .65f),
-                    glass = false,
-                )
+                TranslationControl(song, translating, translated, showTranslation, onTranslation, onChooseTranslation)
             }
+        }
+    }
+}
+
+@Composable
+private fun PlayerModeControl(
+    external: Boolean,
+    mode: PlayMode,
+    onMode: (PlayMode) -> Unit,
+) {
+    var menu by remember { mutableStateOf(false) }
+    if (external) {
+        Spacer(Modifier.size(48.dp))
+    } else {
+        Box {
+            TransportButton(mode.icon(), stringResource(R.string.player_mode, mode.label), { menu = true }, tint = Color.White.copy(alpha = .65f))
+            GlassDropdownMenu(menu, { menu = false }) {
+                PlayMode.entries.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option.label) },
+                        leadingIcon = { Icon(option.icon(), null) },
+                        trailingIcon = { if (mode == option) Icon(Icons.Rounded.Check, stringResource(R.string.player_current_mode)) },
+                        onClick = {
+                            menu = false
+                            onMode(option)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TranslationControl(
+    song: Song,
+    translating: Boolean,
+    translated: Boolean,
+    showTranslation: Boolean,
+    onTranslation: () -> Unit,
+    onChooseTranslation: (Boolean) -> Unit,
+) {
+    var menu by remember(song.id) { mutableStateOf(false) }
+    Box {
+        ActionIcon(
+            Icons.Rounded.Translate,
+            if (translated) {
+                if (showTranslation) stringResource(R.string.player_hide_translation) else stringResource(R.string.player_show_translation)
+            } else {
+                stringResource(R.string.player_translate)
+            },
+            { if (!translating) onTranslation() },
+            enabled = song.lyrics.isNotBlank(),
+            tint = Color.White.copy(alpha = if (translating || (translated && !showTranslation)) .35f else .65f),
+            glass = false,
+            onLongClick = { menu = true },
+            onLongClickLabel = stringResource(R.string.player_translation_sources),
+        )
+        GlassDropdownMenu(menu, { menu = false }) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.player_translation_ai)) }, onClick = {
+                menu = false
+                onChooseTranslation(false)
+            }, enabled = !translating, leadingIcon = { Icon(Icons.Rounded.AutoAwesome, null) })
+            DropdownMenuItem(text = { Text(stringResource(R.string.player_translation_netease)) }, onClick = {
+                menu = false
+                onChooseTranslation(true)
+            }, leadingIcon = { Icon(Icons.Rounded.LibraryMusic, null) })
         }
     }
 }

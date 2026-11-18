@@ -173,6 +173,38 @@ class PhoneMusicViewModel internal constructor(
             }
     }
 
+    // Parsed lyric input can fail at several boundaries; keep playback and the previous translation intact.
+    @Suppress("TooGenericExceptionCaught")
+    fun showNeteaseTranslation() {
+        val song = session.state.value.song ?: return
+        val doc = lyrics.value.document?.takeIf { lyrics.value.songId == song.id } ?: return
+        translation?.cancel()
+        lyrics.value = lyrics.value.copy(translating = true)
+        translation =
+            viewModelScope.launch {
+                try {
+                    val result = withContext(Dispatchers.Default) { doc.embeddedTranslation }
+                    if (session.state.value.song
+                            ?.id == song.id && lyrics.value.document === doc
+                    ) {
+                        lyrics.value = lyrics.value.copy(translation = result ?: lyrics.value.translation, translating = false)
+                        if (result == null) message.value = "这首歌暂无可显示的网易云译文"
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (alignmentFailure: Exception) {
+                    com.longzhousz.ami.data.AppDiagnostics.errors
+                        .record(ErrorCode.LYRICS_READ, alignmentFailure)
+                    if (session.state.value.song
+                            ?.id == song.id && lyrics.value.document === doc
+                    ) {
+                        lyrics.value = lyrics.value.copy(translating = false)
+                        message.value = "网易云译文暂时无法读取"
+                    }
+                }
+            }
+    }
+
     override fun onCleared() {
         stop()
         super.onCleared()

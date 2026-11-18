@@ -4,6 +4,7 @@ import android.app.Application
 import com.longzhousz.ami.core.CurrentLyrics
 import com.longzhousz.ami.core.ErrorCode
 import com.longzhousz.ami.core.Song
+import com.longzhousz.ami.core.SongLyrics
 import com.longzhousz.ami.core.isCloudSong
 import com.longzhousz.ami.data.AppDiagnostics
 import com.longzhousz.ami.data.LibraryRepository
@@ -100,6 +101,12 @@ class PlaybackStateHolder internal constructor(
         _translations.value = value.translation
         _translating.value = value.translating
     }
+
+    private fun isCurrentLyrics(
+        key: LyricsKey,
+        document: SongLyrics,
+        epoch: Long,
+    ) = translationEpoch == epoch && currentKey() == key && _lyrics.value.document === document
 
     fun setUiActive(active: Boolean) {
         uiActive.value = active
@@ -200,6 +207,38 @@ class PlaybackStateHolder internal constructor(
             } catch (e: Exception) {
                 AppDiagnostics.errors.record(ErrorCode.TRANSLATION, e)
                 if (currentKey() == key) message("翻译未完成，请检查密钥与网络后重试")
+            }
+        }
+    }
+
+    // Parsed lyric input can fail at several boundaries; keep playback and the previous translation intact.
+    @Suppress("TooGenericExceptionCaught")
+    fun showNeteaseTranslation(song: Song) {
+        val key = currentKey()
+        val document = _lyrics.value.document?.takeIf { key.id == song.id && _lyrics.value.songId == song.id && _lyrics.value.revision == key.revision } ?: return
+        val session = cloud.likes.value.session
+        val epoch = ++translationEpoch
+        translationJob?.cancel()
+        publish(_lyrics.value.copy(translating = true))
+        scope.launch {
+            try {
+                val translated = withContext(Dispatchers.Default) { document.embeddedTranslation }
+                if (isCurrentLyrics(key, document, epoch)) {
+                    if (!song.isCloudSong() || cloud.likes.value.session == session) {
+                        if (translated == null) message("这首歌暂无可显示的网易云译文")
+                        publish(_lyrics.value.copy(translation = translated ?: _lyrics.value.translation, translating = false))
+                    } else {
+                        publish(_lyrics.value.copy(translating = false))
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (alignmentFailure: Exception) {
+                AppDiagnostics.errors.record(ErrorCode.LYRICS_READ, alignmentFailure)
+                if (isCurrentLyrics(key, document, epoch)) {
+                    publish(_lyrics.value.copy(translating = false))
+                    if (!song.isCloudSong() || cloud.likes.value.session == session) message("网易云译文暂时无法读取")
+                }
             }
         }
     }

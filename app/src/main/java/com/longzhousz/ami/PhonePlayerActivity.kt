@@ -192,6 +192,7 @@ fun openPhoneMusic(context: Context): Boolean =
                             next = { act(model.session::next) },
                             previous = { act(model.session::previous) },
                             translate = { model.translate() },
+                            neteaseTranslation = model::showNeteaseTranslation,
                             retranslate = { model.translate(true) },
                             canToggle = canToggle,
                             canSeek = state.supports(AndroidPlaybackState.ACTION_SEEK_TO),

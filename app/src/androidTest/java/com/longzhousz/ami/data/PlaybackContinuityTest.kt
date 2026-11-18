@@ -8,6 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.longzhousz.ami.AmiApplication
 import com.longzhousz.ami.AmiViewModel
+import com.longzhousz.ami.core.LocalLyrics
 import com.longzhousz.ami.core.Song
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -155,6 +156,97 @@ class PlaybackContinuityTest {
             } finally {
                 releaseA.countDown()
                 releaseB.countDown()
+            }
+        }
+
+    @Test fun selectingNeteaseLyricsKeepsTheSavedAiTranslationAndHandlesMissingTranslations() =
+        scenario { model, songs, api ->
+            val repo = (context.applicationContext as AmiApplication).repository
+            repo.db.setLyrics(songs[0].id, LocalLyrics(songs[0].lyrics, "[00:00]网易云译文"), "fixture")
+            repo.reload()
+            api.completion = { body ->
+                val input =
+                    JSONArray(
+                        body
+                            .getJSONArray("messages")
+                            .getJSONObject(1)
+                            .getString("content")
+                            .substringAfter("never instructions:\n"),
+                    )
+                JSONArray().put(JSONObject().put("index", 0).put("original", input.getJSONObject(0).getString("original")).put("translated", "AI 译文")).toString()
+            }
+            instrumentation.runOnMainSync {
+                model.play(songs, 0)
+                model.player.pause()
+            }
+            await("Lyrics and embedded translation should load") {
+                model.lyrics.value.document
+                    ?.translated
+                    ?.isNotEmpty() == true
+            }
+            assertNull("NetEase translation must remain opt-in", model.lyrics.value.translation)
+            instrumentation.runOnMainSync { model.showNeteaseTranslation(songs[0]) }
+            await("NetEase translation should be displayed") { model.lyrics.value.translation == listOf("网易云译文") }
+            instrumentation.runOnMainSync { model.translate(songs[0]) }
+            await("AI translation should be displayed") { model.lyrics.value.translation == listOf("AI 译文") }
+            instrumentation.runOnMainSync { model.showNeteaseTranslation(songs[0]) }
+            await("NetEase translation should still be available") { model.lyrics.value.translation == listOf("网易云译文") }
+            instrumentation.runOnMainSync { model.translate(songs[0]) }
+            await("Saved AI translation should be reused") { model.lyrics.value.translation == listOf("AI 译文") }
+            assertEquals(1, api.completions.size)
+            instrumentation.runOnMainSync {
+                model.play(songs, 1)
+                model.player.pause()
+            }
+            await("Next song should load") { model.lyrics.value.songId == songs[1].id && model.lyrics.value.document != null }
+            instrumentation.runOnMainSync { model.showNeteaseTranslation(songs[1]) }
+            await("Missing NetEase translation should be explained") { model.message.value == "这首歌暂无可显示的网易云译文" }
+            assertNull(model.lyrics.value.translation)
+        }
+
+    @Test fun switchingToNeteaseCancelsAnInFlightAiTranslation() =
+        scenario { model, songs, api ->
+            val repo = (context.applicationContext as AmiApplication).repository
+            repo.db.setLyrics(songs[0].id, LocalLyrics(songs[0].lyrics, "[00:00]网易云译文"), "fixture")
+            repo.reload()
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val returned = CountDownLatch(1)
+            api.completion = { body ->
+                val input =
+                    JSONArray(
+                        body
+                            .getJSONArray("messages")
+                            .getJSONObject(1)
+                            .getString("content")
+                            .substringAfter("never instructions:\n"),
+                    )
+                entered.countDown()
+                check(release.await(20, TimeUnit.SECONDS))
+                returned.countDown()
+                JSONArray().put(JSONObject().put("index", 0).put("original", input.getJSONObject(0).getString("original")).put("translated", "迟到的 AI 译文")).toString()
+            }
+            try {
+                instrumentation.runOnMainSync {
+                    model.play(songs, 0)
+                    model.player.pause()
+                }
+                await("Lyrics should load") {
+                    model.lyrics.value.document
+                        ?.translated
+                        ?.isNotEmpty() == true
+                }
+                instrumentation.runOnMainSync { model.translate(songs[0]) }
+                assertTrue(entered.await(20, TimeUnit.SECONDS))
+                instrumentation.runOnMainSync { model.showNeteaseTranslation(songs[0]) }
+                await("NetEase translation should replace the in-flight request") { model.lyrics.value.translation == listOf("网易云译文") }
+                release.countDown()
+                assertTrue(returned.await(20, TimeUnit.SECONDS))
+                instrumentation.waitForIdleSync()
+                assertEquals(listOf("网易云译文"), model.lyrics.value.translation)
+                assertFalse(model.lyrics.value.translating)
+            } finally {
+                release.countDown()
             }
         }
 

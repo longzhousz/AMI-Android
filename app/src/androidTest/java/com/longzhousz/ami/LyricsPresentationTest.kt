@@ -160,6 +160,71 @@ class LyricsPresentationTest {
         compose.onNodeWithTag("lyric-7").assertIsSelected().assertIsDisplayed()
     }
 
+    @Test fun longPressTranslationSelectsTheSourceAndShowsLyricsAgain() {
+        var displayed by mutableStateOf<List<String>?>(translations)
+        var busy by mutableStateOf(false)
+        var aiCalls = 0
+        var neteaseCalls = 0
+        compose.setContent {
+            AmiTheme("dark") {
+                PlayerContent(
+                    song,
+                    PlaybackState(position = 0, duration = 90000),
+                    displayed,
+                    busy,
+                    PlayerActions(
+                        translate = {
+                            aiCalls++
+                            displayed = translations
+                        },
+                        neteaseTranslation = {
+                            neteaseCalls++
+                            displayed = listOf("网易云的译文") + translations.drop(1)
+                        },
+                    ),
+                    lyricsPage = remember { mutableStateOf(true) },
+                )
+            }
+        }
+        compose.onNodeWithContentDescription("隐藏译文").performClick()
+        compose.onNodeWithContentDescription("显示译文").performTouchInput { longClick() }
+        compose.onNodeWithText("AI 智能翻译").assertIsDisplayed()
+        screenshot("translation-sources", system = true)
+        compose.onNodeWithText("网易云译文").performClick()
+        compose.onNodeWithText("网易云的译文").assertIsDisplayed()
+        assertEquals(1, neteaseCalls)
+        assertEquals(0, aiCalls)
+        compose.onNodeWithContentDescription("隐藏译文").performTouchInput { longClick() }
+        compose.onNodeWithText("AI 智能翻译").performClick()
+        compose.onNodeWithText(translations.first()).assertIsDisplayed()
+        assertEquals(1, aiCalls)
+        compose.runOnIdle { busy = true }
+        compose.onNodeWithContentDescription("隐藏译文").performTouchInput { longClick() }
+        compose.onNodeWithText("AI 智能翻译").assertIsNotEnabled()
+        compose.onNodeWithText("网易云译文").performClick()
+        assertEquals(2, neteaseCalls)
+    }
+
+    @Test fun choosingNeteaseFromTheCoverOpensTheLyricPage() {
+        var displayed by mutableStateOf<List<String>?>(null)
+        compose.setContent {
+            AmiTheme("dark") {
+                PlayerContent(
+                    song,
+                    PlaybackState(position = 0, duration = 90000),
+                    displayed,
+                    false,
+                    PlayerActions(neteaseTranslation = { displayed = listOf("网易云的译文") + translations.drop(1) }),
+                    lyricsPage = remember { mutableStateOf(false) },
+                )
+            }
+        }
+        compose.onNodeWithTag("player-cover").assertIsDisplayed()
+        compose.onNodeWithContentDescription("翻译歌词").performTouchInput { longClick() }
+        compose.onNodeWithText("网易云译文").performClick()
+        compose.onNodeWithText("网易云的译文").assertIsDisplayed()
+    }
+
     @Test fun narrowScreenAndLargeFontsKeepLongLyricsAndControlsReadable() {
         val longLine = "我们沿着晚风，把每一个平凡的瞬间，慢慢唱成一首温柔的歌。"
         val largeSong = song.copy(lyrics = "[00:00.00]$longLine\n[00:30.00]还有未曾说完的故事")
@@ -277,9 +342,12 @@ class LyricsPresentationTest {
         assertTrue("Active paragraph must be inside the reading viewport", line.top >= stage.top && line.top < stage.top + stage.height * .5f)
     }
 
-    private fun screenshot(name: String) {
+    private fun screenshot(
+        name: String,
+        system: Boolean = false,
+    ) {
         compose.waitForIdle()
-        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+        val bitmap = if (system) requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()) else compose.onRoot().captureToImage().asAndroidBitmap()
         val directory = File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir, "qa").apply { mkdirs() }
         File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }

@@ -38,6 +38,9 @@
     <string name="player_hide_translation" formatted="false">隐藏译文</string>
     <string name="player_show_translation" formatted="false">显示译文</string>
     <string name="player_translate" formatted="false">翻译歌词</string>
+    <string name="player_translation_sources" formatted="false">选择翻译来源</string>
+    <string name="player_translation_ai" formatted="false">AI 智能翻译</string>
+    <string name="player_translation_netease" formatted="false">网易云译文</string>
     <string name="player_buffering" formatted="false">正在缓冲…</string>
     <string name="settings_account_section" formatted="false">账号</string>
     <string name="settings_account" formatted="false">网易云账号</string>

@@ -151,6 +151,8 @@ class AmiViewModel internal constructor(
         force: Boolean = false,
     ) = playback.translate(song, force)
 
+    fun showNeteaseTranslation(song: Song) = playback.showNeteaseTranslation(song)
+
     fun refreshModels(force: Boolean = false) = playback.refreshModels(force)
 
     fun selectTranslationModel(selection: String) = playback.selectTranslationModel(selection)

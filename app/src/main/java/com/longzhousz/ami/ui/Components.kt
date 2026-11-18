@@ -14,6 +14,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -36,6 +37,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -209,26 +211,41 @@ private val CoverPalette = listOf(Color(0xFF7489B8), Color(0xFF8C9A86), Color(0x
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
     glass: Boolean = true,
+    onLongClick: (() -> Unit)? = null,
+    onLongClickLabel: String? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale = animateFloatAsState(if (pressed) .86f else 1f, spring(dampingRatio = .72f, stiffness = 700f), label = "icon-press")
     val color by animateColorAsState(if (enabled) tint else tint.copy(alpha = .38f), tween(180), label = "icon-tint")
-    IconButton(
-        onClick,
+    val iconModifier =
         modifier
             .size(48.dp)
             .graphicsLayer {
                 scaleX = scale.value
                 scaleY = scale.value
-            }.then(if (glass) Modifier.liquidGlass(CircleShape) else Modifier),
-        enabled = enabled,
-        interactionSource = interaction,
-    ) {
+            }.then(if (glass) Modifier.liquidGlass(CircleShape) else Modifier)
+    val content: @Composable () -> Unit = {
         AnimatedContent(icon to label, transitionSpec = {
             (fadeIn(tween(140)) + scaleIn(tween(180), initialScale = .8f)) togetherWith
                 (fadeOut(tween(100)) + scaleOut(tween(140), targetScale = .8f))
         }, label = "action-icon") { target -> Icon(target.first, target.second, tint = color) }
+    }
+    if (onLongClick == null) {
+        IconButton(onClick, iconModifier, enabled = enabled, interactionSource = interaction) { content() }
+    } else {
+        Box(
+            iconModifier.clip(CircleShape).combinedClickable(
+                interactionSource = interaction,
+                indication = ripple(),
+                enabled = enabled,
+                role = Role.Button,
+                onLongClickLabel = onLongClickLabel,
+                onLongClick = onLongClick,
+                onClick = onClick,
+            ),
+            contentAlignment = Alignment.Center,
+        ) { content() }
     }
 }
 

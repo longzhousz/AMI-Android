@@ -421,11 +421,9 @@ class OnlineLibraryTest {
             val queue = cloud.catalog.value
             cloud.toggleLike(track.song())
             assertEquals(setOf("201", "202", "301"), cloud.likes.value.ids)
-            val write = requests.single { it.first == "radio/like" }.second
+            val write = requests.single { it.first == "client-like" }.second
             assertEquals("301", write.getString("trackId"))
             assertTrue(write.getBoolean("like"))
-            assertEquals("itembased", write.getString("alg"))
-            assertEquals("3", write.getString("time"))
             assertEquals(listOf("301", "201", "202"), cloud.savedPage(true, shelf.liked!!.key)!!.tracks.map { it.id })
             assertEquals(3, cloud.savedPage(true, shelf.liked!!.key)!!.nextOffset)
             assertSame("Heart changes must not rebuild the playing catalog", queue, cloud.catalog.value)
@@ -436,7 +434,7 @@ class OnlineLibraryTest {
             assertFalse("301" in likedIds)
             cloud.refreshLikes(force = true)
             assertFalse("301" in cloud.likes.value.ids)
-            assertEquals(listOf(true, false), requests.filter { it.first == "radio/like" }.map { it.second.getBoolean("like") })
+            assertEquals(listOf(true, false), requests.filter { it.first == "client-like" }.map { it.second.getBoolean("like") })
             val revision = cloud.likesRevision.value
             val saved = cloud.savedPage(true, shelf.liked!!.key)
             for (status in listOf(403, 401)) {
@@ -849,24 +847,40 @@ class OnlineLibraryTest {
         fun frame(label: String): android.graphics.Rect {
             compose.waitForIdle()
             val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
-            var left = bitmap.width
-            var top = bitmap.height
+
+            fun isCoverPixel(
+                x: Int,
+                y: Int,
+            ): Boolean {
+                val pixel = bitmap.getPixel(x, y)
+                return android.graphics.Color.red(pixel) > 220 && android.graphics.Color.green(pixel) < 50 && android.graphics.Color.blue(pixel) in 75..120
+            }
+            var left = 0
             var right = -1
-            var bottom = -1
+            var centerY = 0
             for (y in 0 until bitmap.height step 2) {
-                for (x in 0 until bitmap.width step 2) {
-                    val pixel = bitmap.getPixel(x, y)
-                    if (android.graphics.Color.red(pixel) > 220 && android.graphics.Color.green(pixel) < 50 && android.graphics.Color.blue(pixel) in 75..120) {
-                        left = minOf(left, x)
-                        top = minOf(top, y)
-                        right = maxOf(right, x)
-                        bottom = maxOf(bottom, y)
+                var runStart = -1
+                for (x in 0..bitmap.width + 1 step 2) {
+                    if (x < bitmap.width && isCoverPixel(x, y)) {
+                        if (runStart < 0) runStart = x
+                    } else if (runStart >= 0) {
+                        if (x - runStart > right - left) {
+                            left = runStart
+                            right = x
+                            centerY = y
+                        }
+                        runStart = -1
                     }
                 }
             }
             File(output, "album-$label.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            check(right > left && bottom > top) { "The shared cover disappeared at $label" }
-            return android.graphics.Rect(left, top, right + 1, bottom + 1)
+            check(right > left) { "The shared cover disappeared at $label" }
+            val centerX = ((left + right) / 4) * 2
+            var top = centerY
+            var bottom = centerY + 2
+            while (top >= 2 && isCoverPixel(centerX, top - 2)) top -= 2
+            while (bottom < bitmap.height && isCoverPixel(centerX, bottom)) bottom += 2
+            return android.graphics.Rect(left, top, right, bottom)
         }
         try {
             val cards = (1..60).map { CloudPlaylist((1000 + it).toString(), "唱片 $it", if (it == 21) image.path else null, 35, "album", "AMI QA") }
@@ -912,8 +926,22 @@ class OnlineLibraryTest {
                     "Cover must continue growing smoothly: $first -> $second -> $end",
                     second.width() > first.width() && second.width() <= end.width() + 2,
                 )
-                compose.mainClock.autoAdvance = true
                 compose.onNodeWithContentDescription("返回曲库").performClick()
+                compose.mainClock.advanceTimeBy(16)
+                val returnStart = frame("$visit-return-16ms")
+                compose.mainClock.advanceTimeBy(80)
+                val returnMid = frame("$visit-return-96ms")
+                assertTrue("Cover must not jump at the start of the return: $end -> $returnStart", returnStart.width() >= end.width() - 24)
+                assertTrue(
+                    "Cover must keep its position at the start of the return: $end -> $returnStart",
+                    kotlin.math.abs(returnStart.left - end.left) <= 24 && kotlin.math.abs(returnStart.top - end.top) <= 24,
+                )
+                assertTrue(
+                    "Cover must shrink continuously while returning: $returnStart -> $returnMid -> $start",
+                    returnMid.width() < returnStart.width() - 4 && returnMid.width() > start.width() + 4,
+                )
+                compose.mainClock.advanceTimeBy(1500)
+                compose.mainClock.autoAdvance = true
                 compose.onNodeWithTag("collection-album:1021").assertIsDisplayed()
             }
         } finally {
@@ -932,7 +960,30 @@ class OnlineLibraryTest {
                 }
             }
         }
+        val top =
+            compose
+                .onNodeWithTag("online-shelf")
+                .fetchSemanticsNode()
+                .boundsInRoot.top
+        assertTrue(
+            "The shelf must leave a clear area at the top",
+            top >
+                compose
+                    .onRoot()
+                    .fetchSemanticsNode()
+                    .boundsInRoot.top,
+        )
+        screenshot("shelf-top-clear")
         compose.onNodeWithTag("online-shelf").performScrollToIndex(20)
+        assertEquals(
+            "The clear top area must remain while scrolling",
+            top,
+            compose
+                .onNodeWithTag("online-shelf")
+                .fetchSemanticsNode()
+                .boundsInRoot.top,
+            1f,
+        )
         val card = compose.onNodeWithTag("collection-album:1021")
         val before = card.fetchSemanticsNode().boundsInRoot
         card.performClick()
@@ -991,7 +1042,7 @@ class OnlineLibraryTest {
         val card = compose.onNodeWithTag("collection-album:201")
         val bounds = card.fetchSemanticsNode().boundsInRoot
         try {
-            for (elapsed in listOf(16L, 96L, 240L)) {
+            for (elapsed in listOf(16L, 48L, 96L, 240L)) {
                 for (tapHeartPosition in listOf(false, true)) {
                     compose.mainClock.autoAdvance = false
                     card.performClick()
@@ -1024,7 +1075,14 @@ class OnlineLibraryTest {
                         )
                     }
                     if (!tapHeartPosition) {
-                        compose.onNodeWithTag("collection-cover").assertIsDisplayed()
+                        try {
+                            compose.onNodeWithTag("collection-cover").assertIsDisplayed()
+                        } catch (failure: AssertionError) {
+                            screenshot("shelf-hit-failure")
+                            val shelves = compose.onAllNodesWithTag("online-shelf").fetchSemanticsNodes().map { it.boundsInRoot }
+                            throw AssertionError("Cover tap failed at ${elapsed}ms, point=$point, shelves=$shelves", failure)
+                        }
+                        compose.onNodeWithText(album.title).assertIsDisplayed()
                     }
                     // The old heart can fall in an empty gap while bounds are animating.
                     // It must never act on the outgoing list, whether or not it hits a card.
@@ -1146,7 +1204,9 @@ class OnlineLibraryTest {
             val client = url.path.startsWith("/eapi/")
             val path =
                 if (client) {
-                    if (url.host == "interfacepc.music.163.com") {
+                    if (url.path == "/eapi/song/like") {
+                        "client-like"
+                    } else if (url.host == "interfacepc.music.163.com") {
                         "desktop-audio"
                     } else {
                         "client-audio"
@@ -1192,9 +1252,9 @@ class OnlineLibraryTest {
                         JSONObject().put("ids", JSONArray(likedIds.map(String::toLong)))
                     }
 
-                    "radio/like" -> {
-                        assertEquals("music.163.com", url.host)
-                        assertEquals("MUSIC_U=qa-only-not-a-real-session", getRequestProperty("Cookie"))
+                    "client-like" -> {
+                        assertEquals("interface.music.163.com", url.host)
+                        assertTrue(getRequestProperty("Cookie").split("; ").contains("MUSIC_U=qa-only-not-a-real-session"))
                         likeGate?.await()
                         if (likeStatus == 200) {
                             val id = body.getString("trackId")
@@ -1312,7 +1372,7 @@ class OnlineLibraryTest {
             response
             return when {
                 url.path.endsWith("song/lyric/v1") -> lyricStatus
-                url.path.endsWith("radio/like") -> likeStatus
+                url.path == "/eapi/song/like" -> likeStatus
                 else -> 200
             }
         }
