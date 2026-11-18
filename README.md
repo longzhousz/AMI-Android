@@ -1,35 +1,40 @@
-# AMI
+<img align="right" src="design/ami-icon.svg" width="88" alt="AMI">
 
-<img src="design/ami-icon.svg" width="96" alt="AMI">
+# AMI · Android 音乐播放器
 
-[简体中文](#简体中文) · [English](#english)
+把网易云里点过红心的歌，和手机里珍藏的整张专辑，放进同一个播放器。点开封面，背景光晕随专辑换色；再点一下，歌词就跟着歌声逐字亮起。
 
-## 简体中文
+**[下载 Android 安装包](https://github.com/longzhousz/AMI-Android/releases/latest)** · [使用指南](docs/USER_GUIDE.md) · [English](#english)
 
-AMI 是一款注重歌词、动效与聆听体验的 Android 音乐播放器。可以在手机上登录网易云音乐，浏览收藏专辑、歌单与红心歌曲，也保留本地音乐支持。
+适用于 **Android 13 及以上**。无广告，无需 root 或连接电脑。
 
-- 沉浸式封面与歌词、逐字跟随、按需 AI 翻译和柔和播放控制。
-- 液态玻璃与封面取色光晕，清晰、简洁的界面。
-- 常听歌曲与封面按需缓存，周、月、年聆听图鉴与手动备份恢复。
+## 从哪首歌开始？
 
-**Android 13 及以上。** 不需要 root 或电脑连接端。网易云功能使用兼容协议，遵循账号、会员和歌曲权限，并非官方 SDK；翻译需要自行配置服务密钥。
+- **从网易云收藏里选。** 在 AMI 内登录网易云音乐，即可浏览收藏专辑、自建歌单和红心歌曲。在 AMI 点的红心也会同步回网易云。想听点新的，就打开私人 FM 或每日推荐。
+- **从手机里的专辑开始。** 打开「设置 → 本地音乐 → 导入音乐」，选择音乐文件夹。除了 FLAC、MP3 等常见格式，整轨专辑也能按 CUE 索引逐曲播放，原文件保持完整。
 
-[下载安装包与更新日志](https://github.com/longzhousz/AMI-Android/releases/latest) · [使用说明](docs/USER_GUIDE.md) · [项目文档](docs/README.md)
+## 听歌时的小细节
+
+- **重听一句歌词。** 有逐字时间轴时，每个字会在唱到时亮起。点一句就能跳回去听。长按翻译按钮可选网易云已有译文，也可以用自己的 DeepSeek 密钥按需翻译。
+- **沿着封面逛曲库。** 点开网格里的一张封面，它会展开成专辑详情；返回时收回原位，接着就能逛下一张。滚动时，封面的颜色透过悬浮的液态玻璃控件。
+- **回看这一周听了什么。** 「设置 → 我的聆听」里有按实际播放时长排出的前十首歌，也有标出听歌日子的日历。周报、月报和年报都在手机上生成。
+
+网易云接入使用非官方兼容协议。可播放的歌曲和音质取决于账号、会员、地区及曲目授权。
 
 ## English
 
-AMI is an Android music player built around lyrics, fluid motion, and the listening experience. Sign in to NetEase Cloud Music on your phone to browse saved albums, playlists, and liked songs, or play your local music.
+**AMI is an Android music player for your NetEase Cloud Music collection and local albums.** Open an album and its artwork expands from the grid. Tap the cover during playback to follow the lyrics, then tap a line to hear it again.
 
-- Immersive artwork and lyrics, word timing, optional AI translation, and gentle playback controls.
-- Liquid glass surfaces and artwork-inspired ambient colors in a clean interface.
-- On-demand artwork and frequently played audio caching, with weekly, monthly, and yearly listening reports and manual backup and restore.
+**[Download the APK](https://github.com/longzhousz/AMI-Android/releases/latest)** for Android 13 or newer. AMI runs on your phone, ad-free, without root or a desktop companion.
 
-**Requires Android 13 or newer.** No root or desktop companion is required. NetEase integration uses compatible protocols and respects account and track permissions; it is not an official SDK. Translation requires your own service key.
+- **Your library.** Sign in to browse saved albums, playlists you created, and liked songs. Likes sync back to NetEase. For local music, choose a folder in Settings. Play FLAC, MP3, or individual tracks from a single album file with a CUE sheet.
+- **Lyrics and translation.** Words light up in time with the vocals when word-level timing is available. Long-press the translation button to choose an available NetEase translation or translate on demand with your own DeepSeek API key.
+- **Listening history.** See your most-played tracks by listening time and a calendar of the days you listened. Weekly, monthly, and yearly reports are generated on your device.
 
-[Downloads and release notes](https://github.com/longzhousz/AMI-Android/releases/latest) · [User guide (Chinese)](docs/USER_GUIDE.md) · [Project documentation](docs/README.md)
+The unofficial NetEase integration respects account, subscription, regional, and track permissions.
 
----
+## 项目与反馈 · Project links
 
-Kotlin · Jetpack Compose · Media3. [Development](docs/LOCAL_DEVELOPMENT.md) · [Third-party notices](docs/THIRD_PARTY_NOTICES.md) · [Icon source](design/README.md)
+[反馈问题或建议 / Issues](https://github.com/longzhousz/AMI-Android/issues) · [项目文档 / Docs (中文)](docs/README.md) · [本地构建 / Build guide (中文)](docs/LOCAL_DEVELOPMENT.md) · [第三方说明 / Notices](docs/THIRD_PARTY_NOTICES.md)
 
-Based on the Android project from [AMI](https://github.com/longzhousz/AMI); maintained here as a standalone application.
+Built with Kotlin, Jetpack Compose, and Media3. Based on the Android project from [AMI](https://github.com/longzhousz/AMI) and maintained here as a standalone app.
