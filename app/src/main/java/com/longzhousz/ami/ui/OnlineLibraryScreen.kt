@@ -340,11 +340,12 @@ internal fun OnlineLibraryContent(
             val floatingToolbar = !favorites && selected == null && !searching
             val toolbar: @Composable (CloudPlaylist?, Boolean) -> Unit = { toolbarSelection, toolbarSearching ->
                 val toolbarFloating = !favorites && toolbarSelection == null && !toolbarSearching
+                val toolbarAtTop = toolbarFloating || toolbarSearching || (toolbarSelection != null && error == null && state.error == null)
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .then(if (favorites || toolbarFloating) Modifier.statusBarsPadding() else Modifier)
-                        .padding(start = if (toolbarSelection != null || toolbarSearching) 8.dp else 24.dp, end = 24.dp, top = if (favorites || toolbarFloating) 12.dp else 0.dp, bottom = 12.dp)
+                        .then(if (favorites || toolbarAtTop) Modifier.statusBarsPadding() else Modifier)
+                        .padding(start = if (toolbarSelection != null || toolbarSearching) 8.dp else 24.dp, end = 24.dp, top = if (favorites || toolbarAtTop) 12.dp else 0.dp, bottom = 12.dp)
                         .testTag("collection-toolbar"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -407,7 +408,7 @@ internal fun OnlineLibraryContent(
                     Modifier
                         .fillMaxSize()
                         .then(if (floatingToolbar) Modifier.layerBackdrop(shelfBackdrop) else Modifier)
-                        .padding(top = if (!favorites) statusTop + if (floatingToolbar && searchExpanded) 76.dp else 12.dp else 0.dp),
+                        .padding(top = if (floatingToolbar && searchExpanded) statusTop + 76.dp else 0.dp),
                 ) {
                     if (!favorites && searching) toolbar(null, true)
                     if (!configured) {
@@ -466,8 +467,19 @@ internal fun OnlineLibraryContent(
                             Row(
                                 Modifier
                                     .fillMaxWidth()
-                                    .then(if (favorites) Modifier.statusBarsPadding() else Modifier)
-                                    .padding(top = if (floatingToolbar && !searchExpanded) 64.dp else 0.dp, start = 24.dp, end = 24.dp),
+                                    .then(if (favorites || (!searching && !searchExpanded)) Modifier.statusBarsPadding() else Modifier)
+                                    .padding(
+                                        top =
+                                            if (floatingToolbar && !searchExpanded) {
+                                                76.dp
+                                            } else if (!favorites && !searching && !searchExpanded) {
+                                                12.dp
+                                            } else {
+                                                0.dp
+                                            },
+                                        start = 24.dp,
+                                        end = 24.dp,
+                                    ),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(failure, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -489,7 +501,11 @@ internal fun OnlineLibraryContent(
                             indicator = {
                                 if (favorites || !showingTracks) {
                                     PullToRefreshDefaults.Indicator(
-                                        modifier = Modifier.align(Alignment.TopCenter).testTag("online-refresh-indicator"),
+                                        modifier =
+                                            Modifier
+                                                .align(Alignment.TopCenter)
+                                                .then(if (!favorites && !searchExpanded && failure == null) Modifier.padding(top = statusTop + 12.dp) else Modifier)
+                                                .testTag("online-refresh-indicator"),
                                         isRefreshing = refreshing,
                                         state = pullState,
                                     )
@@ -555,8 +571,8 @@ internal fun OnlineLibraryContent(
                                                             // The failure row already sits below the status bar and toolbar.
                                                             failure != null -> 8.dp
 
-                                                            // Covers start below the transparent status area and scroll under the floating controls.
-                                                            else -> 0.dp
+                                                            // The initial gap scrolls away with the covers.
+                                                            else -> statusTop + 12.dp
                                                         },
                                                     bottom = bottomInset,
                                                 ),

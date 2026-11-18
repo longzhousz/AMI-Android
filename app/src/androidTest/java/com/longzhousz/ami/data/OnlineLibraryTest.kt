@@ -1,9 +1,16 @@
 package com.longzhousz.ami.data
 
 import android.graphics.Bitmap
+import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -951,6 +958,72 @@ class OnlineLibraryTest {
         }
     }
 
+    @Test fun shelfStartsBelowStatusBarAndScrollsBehindIt() {
+        val image = File(context.cacheDir, "qa-shelf-status.png")
+        Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply { eraseColor(0xFFE91E63.toInt()) }.let { bitmap ->
+            image.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+        }
+        val cards = (1..30).map { CloudPlaylist((1000 + it).toString(), "唱片 $it", image.path, 35, "album", "AMI QA") }
+        var statusHeight = 0
+        var theme by mutableStateOf("light")
+        try {
+            compose.setContent {
+                val view = LocalView.current
+                val topInset = WindowInsets.statusBars.getTop(LocalDensity.current)
+                LaunchedEffect(view) { (view.context as ComponentActivity).enableEdgeToEdge() }
+                SideEffect { statusHeight = topInset }
+                AmiTheme(theme) {
+                    Surface {
+                        OnlineLibraryContent(cloud, CloudLibraryState(CloudLibrary(cards), loaded = true), false, null, {}, { _, _ -> }, {})
+                    }
+                }
+            }
+            compose.waitUntil(10000) {
+                statusHeight > 0 && context.imageLoader.memoryCache
+                    ?.keys
+                    ?.any { it.key.contains(image.path) } == true
+            }
+            for (mode in listOf("light", "dark")) {
+                compose.runOnIdle { theme = mode }
+                compose.onNodeWithTag("online-shelf").performScrollToIndex(0)
+                val root = compose.onRoot().fetchSemanticsNode()
+                val grid = compose.onNodeWithTag("online-shelf").fetchSemanticsNode()
+                val first = compose.onNodeWithTag("collection-album:1001")
+                val initial = first.fetchSemanticsNode().boundsInRoot
+                assertEquals("The grid must extend behind the status bar", root.boundsInRoot.top, grid.boundsInRoot.top, 1f)
+                assertTrue("The first cover must start below the status bar", initial.top >= statusHeight)
+                screenshot("shelf-status-$mode-initial", system = true)
+
+                val distance = initial.top - statusHeight / 2f + 24f
+                compose.onNodeWithTag("online-shelf").performTouchInput {
+                    swipe(Offset(width * .5f, height * .5f), Offset(width * .5f, height * .5f - distance), 1200)
+                }
+                val scrolled = first.fetchSemanticsNode().boundsInRoot
+                assertTrue("The cover must scroll into the status-bar area: $scrolled, status=$statusHeight", scrolled.top < statusHeight)
+                assertTrue("The cover must remain visible while crossing the status bar", scrolled.bottom > statusHeight)
+                screenshot("shelf-status-$mode-scrolled", system = true)
+                val bitmap = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+                val redUnderStatus =
+                    (0 until statusHeight step 2).any { y ->
+                        (initial.left.toInt() until initial.right.toInt() step 2).any { x ->
+                            val pixel = bitmap.getPixel(x, y)
+                            android.graphics.Color.red(pixel) > 220 && android.graphics.Color.green(pixel) < 50 && android.graphics.Color.blue(pixel) in 75..120
+                        }
+                    }
+                assertTrue("The transparent status bar must show the scrolling cover", redUnderStatus)
+                first.performClick()
+                compose.onNodeWithTag("collection-cover").assertIsDisplayed()
+                compose.onNodeWithContentDescription("返回曲库").performClick()
+                assertEquals("Returning must preserve the scrolled position", scrolled.top, first.fetchSemanticsNode().boundsInRoot.top, 2f)
+                compose.onNodeWithTag("online-shelf").performScrollToIndex(0)
+                assertTrue("Returning to the top must restore the initial gap", first.fetchSemanticsNode().boundsInRoot.top >= statusHeight)
+            }
+        } finally {
+            image.delete()
+        }
+    }
+
     @Test fun albumCoverExpandsAndReturnsToTheSameShelfPositionDuringReversal() {
         val cards = (1..60).map { CloudPlaylist((1000 + it).toString(), "唱片 $it", null, 35, "album", "AMI QA") }
         compose.setContent {
@@ -960,30 +1033,7 @@ class OnlineLibraryTest {
                 }
             }
         }
-        val top =
-            compose
-                .onNodeWithTag("online-shelf")
-                .fetchSemanticsNode()
-                .boundsInRoot.top
-        assertTrue(
-            "The shelf must leave a clear area at the top",
-            top >
-                compose
-                    .onRoot()
-                    .fetchSemanticsNode()
-                    .boundsInRoot.top,
-        )
-        screenshot("shelf-top-clear")
         compose.onNodeWithTag("online-shelf").performScrollToIndex(20)
-        assertEquals(
-            "The clear top area must remain while scrolling",
-            top,
-            compose
-                .onNodeWithTag("online-shelf")
-                .fetchSemanticsNode()
-                .boundsInRoot.top,
-            1f,
-        )
         val card = compose.onNodeWithTag("collection-album:1021")
         val before = card.fetchSemanticsNode().boundsInRoot
         card.performClick()
