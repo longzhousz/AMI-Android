@@ -9,7 +9,9 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -31,6 +33,7 @@ import androidx.compose.ui.test.swipe
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import coil.imageLoader
 import com.longzhousz.ami.core.Song
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -137,11 +140,273 @@ class InterfaceTest {
     }
 
     private fun openLocalLibrary() {
-        compose.onNodeWithContentDescription("设置").performClick()
-        if (compose.onAllNodesWithTag("settings-home").fetchSemanticsNodes().isNotEmpty()) {
+        compose.onNodeWithContentDescription("曲库").performClick()
+        compose.waitUntil(10000) { compose.onAllNodesWithTag("library-source-local").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("library-source-local").performClick()
+    }
+
+    @Test fun homeOffersImportAndShowsLocalAndCloudAfterMusicIsAdded() {
+        val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
+        val previousTheme = model.theme.value
+        val song =
+            Song(
+                "qa-local-source",
+                "content://com.longzhousz.ami.test.fixtures/document/single.wav",
+                folder = "qa-local-source",
+                title = "本地来源验证",
+                artist = "AMI QA",
+                album = "本地专辑验证",
+                duration = 2000,
+            )
+        val second = song.copy(id = "qa-local-source-2", title = "本地曲序验证", importedAt = song.importedAt + 1)
+        try {
+            compose.waitUntil(30000) { !model.repository.loading.value }
+            compose.onNodeWithText("登录网易云").assertIsDisplayed()
+            compose.onNodeWithText("导入本地音乐").assertIsDisplayed()
+            assertEquals(
+                compose
+                    .onNodeWithText("登录网易云")
+                    .fetchSemanticsNode()
+                    .boundsInRoot.center.y,
+                compose
+                    .onNodeWithText("导入本地音乐")
+                    .fetchSemanticsNode()
+                    .boundsInRoot.center.y,
+                2f,
+            )
+            compose.onNodeWithTag("library-source-local").assertDoesNotExist()
+            model.repository.db.upsert(song)
+            model.repository.db.upsert(second)
+            model.repository.reload()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("library-source-local").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("library-source-local").assertIsSelected()
+            compose.onNodeWithTag("library-mode-albums").assertIsSelected()
+            compose.onNodeWithText("本地专辑验证").assertIsDisplayed()
+            screenshot("local-library-albums")
+            val album =
+                model.repository.library.value.albums
+                    .first { it.title == "本地专辑验证" }
+            val card = compose.onNodeWithTag("local-album:${album.key}")
+            val initial = card.fetchSemanticsNode().boundsInRoot
+            compose.mainClock.autoAdvance = false
+            compose.onNodeWithTag("library-mode-songs").performClick()
+            compose.mainClock.advanceTimeBy(96)
+            compose.onNodeWithTag("library-mode-albums").performClick()
+            compose.mainClock.advanceTimeBy(16)
+            val rootAtSwitch = compose.onRoot().fetchSemanticsNode().boundsInRoot
+            compose.onRoot().performTouchInput { click(initial.center - rootAtSwitch.topLeft) }
+            compose.mainClock.advanceTimeBy(1500)
+            compose.mainClock.autoAdvance = true
+            val cover = compose.onNodeWithTag("local-collection-cover").fetchSemanticsNode().boundsInRoot
+            assertTrue("The local album cover should expand like the online shelf", cover.width > initial.width + 10)
+            compose.onNodeWithText("曲序").performClick()
+            compose.onNodeWithText("调整曲序").assertIsDisplayed()
+            compose.onNodeWithContentDescription("下移 本地来源验证").performClick()
+            compose.onNodeWithText("保存曲序").performClick()
+            compose.waitUntil(10000) {
+                model.repository.library.value.albumsByKey[album.key]
+                    ?.songs
+                    ?.map { it.id } == listOf(second.id, song.id)
+            }
+            compose.onNodeWithContentDescription("本地来源验证的更多操作").performClick()
+            compose.onNodeWithText("加入喜欢").performClick()
+            compose.waitUntil(10000) {
+                model.repository.library.value.songsById[song.id]
+                    ?.favorite == true
+            }
+            compose.onNodeWithContentDescription("返回曲库").performClick()
+            assertEquals(initial.top, card.fetchSemanticsNode().boundsInRoot.top, 2f)
+            compose.mainClock.autoAdvance = false
+            card.performClick()
+            compose.mainClock.advanceTimeBy(96)
+            compose.onNodeWithContentDescription("返回曲库").performClick()
+            compose.mainClock.advanceTimeBy(16)
+            val point = card.fetchSemanticsNode().boundsInRoot.center
+            val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+            compose.onRoot().performTouchInput { click(point - root.topLeft) }
+            compose.mainClock.advanceTimeBy(1500)
+            compose.mainClock.autoAdvance = true
+            compose.onNodeWithTag("local-collection-cover").assertIsDisplayed()
+            compose.onNodeWithContentDescription("返回曲库").performClick()
+            compose.onNodeWithTag("library-mode-songs").performClick()
+            compose.onNodeWithText("本地来源验证").assertIsDisplayed()
+            compose.onNodeWithTag("library-source-cloud").performClick()
+            compose.onNodeWithTag("library-source-cloud").assertIsSelected()
+            compose.onNodeWithText("登录网易云").assertIsDisplayed()
+            compose.onNodeWithTag("library-source-local").performClick()
+            compose.onNodeWithTag("library-mode-songs").assertIsSelected()
+            compose.onNodeWithText("本地来源验证").assertIsDisplayed()
+            compose.onNodeWithContentDescription("本地音乐选项").performClick()
+            compose.onNodeWithText("本地喜欢").performClick()
+            compose.onNodeWithText("本地来源验证").assertIsDisplayed()
+            compose.runOnIdle { model.setTheme("dark") }
+            screenshot("local-library-dark")
+            compose.onNodeWithContentDescription("设置").performClick()
             compose.onNodeWithText("本地音乐").performScrollTo().performClick()
+            compose.onNodeWithText("浏览本地音乐").assertDoesNotExist()
+            compose.onNodeWithText("导入音乐").assertIsDisplayed()
+        } finally {
+            compose.mainClock.autoAdvance = true
+            compose.runOnIdle { model.setTheme(previousTheme) }
+            model.repository.db.remove(song.id)
+            model.repository.db.remove(second.id)
+            model.repository.reload()
         }
-        compose.onNodeWithText("浏览本地音乐").performScrollTo().performClick()
+    }
+
+    @Test fun localAlbumCoverAnimatesContinuouslyInBothDirections() {
+        val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
+        val image = File(compose.activity.cacheDir, "qa-local-transition.png")
+        android.graphics.Bitmap.createBitmap(64, 64, android.graphics.Bitmap.Config.ARGB_8888).apply { eraseColor(0xFFE91E63.toInt()) }.let { bitmap ->
+            image.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+        }
+        val song = Song("qa-local-transition", "content://com.longzhousz.ami.test.fixtures/document/single.wav", folder = "qa", title = "动效歌曲", artist = "AMI QA", album = "动效专辑", cover = image.path, duration = 2000)
+
+        fun frame(): android.graphics.Rect {
+            compose.waitForIdle()
+            val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+
+            fun red(
+                x: Int,
+                y: Int,
+            ): Boolean {
+                val pixel = bitmap.getPixel(x, y)
+                return android.graphics.Color.red(pixel) > 220 && android.graphics.Color.green(pixel) < 50 && android.graphics.Color.blue(pixel) in 75..120
+            }
+            var left = 0
+            var right = -1
+            var centerY = 0
+            for (y in 0 until bitmap.height step 2) {
+                var start = -1
+                for (x in 0..bitmap.width + 1 step 2) {
+                    if (x < bitmap.width && red(x, y)) {
+                        if (start < 0) start = x
+                    } else if (start >= 0) {
+                        if (x - start > right - left) {
+                            left = start
+                            right = x
+                            centerY = y
+                        }
+                        start = -1
+                    }
+                }
+            }
+            check(right > left) { "Local cover disappeared" }
+            val centerX = ((left + right) / 4) * 2
+            var top = centerY
+            var bottom = centerY + 2
+            while (top >= 2 && red(centerX, top - 2)) top -= 2
+            while (bottom < bitmap.height && red(centerX, bottom)) bottom += 2
+            return android.graphics.Rect(left, top, right, bottom)
+        }
+
+        try {
+            model.repository.db.upsert(song)
+            model.repository.load()
+            model.repository.reload()
+            openLocalLibrary()
+            compose.waitUntil(10000) {
+                compose.activity.imageLoader.memoryCache
+                    ?.keys
+                    ?.any { it.key.contains(image.path) } == true
+            }
+            val album =
+                model.repository.library.value.albums
+                    .first { it.title == song.album }
+            val card = compose.onNodeWithTag("local-album:${album.key}")
+            val start = frame()
+            compose.mainClock.autoAdvance = false
+            card.performClick()
+            compose.mainClock.advanceTimeBy(80)
+            val opening = frame()
+            compose.mainClock.advanceTimeBy(1500)
+            val end = frame()
+            assertTrue("The cover must expand through an intermediate size: $start -> $opening -> $end", opening.width() > start.width() + 4 && opening.width() < end.width() - 4)
+            compose.onNodeWithContentDescription("返回曲库").performClick()
+            compose.mainClock.advanceTimeBy(16)
+            val returning = frame()
+            assertTrue("The cover must not jump at the start of the return: $end -> $returning", kotlin.math.abs(returning.left - end.left) <= 24 && kotlin.math.abs(returning.top - end.top) <= 24 && returning.width() >= end.width() - 24)
+            compose.mainClock.advanceTimeBy(80)
+            val shrinking = frame()
+            assertTrue("The cover must shrink through an intermediate size: $returning -> $shrinking -> $start", shrinking.width() < returning.width() - 4 && shrinking.width() > start.width() + 4)
+            compose.mainClock.advanceTimeBy(1500)
+            compose.mainClock.autoAdvance = true
+            card.assertIsDisplayed()
+        } finally {
+            compose.mainClock.autoAdvance = true
+            model.repository.db.remove(song.id)
+            model.repository.reload()
+            image.delete()
+        }
+    }
+
+    @Test fun localAlbumGridScrollsBehindTheTransparentStatusBar() {
+        val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
+        val image = File(compose.activity.cacheDir, "qa-local-status.png")
+        android.graphics.Bitmap.createBitmap(32, 32, android.graphics.Bitmap.Config.ARGB_8888).apply { eraseColor(0xFFE91E63.toInt()) }.let { bitmap ->
+            image.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+        }
+        val songs =
+            (0 until 24).map { index ->
+                Song("qa-local-status-$index", "content://com.longzhousz.ami.test.fixtures/document/single.wav", folder = "qa", title = "歌曲 $index", artist = "AMI QA", album = "状态栏专辑 ${index.toString().padStart(2, '0')}", cover = image.path, duration = 2000)
+            }
+        try {
+            songs.forEach { model.repository.db.upsert(it) }
+            model.repository.load()
+            model.repository.reload()
+            openLocalLibrary()
+            compose.waitUntil(10000) {
+                compose.activity.imageLoader.memoryCache
+                    ?.keys
+                    ?.any { it.key.contains(image.path) } == true
+            }
+            val status =
+                requireNotNull(
+                    androidx.core.view.ViewCompat
+                        .getRootWindowInsets(compose.activity.window.decorView),
+                ).getInsets(
+                    androidx.core.view.WindowInsetsCompat.Type
+                        .statusBars(),
+                ).top
+            assertTrue("The test must include a status-bar inset", status > 0)
+            val grid = compose.onNodeWithTag("local-album-grid")
+            val rootTop =
+                compose
+                    .onRoot()
+                    .fetchSemanticsNode()
+                    .boundsInRoot.top
+            assertEquals("The local grid must extend behind the status bar", rootTop, grid.fetchSemanticsNode().boundsInRoot.top, 1f)
+            val firstAlbum =
+                model.repository.library.value.albums
+                    .first { it.title == songs.first().album }
+            val first = compose.onNodeWithTag("local-album:${firstAlbum.key}")
+            assertTrue("The first cover must start below the status bar", first.fetchSemanticsNode().boundsInRoot.top >= status)
+
+            val targetAlbum = model.repository.library.value.albums[10]
+            grid.performScrollToIndex(10)
+            val card = compose.onNodeWithTag("local-album:${targetAlbum.key}")
+            val before = card.fetchSemanticsNode().boundsInRoot
+            val distance = before.top - status / 2f + 24f
+            grid.performTouchInput { swipe(Offset(width * .5f, height * .5f), Offset(width * .5f, height * .5f - distance), 3000) }
+            val after = card.fetchSemanticsNode().boundsInRoot
+            assertTrue("The local cover must pass under the status bar: $after", after.top < status && after.bottom > status)
+            val screenshot = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+            val redUnderStatus =
+                (0 until status step 2).any { y ->
+                    (before.left.toInt() until before.right.toInt() step 2).any { x ->
+                        val pixel = screenshot.getPixel(x, y)
+                        android.graphics.Color.red(pixel) > 220 && android.graphics.Color.green(pixel) < 50 && android.graphics.Color.blue(pixel) in 75..120
+                    }
+                }
+            assertTrue("The scrolling cover must remain visible behind the status bar", redUnderStatus)
+            screenshot("local-library-scrolled-status")
+        } finally {
+            songs.forEach { model.repository.db.remove(it.id) }
+            model.repository.reload()
+            image.delete()
+        }
     }
 
     @Test fun songSelectionStartsOnArtworkAndReopeningRemembersEitherPage() {
@@ -248,9 +513,11 @@ class InterfaceTest {
             model.repository.load()
             model.repository.reload()
             openLocalLibrary()
+            compose.onNodeWithTag("library-mode-songs").performClick()
             compose.waitUntil(30000) { compose.onAllNodesWithText(songs.first().title).fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("library-song-list").performScrollToIndex(35)
             compose.onNodeWithText(songs[35].title).assertIsDisplayed()
+            compose.onNodeWithContentDescription("设置").performClick()
             openLocalLibrary()
             compose.onNodeWithText(songs[35].title).assertIsDisplayed()
             compose.onNodeWithText(songs.first().title).assertDoesNotExist()
@@ -262,7 +529,9 @@ class InterfaceTest {
 
     @Test fun emptyLibraryNavigationAndDarkAppearanceRender() {
         compose.waitUntil(30000) { compose.onAllNodesWithText("登录网易云").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("登录后，音乐就在这里").assertIsDisplayed()
+        compose.onNodeWithText("选择音乐来源").assertIsDisplayed()
+        compose.onNodeWithText("导入本地音乐").assertIsDisplayed()
+        compose.onNodeWithTag("library-source-local").assertDoesNotExist()
         compose.onNodeWithContentDescription("曲库").assertIsDisplayed()
         compose.onNodeWithContentDescription("网易云").assertDoesNotExist()
         compose.onNodeWithContentDescription("刷新网易云").assertDoesNotExist()
@@ -326,15 +595,18 @@ class InterfaceTest {
             model.repository.load()
             model.repository.reload()
             openLocalLibrary()
+            compose.onNodeWithTag("library-mode-songs").performClick()
             compose.onNodeWithText(songs.first().title).assertIsDisplayed()
             compose.onNodeWithContentDescription("导入音乐文件夹").assertDoesNotExist()
             screenshot("library-songs")
+            compose.onNodeWithContentDescription("搜索本地音乐").performClick()
             compose.onNodeWithTag("library-search").performTextInput("遥远")
             compose.onNodeWithText(songs[2].title).assertIsDisplayed()
             compose.onNodeWithText(songs.first().title).assertDoesNotExist()
             compose.onNodeWithTag("library-search").performTextClearance()
             compose.onNodeWithTag("library-search").performImeAction()
-            compose.onNodeWithContentDescription("排序").performClick()
+            compose.onNodeWithContentDescription("收起搜索").performClick()
+            compose.onNodeWithContentDescription("本地音乐选项").performClick()
             compose.onNodeWithText("最近导入").performClick()
             assertTrue(
                 compose
@@ -346,8 +618,9 @@ class InterfaceTest {
                         .fetchSemanticsNode()
                         .boundsInRoot.top,
             )
-            compose.onNodeWithContentDescription("排序").performClick()
+            compose.onNodeWithContentDescription("本地音乐选项").performClick()
             compose.onNodeWithText("默认排序").performClick()
+            compose.onNodeWithContentDescription("本地音乐选项").performClick()
             compose.onNodeWithText("本地喜欢").performClick()
             compose.onAllNodesWithText("本地喜欢").assertCountEquals(1)
             try {
@@ -360,7 +633,8 @@ class InterfaceTest {
             compose.onNodeWithText(songs[2].title).assertIsDisplayed()
             compose.onNodeWithText(songs[1].title).assertDoesNotExist()
             screenshot("favorites-songs")
-            compose.onNodeWithText("本地喜欢").performClick()
+            compose.onNodeWithContentDescription("本地喜欢").performClick()
+            compose.onNodeWithText("全部本地音乐").performClick()
             compose.onNodeWithText("专辑").performClick()
             screenshot("library-albums")
             compose.onNodeWithText("晚风与回声").performClick()

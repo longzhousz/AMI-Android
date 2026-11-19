@@ -10,8 +10,8 @@ android {
         applicationId = "com.longzhousz.ami"
         minSdk = 33
         targetSdk = 37
-        versionCode = 40
-        versionName = "0.3.3"
+        versionCode = 41
+        versionName = "0.3.4"
         testInstrumentationRunner = "com.longzhousz.ami.RecoverySeedInstrumentation"
     }
     buildFeatures {

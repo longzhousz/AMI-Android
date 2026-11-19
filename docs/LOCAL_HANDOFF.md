@@ -1,13 +1,14 @@
 # AMI 当前交接
 
-当前版本 **0.3.3 / versionCode 40**，最低 Android 13，包名为 `com.longzhousz.ami.musicpreview`。
+当前版本 **0.3.4 / versionCode 41**，最低 Android 13，包名为 `com.longzhousz.ami.musicpreview`。
 
+- 未登录时可在首页登录网易云或导入本地音乐；导入后可在曲库切换本地与网易云。
+- 本地曲库支持专辑和歌曲视图、搜索、收藏与曲序；专辑保留封面转场和透明状态栏体验。
 - 播放页长按翻译按钮可选择 AI 翻译或网易云译文。
-- 曲库首次显示时封面避开透明状态栏，浏览时可滚动至状态栏下方；保留快速返回时的封面点击与连续动画。
 
-验证范围：格式、静态分析、JVM 单测、Lint、Debug 与优化版构建；专用 Android 36 模拟器使用合成数据验证浅深主题下的初始留白与状态栏透出、滚动位置、封面动画、快速点击、搜索和收藏。未验证真机和真实新版覆盖安装。
+验证范围：格式、静态分析、JVM 单测、Lint、Debug 与优化版构建；专用 Android 36 模拟器使用合成音频验证文件夹导入、播放、重启恢复、来源切换、浅深主题、窄屏大字体、收藏、曲序和封面转场。未使用真实网易云账号或真机验证，也未验证真实新版覆盖安装。
 
-安装包大小：5665014 bytes；SHA-256：`ccc4f28c67dbba29b668c366565fcc7226dc1030957d33c7ef88396e134376b5`。
+安装包大小：5680982 bytes；SHA-256：`db3a346001ca8328c22e37e6fd7ac777d824fb5ae02301c6b02fbf2daf653f18`。
 
 发布证书 SHA-256：`238e0c33d7deebc6dd873ae8f0e844cf626b873f2ddf2ea8900d4916e2dd6f39`。下载入口为 [GitHub 最新发布](https://github.com/longzhousz/AMI-Android/releases/latest)。
 

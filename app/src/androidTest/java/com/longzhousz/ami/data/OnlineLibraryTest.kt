@@ -3,16 +3,25 @@ package com.longzhousz.ami.data
 import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -23,6 +32,7 @@ import com.longzhousz.ami.playback.PlaybackState
 import com.longzhousz.ami.playback.RadioQueue
 import com.longzhousz.ami.playback.mediaItem
 import com.longzhousz.ami.ui.AmiTheme
+import com.longzhousz.ami.ui.LibrarySourceSwitch
 import com.longzhousz.ami.ui.OnlineLibraryContent
 import com.longzhousz.ami.ui.PlayerActions
 import com.longzhousz.ami.ui.PlayerContent
@@ -837,6 +847,93 @@ class OnlineLibraryTest {
         assertFalse(requests.any { it.first in setOf("v1/radio/get", "v3/discovery/recommend/songs") })
     }
 
+    @Test fun signedOutHomeOffersLoginAndLocalImportSideBySide() {
+        runBlocking { cloud.disconnect() }
+        var imported = false
+        var loggedIn = false
+        compose.setContent {
+            AmiTheme("light") {
+                Surface {
+                    OnlineLibraryContent(cloud, CloudLibraryState(), false, null, {}, { _, _ -> }, { loggedIn = true }, onImport = { imported = true })
+                }
+            }
+        }
+        val login = compose.onNodeWithText("登录网易云")
+        val local = compose.onNodeWithText("导入本地音乐")
+        assertEquals(
+            login
+                .fetchSemanticsNode()
+                .boundsInRoot.center.y,
+            local
+                .fetchSemanticsNode()
+                .boundsInRoot.center.y,
+            2f,
+        )
+        local.performClick()
+        login.performClick()
+        compose.runOnIdle {
+            assertTrue(imported)
+            assertTrue(loggedIn)
+        }
+    }
+
+    @Test fun signedOutActionsRemainReadableOnNarrowScreensWithLargeText() {
+        runBlocking { cloud.disconnect() }
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 1.5f)) {
+                AmiTheme("light") {
+                    Surface {
+                        Box(Modifier.width(320.dp).height(700.dp).testTag("narrow-library")) {
+                            OnlineLibraryContent(cloud, CloudLibraryState(), false, null, {}, { _, _ -> }, {}, onImport = {})
+                        }
+                    }
+                }
+            }
+        }
+        val bounds = compose.onNodeWithTag("narrow-library").fetchSemanticsNode().boundsInRoot
+        val login = compose.onNodeWithText("登录网易云", useUnmergedTree = true).assertIsDisplayed()
+        val local = compose.onNodeWithText("导入本地音乐", useUnmergedTree = true).assertIsDisplayed()
+        assertTrue("Both actions must fit on screen", login.fetchSemanticsNode().boundsInRoot.left >= bounds.left && local.fetchSemanticsNode().boundsInRoot.right <= bounds.right)
+        for (button in listOf(login, local)) {
+            button.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                val layouts = mutableListOf<TextLayoutResult>()
+                assertTrue(action(layouts))
+                assertTrue("Action text must not be clipped", layouts.isNotEmpty() && !layouts.first().hasVisualOverflow)
+            }
+        }
+    }
+
+    @Test fun sourceSwitchPreservesTheOnlineShelfAndAlbumNavigation() {
+        val state = CloudLibraryState(library(), loaded = true)
+        var choseLocal = false
+        compose.setContent {
+            AmiTheme("light") {
+                Surface {
+                    OnlineLibraryContent(
+                        cloud,
+                        state,
+                        false,
+                        null,
+                        {},
+                        { _, _ -> },
+                        {},
+                        sourceSelector = { LibrarySourceSwitch(false, { choseLocal = true }, {}) },
+                    )
+                }
+            }
+        }
+        val toolbar = compose.onNodeWithTag("collection-toolbar").fetchSemanticsNode().boundsInRoot
+        val album = compose.onNodeWithTag("collection-album:201")
+        assertTrue("The first cover must start below the source switch", album.fetchSemanticsNode().boundsInRoot.top >= toolbar.bottom - 2f)
+        album.performClick()
+        compose.onNodeWithTag("collection-cover").assertIsDisplayed()
+        compose.onNodeWithContentDescription("返回曲库").performClick()
+        album.assertIsDisplayed()
+        compose.onNodeWithTag("library-source-local").performClick()
+        compose.runOnIdle { assertTrue(choseLocal) }
+    }
+
     @Test fun albumSharedCoverHasIntermediateFramesOnEveryVisit() {
         val image = File(context.cacheDir, "qa-album-motion.png")
         Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply { eraseColor(0xFFE91E63.toInt()) }.let { bitmap ->
@@ -967,6 +1064,7 @@ class OnlineLibraryTest {
         val cards = (1..30).map { CloudPlaylist((1000 + it).toString(), "唱片 $it", image.path, 35, "album", "AMI QA") }
         var statusHeight = 0
         var theme by mutableStateOf("light")
+        var showSource by mutableStateOf(false)
         try {
             compose.setContent {
                 val view = LocalView.current
@@ -975,7 +1073,16 @@ class OnlineLibraryTest {
                 SideEffect { statusHeight = topInset }
                 AmiTheme(theme) {
                     Surface {
-                        OnlineLibraryContent(cloud, CloudLibraryState(CloudLibrary(cards), loaded = true), false, null, {}, { _, _ -> }, {})
+                        OnlineLibraryContent(
+                            cloud,
+                            CloudLibraryState(CloudLibrary(cards), loaded = true),
+                            false,
+                            null,
+                            {},
+                            { _, _ -> },
+                            {},
+                            sourceSelector = if (showSource) ({ LibrarySourceSwitch(false, {}, {}) }) else null,
+                        )
                     }
                 }
             }
@@ -984,8 +1091,11 @@ class OnlineLibraryTest {
                     ?.keys
                     ?.any { it.key.contains(image.path) } == true
             }
-            for (mode in listOf("light", "dark")) {
-                compose.runOnIdle { theme = mode }
+            for ((mode, source) in listOf("light" to false, "dark" to false, "light" to true, "dark" to true)) {
+                compose.runOnIdle {
+                    theme = mode
+                    showSource = source
+                }
                 compose.onNodeWithTag("online-shelf").performScrollToIndex(0)
                 val root = compose.onRoot().fetchSemanticsNode()
                 val grid = compose.onNodeWithTag("online-shelf").fetchSemanticsNode()
@@ -993,16 +1103,16 @@ class OnlineLibraryTest {
                 val initial = first.fetchSemanticsNode().boundsInRoot
                 assertEquals("The grid must extend behind the status bar", root.boundsInRoot.top, grid.boundsInRoot.top, 1f)
                 assertTrue("The first cover must start below the status bar", initial.top >= statusHeight)
-                screenshot("shelf-status-$mode-initial", system = true)
+                screenshot("shelf-status-$mode-$source-initial", system = true)
 
                 val distance = initial.top - statusHeight / 2f + 24f
                 compose.onNodeWithTag("online-shelf").performTouchInput {
-                    swipe(Offset(width * .5f, height * .5f), Offset(width * .5f, height * .5f - distance), 1200)
+                    swipe(Offset(width * .5f, height * .5f), Offset(width * .5f, height * .5f - distance), 3000)
                 }
                 val scrolled = first.fetchSemanticsNode().boundsInRoot
                 assertTrue("The cover must scroll into the status-bar area: $scrolled, status=$statusHeight", scrolled.top < statusHeight)
                 assertTrue("The cover must remain visible while crossing the status bar", scrolled.bottom > statusHeight)
-                screenshot("shelf-status-$mode-scrolled", system = true)
+                screenshot("shelf-status-$mode-$source-scrolled", system = true)
                 val bitmap = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
                 val redUnderStatus =
                     (0 until statusHeight step 2).any { y ->

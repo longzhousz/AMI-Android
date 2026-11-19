@@ -63,7 +63,6 @@
     <string name="settings_dark" formatted="false">深色</string>
     <string name="settings_system" formatted="false">跟随系统</string>
     <string name="settings_local_section" formatted="false">本地音乐</string>
-    <string name="settings_local_browse" formatted="false">浏览本地音乐</string>
     <string name="settings_local_summary" formatted="false">保留已导入的曲库与收藏</string>
     <string name="settings_import" formatted="false">导入音乐</string>
     <string name="settings_scan" formatted="false">重新扫描</string>

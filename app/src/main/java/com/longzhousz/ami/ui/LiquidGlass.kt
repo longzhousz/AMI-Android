@@ -201,6 +201,7 @@ private fun Modifier.drawBehindGlassFallback(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
     content: @Composable RowScope.() -> Unit,
 ) {
     Button(
@@ -208,6 +209,7 @@ private fun Modifier.drawBehindGlassFallback(
         modifier.liquidGlass(CircleShape, prominent = true),
         enabled = enabled,
         colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.primary),
+        contentPadding = contentPadding,
         content = content,
     )
 }

@@ -10,16 +10,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -42,7 +35,6 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -53,17 +45,14 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.longzhousz.ami.AmiViewModel
 import com.longzhousz.ami.core.Album
-import com.longzhousz.ami.core.LibrarySnapshot
 import com.longzhousz.ami.core.ListeningScale
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.core.durationLabel
 import com.longzhousz.ami.core.isCloudSong
 import com.longzhousz.ami.playback.PlaybackState
 import com.longzhousz.ami.playback.PlayerConnection
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 
 private data class AppDestination(
     val page: Int,
@@ -104,6 +93,9 @@ fun AmiApp(
         val message by model.message.collectAsStateWithLifecycle()
         val songsById = library.songsById
         val albumsByKey = library.albumsByKey
+        var librarySource by rememberSaveable { mutableStateOf("local") }
+        val hasLocalMusic = library.songs.isNotEmpty()
+        val localSelected = hasLocalMusic && librarySource == "local"
         var albumKey by rememberSaveable { mutableStateOf<String?>(null) }
         var queue by rememberSaveable { mutableStateOf(false) }
         var remove by remember { mutableStateOf<Song?>(null) }
@@ -182,7 +174,13 @@ fun AmiApp(
         BackHandler(selectedAlbum != null && !fullPlayer && !queue) { albumKey = null }
         BackHandler(page in 1..2 && selectedAlbum == null && !fullPlayer && !queue) { page = 0 }
         BackHandler(page >= 4 && selectedAlbum == null && !fullPlayer && !queue) { page = 2 }
-        LaunchedEffect(page) { if (page in 4..5) model.repository.load() }
+        LaunchedEffect(page) {
+            if (page == 0 || page in 4..5) model.repository.load()
+            if (page in 4..5) {
+                librarySource = "local"
+                page = 0
+            }
+        }
         CompositionLocalProvider(LocalGlassBackdrop provides contentBackdrop) {
             Box(Modifier.fillMaxSize()) {
                 GlassBackdropHost(Modifier.fillMaxSize().layerBackdrop(contentBackdrop), background = {
@@ -209,14 +207,23 @@ fun AmiApp(
                                         }
                                     }
                                 }
-                                AnimatedContent(AppDestination(page, albumKey), Modifier.weight(1f), transitionSpec = {
+                                AnimatedContent(AppDestination(page, if (page == 0 && localSelected) null else albumKey), Modifier.weight(1f), transitionSpec = {
                                     AmiMotion.page(if (targetState.page != initialState.page) targetState.page > initialState.page else targetState.albumKey != null)
                                 }, label = "app-destination") { destination ->
                                     val album = albumsByKey[destination.albumKey]
-                                    Box(Modifier.fillMaxSize().then(if (model.cloud.direct && destination.page in 0..1 && album == null) Modifier else Modifier.statusBarsPadding())) {
+                                    Box(Modifier.fillMaxSize().then(if ((model.cloud.direct && destination.page in 0..1 && album == null) || album != null) Modifier else Modifier.statusBarsPadding())) {
                                         when {
                                             album != null -> {
-                                                AlbumScreen(album, playback.id, model, { albumKey = null }, { remove = it }, floatingInset)
+                                                AlbumScreen(
+                                                    album,
+                                                    playback.id,
+                                                    { albumKey = null },
+                                                    onPlay = { list, index -> model.play(list, index) },
+                                                    onFavorite = model::favorite,
+                                                    onRemove = { remove = it },
+                                                    onReorder = model::reorder,
+                                                    bottomInset = floatingInset,
+                                                )
                                             }
 
                                             destination.page == 2 -> {
@@ -230,7 +237,6 @@ fun AmiApp(
                                                                 onNotifications,
                                                                 onBridgeFolder,
                                                                 onLyricsFolder,
-                                                                onLocalLibrary = { page = 4 },
                                                                 onListening = { page = 6 },
                                                                 onInstallUpdate = onInstallUpdate,
                                                                 settingsVisible = page == 2 && !fullPlayer && !queue && selectedAlbum == null && remove == null,
@@ -253,36 +259,61 @@ fun AmiApp(
                                                 }
                                             }
 
-                                            destination.page in 4..5 -> {
-                                                pageState.SaveableStateProvider("local-${destination.page}") {
-                                                    Column(Modifier.padding(bottom = floatingInset)) {
-                                                        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                                            ActionIcon(Icons.Rounded.ArrowBack, "返回设置", { page = 2 })
-                                                            Text("本地音乐", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                                                            FilterChip(destination.page == 5, { page = if (page == 5) 4 else 5 }, { Text("本地喜欢") })
-                                                        }
-                                                        LibraryScreen(
-                                                            library,
-                                                            loading,
-                                                            destination.page == 5,
-                                                            playback.id,
-                                                            { page = 2 },
-                                                            onAlbum = { albumKey = it.key },
-                                                            onPlay = { list, index -> model.play(list, index) },
-                                                            onFavorite = model::favorite,
-                                                            onRemove = { remove = it },
-                                                        )
-                                                    }
-                                                }
-                                            }
-
                                             !model.cloud.direct -> {
                                                 CloudMusicScreen(model)
                                             }
 
+                                            destination.page == 0 && loading -> {
+                                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                                            }
+
+                                            destination.page == 0 && localSelected -> {
+                                                pageState.SaveableStateProvider("local-library") {
+                                                    LocalLibraryScreen(
+                                                        library,
+                                                        loading,
+                                                        importing.running,
+                                                        playback.id,
+                                                        floatingInset,
+                                                        selectedAlbum = selectedAlbum,
+                                                        onCloud = { librarySource = "cloud" },
+                                                        onRefresh = {
+                                                            if (model.repository.roots().isNotEmpty()) model.repository.scan() else model.showMessage("请先添加音乐文件夹")
+                                                        },
+                                                        onAlbum = { albumKey = it.key },
+                                                        onBack = { albumKey = null },
+                                                        onPlay = { list, index -> model.play(list, index) },
+                                                        onFavorite = model::favorite,
+                                                        onRemove = { remove = it },
+                                                        onReorder = model::reorder,
+                                                    )
+                                                }
+                                            }
+
                                             else -> {
                                                 pageState.SaveableStateProvider("online-${destination.page}") {
-                                                    OnlineLibraryScreen(model, destination.page == 1, floatingInset) {
+                                                    OnlineLibraryScreen(
+                                                        model,
+                                                        destination.page == 1,
+                                                        floatingInset,
+                                                        onImport =
+                                                            if (destination.page == 0) {
+                                                                (
+                                                                    {
+                                                                        librarySource = "local"
+                                                                        onImport()
+                                                                    }
+                                                                )
+                                                            } else {
+                                                                null
+                                                            },
+                                                        sourceSelector =
+                                                            if (destination.page == 0 && hasLocalMusic) {
+                                                                { LibrarySourceSwitch(false, { librarySource = "local" }, {}) }
+                                                            } else {
+                                                                null
+                                                            },
+                                                    ) {
                                                         if (page == 0) {
                                                             focus.clearFocus()
                                                             playerOverStatusBar = false
@@ -343,7 +374,11 @@ fun AmiApp(
                                             page = index
                                             albumKey = null
                                             focus.clearFocus()
-                                            if (doubleTap && index < 2) model.requestOnlineRefresh(index)
+                                            if (doubleTap && index == 0 && localSelected) {
+                                                if (model.repository.roots().isNotEmpty()) model.repository.scan() else model.showMessage("请先添加音乐文件夹")
+                                            } else if (doubleTap && index < 2) {
+                                                model.requestOnlineRefresh(index)
+                                            }
                                         },
                                         modifier =
                                             Modifier
@@ -430,134 +465,6 @@ fun AmiApp(
     }
 }
 
-@Composable private fun LibraryScreen(
-    library: LibrarySnapshot,
-    loading: Boolean,
-    favorites: Boolean,
-    currentId: String?,
-    onSettings: () -> Unit,
-    onAlbum: (Album) -> Unit,
-    onPlay: (List<Song>, Int) -> Unit,
-    onFavorite: (Song) -> Unit,
-    onRemove: (Song) -> Unit,
-) {
-    val songs = library.songs
-    var query by rememberSaveable(favorites) { mutableStateOf("") }
-    var mode by rememberSaveable { mutableIntStateOf(1) }
-    var recent by rememberSaveable { mutableStateOf(false) }
-    var sorting by remember { mutableStateOf(false) }
-    val focus = LocalFocusManager.current
-    val songList = rememberLazyListState()
-    val albumGrid = rememberLazyGridState()
-    var previousQuery by rememberSaveable { mutableStateOf(query) }
-    var previousSorting by rememberSaveable { mutableStateOf(recent) }
-    LaunchedEffect(query, recent) {
-        if (query != previousQuery || recent != previousSorting) {
-            previousQuery = query
-            previousSorting = recent
-            songList.scrollToItem(0)
-            albumGrid.scrollToItem(0)
-        }
-    }
-    val initial = remember(library, favorites) { library.search("", favorites, false) }
-    val searched by produceState(initial, library, query, favorites, recent) {
-        value = withContext(Dispatchers.Default) { library.search(query, favorites, recent) }
-    }
-    val results = if (query.isBlank() && !recent) initial else searched
-    val filteredSongs = results.songs
-    val filteredAlbums = results.albums
-    Column(Modifier.fillMaxSize()) {
-        OutlinedTextField(
-            query,
-            { query = it },
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).testTag("library-search"),
-            placeholder = { Text("搜索专辑、歌曲、艺人") },
-            leadingIcon = { Icon(Icons.Rounded.Search, null) },
-            trailingIcon = { if (query.isNotEmpty()) ActionIcon(Icons.Rounded.Close, "清空搜索", { query = "" }) },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
-            singleLine = true,
-            shape = RoundedCornerShape(18.dp),
-            colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
-        )
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (!favorites) {
-                FilterChip(mode == 0, { mode = 0 }, { Text("专辑") })
-                FilterChip(mode == 1, { mode = 1 }, { Text("歌曲") })
-            } else {
-                Text("${filteredSongs.size} 首", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
-            }
-            Spacer(Modifier.weight(1f))
-            Box {
-                ActionIcon(Icons.Rounded.Sort, "排序", { sorting = true }, tint = if (recent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                GlassDropdownMenu(sorting, { sorting = false }) {
-                    DropdownMenuItem({ Text("默认排序") }, {
-                        recent = false
-                        sorting = false
-                    }, trailingIcon = { if (!recent) Icon(Icons.Rounded.Check, null) })
-                    DropdownMenuItem({ Text("最近导入") }, {
-                        recent = true
-                        sorting = false
-                    }, trailingIcon = { if (recent) Icon(Icons.Rounded.Check, null) })
-                }
-            }
-            ActionIcon(Icons.Rounded.Shuffle, "随机播放", { onPlay(filteredSongs.shuffled(), 0) }, enabled = filteredSongs.isNotEmpty() && !loading)
-        }
-        AnimatedContent(if (favorites) 1 else mode, Modifier.weight(1f), transitionSpec = { AmiMotion.page(targetState > initialState) }, label = "library-layout") { layout ->
-            when {
-                loading -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                }
-
-                songs.isEmpty() && !favorites -> {
-                    EmptyLibrary(onSettings)
-                }
-
-                (layout == 1 && filteredSongs.isEmpty()) || (layout == 0 && filteredAlbums.isEmpty()) -> {
-                    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) { Text(if (favorites && query.isEmpty()) "暂无收藏" else "没有找到匹配的音乐", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                }
-
-                layout == 1 -> {
-                    LazyColumn(state = songList, modifier = Modifier.testTag("library-song-list"), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp)) {
-                        itemsIndexed(filteredSongs, key = { _, song -> song.id }) { index, song ->
-                            SongRow(
-                                song,
-                                song.id == currentId,
-                                { onPlay(filteredSongs, index) },
-                                { onFavorite(song) },
-                                { onRemove(song) },
-                                modifier = Modifier.animateItem(placementSpec = spring(stiffness = 500f), fadeInSpec = tween(160), fadeOutSpec = tween(120)),
-                            )
-                        }
-                    }
-                }
-
-                else -> {
-                    LazyVerticalGrid(GridCells.Adaptive(145.dp), state = albumGrid, contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-                        items(filteredAlbums, key = { it.key }) { album ->
-                            Column(Modifier.animateItem(placementSpec = spring(stiffness = 500f)).clickable { onAlbum(album) }) {
-                                Cover(album.cover, album.title, Modifier.fillMaxWidth().aspectRatio(1f))
-                                Text(album.title, Modifier.padding(top = 10.dp, start = 2.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text("${album.artist} · ${album.songs.size} 首", Modifier.padding(start = 2.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable private fun EmptyLibrary(onSettings: () -> Unit) {
-    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("暂无音乐", style = MaterialTheme.typography.titleMedium)
-            Text("在设置中添加音乐文件夹", Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onSettings) { Text("前往设置") }
-        }
-    }
-}
-
 @Composable private fun MiniPlayer(
     song: Song,
     playback: PlaybackState,
@@ -600,43 +507,52 @@ fun AmiApp(
     }
 }
 
-@Composable private fun AlbumScreen(
+@Composable internal fun AlbumScreen(
     album: Album,
     currentId: String?,
-    model: AmiViewModel,
     onBack: () -> Unit,
+    onPlay: (List<Song>, Int) -> Unit,
+    onFavorite: (Song) -> Unit,
     onRemove: (Song) -> Unit,
+    onReorder: (List<String>) -> Unit,
     bottomInset: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+    coverModifier: Modifier = Modifier,
+    active: Boolean = true,
 ) {
     var reorder by remember { mutableStateOf(false) }
-    GlassBackdropHost(Modifier.fillMaxSize(), background = { PlayerBackdrop(album.cover) }) {
-        Column {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    GlassBackdropHost(modifier.fillMaxSize(), background = { PlayerBackdrop(album.cover) }) {
+        Column(Modifier.statusBarsPadding().padding(top = 12.dp)) {
+            Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 24.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 ActionIcon(Icons.Rounded.ArrowBack, "返回曲库", onBack)
-                Spacer(Modifier.weight(1f))
+                Text(album.title, Modifier.weight(1f).padding(start = 8.dp), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 TextButton({ reorder = true }) {
                     Icon(Icons.Rounded.SwapVert, null, Modifier.size(18.dp))
                     Text("曲序")
                 }
             }
-            LazyColumn(contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 8.dp, bottom = bottomInset)) {
+            LazyColumn(contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = bottomInset)) {
                 item {
-                    Column(Modifier.fillMaxWidth()) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Cover(album.cover, album.title, Modifier.size(88.dp))
-                            Column(Modifier.weight(1f).padding(start = 16.dp)) {
-                                Text(album.title, style = MaterialTheme.typography.headlineSmall)
-                                Text(album.artist, Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("${album.songs.size} 首歌曲 · ${durationLabel(album.duration)}", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
+                    Column(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Cover(
+                            album.cover,
+                            album.title,
+                            Modifier
+                                .fillMaxWidth(.68f)
+                                .widthIn(max = 280.dp)
+                                .aspectRatio(1f)
+                                .then(coverModifier)
+                                .testTag("local-collection-cover"),
+                        )
+                        Text(album.artist, Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${album.songs.size} 首歌曲 · ${durationLabel(album.duration)}", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(Modifier.padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Button({ model.play(album.songs) }, Modifier.weight(1f).liquidGlass(CircleShape), colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.primary), contentPadding = PaddingValues(14.dp)) {
+                            Button({ onPlay(album.songs, 0) }, Modifier.weight(1f).liquidGlass(CircleShape), colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.primary), contentPadding = PaddingValues(14.dp)) {
                                 Icon(Icons.Rounded.PlayArrow, null)
                                 Spacer(Modifier.width(6.dp))
                                 Text("播放")
                             }
-                            FilledTonalButton({ model.play(album.songs.shuffled()) }, Modifier.weight(1f).liquidGlass(CircleShape), colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.Transparent), contentPadding = PaddingValues(14.dp)) {
+                            FilledTonalButton({ onPlay(album.songs.shuffled(), 0) }, Modifier.weight(1f).liquidGlass(CircleShape), colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.Transparent), contentPadding = PaddingValues(14.dp)) {
                                 Icon(Icons.Rounded.Shuffle, null)
                                 Spacer(Modifier.width(6.dp))
                                 Text("随机播放")
@@ -648,8 +564,8 @@ fun AmiApp(
                     SongRow(
                         song,
                         currentId == song.id,
-                        { model.play(album.songs, index) },
-                        { model.favorite(song) },
+                        { onPlay(album.songs, index) },
+                        { onFavorite(song) },
                         { onRemove(song) },
                         index + 1,
                         modifier = Modifier.animateItem(placementSpec = spring(stiffness = 500f)),
@@ -657,9 +573,9 @@ fun AmiApp(
                 }
             }
         }
-        if (reorder) {
+        if (reorder && active) {
             ReorderDialog(album, { reorder = false }, { ids ->
-                model.reorder(ids)
+                onReorder(ids)
                 reorder = false
             })
         }

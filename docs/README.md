@@ -1,12 +1,13 @@
 # AMI 文档
 
-当前版本 **0.3.1 / versionCode 38**。本目录只保留当前使用与开发说明；旧版交付、旧界面和已退出主流程的试验放入 [archive/](archive/README.md)。
+当前版本 **0.3.4 / versionCode 41**。本目录只保留当前使用与开发说明；旧版交付、旧界面和已退出主流程的试验放入 [archive/](archive/README.md)。
 
 | 需要了解什么 | 文档 |
 | --- | --- |
 | 备份、换机、合并规则与格式边界 | [备份恢复](DATA_BACKUP.md) |
 | Agent 交换协议、权限、动作与确认取消 | [Agent Bridge](AGENT_BRIDGE.md) |
 | 状态边界、静态检查与安全诊断 | [开发约束](ENGINEERING.md) |
+| 本地导入与在线账号的数据边界、代码地图与整理入口 | [本地导入与在线账号](LOCAL_IMPORT_CLOUD_MAP.md) |
 | 长期产品取舍 | [产品约束](PRODUCT_CONSTRAINTS.md) |
 | 安装、登录、曲库、红心、歌词、音质、缓存 | [使用说明](USER_GUIDE.md) |
 | 当前代码、安装包身份、验证结果、后续方向 | [当前交接](LOCAL_HANDOFF.md) |

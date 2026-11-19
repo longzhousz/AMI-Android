@@ -54,6 +54,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -96,6 +97,8 @@ private data class CollectionScene(
     model: AmiViewModel,
     favorites: Boolean,
     bottomInset: Dp = 24.dp,
+    onImport: (() -> Unit)? = null,
+    sourceSelector: (@Composable () -> Unit)? = null,
     onOpenPlayer: () -> Unit = {},
 ) {
     val configured by model.cloud.configured.collectAsStateWithLifecycle()
@@ -129,9 +132,12 @@ private data class CollectionScene(
         discovering = discovering,
         onFavorite = model::favoriteCloud,
         onRefreshLikes = { model.refreshCloudLikes(force = true) },
+        onImport = onImport,
+        sourceSelector = sourceSelector,
     )
 }
 
+@Suppress("CyclomaticComplexMethod") // The existing online screen coordinates pagination, search and interrupted transitions.
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
 internal fun OnlineLibraryContent(
@@ -148,6 +154,8 @@ internal fun OnlineLibraryContent(
     discovering: Boolean = false,
     onFavorite: (CloudTrack) -> Unit = {},
     onRefreshLikes: () -> Unit = {},
+    onImport: (() -> Unit)? = null,
+    sourceSelector: (@Composable () -> Unit)? = null,
 ) {
     val configured by cloud.configured.collectAsStateWithLifecycle()
     val likes by cloud.likes.collectAsStateWithLifecycle()
@@ -375,6 +383,7 @@ internal fun OnlineLibraryContent(
                                 }),
                         )
                     } else {
+                        if (!favorites) sourceSelector?.invoke()
                         Spacer(Modifier.weight(1f))
                     }
                     if (!favorites && toolbarSelection == null && !toolbarSearching && configured) {
@@ -416,8 +425,15 @@ internal fun OnlineLibraryContent(
                         Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                 Icon(if (favorites) Icons.Rounded.FavoriteBorder else Icons.Rounded.LibraryMusic, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
-                                Text("登录后，音乐就在这里", style = MaterialTheme.typography.titleMedium)
-                                GlassButton(onLogin) { Text("登录网易云") }
+                                Text(if (!favorites && onImport != null) "选择音乐来源" else "登录后，音乐就在这里", style = MaterialTheme.typography.titleMedium)
+                                if (!favorites && onImport != null) {
+                                    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        GlassButton(onLogin, Modifier.weight(1f).fillMaxHeight(), contentPadding = PaddingValues(horizontal = 8.dp)) { Text("登录网易云", textAlign = TextAlign.Center) }
+                                        GlassButton(onImport, Modifier.weight(1f).fillMaxHeight(), contentPadding = PaddingValues(horizontal = 8.dp)) { Text("导入本地音乐", textAlign = TextAlign.Center) }
+                                    }
+                                } else {
+                                    GlassButton(onLogin) { Text("登录网易云") }
+                                }
                             }
                         }
                     } else {
@@ -504,7 +520,7 @@ internal fun OnlineLibraryContent(
                                         modifier =
                                             Modifier
                                                 .align(Alignment.TopCenter)
-                                                .then(if (!favorites && !searchExpanded && failure == null) Modifier.padding(top = statusTop + 12.dp) else Modifier)
+                                                .then(if (!favorites && !searchExpanded && failure == null) Modifier.padding(top = statusTop + if (sourceSelector != null) 76.dp else 12.dp) else Modifier)
                                                 .testTag("online-refresh-indicator"),
                                         isRefreshing = refreshing,
                                         state = pullState,
@@ -572,7 +588,7 @@ internal fun OnlineLibraryContent(
                                                             failure != null -> 8.dp
 
                                                             // The initial gap scrolls away with the covers.
-                                                            else -> statusTop + 12.dp
+                                                            else -> statusTop + if (sourceSelector != null) 76.dp else 12.dp
                                                         },
                                                     bottom = bottomInset,
                                                 ),

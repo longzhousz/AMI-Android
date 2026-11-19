@@ -39,13 +39,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@Composable fun SettingsScreen(
+@Suppress("CyclomaticComplexMethod") // The existing settings screen owns its section and dialog navigation.
+@Composable
+fun SettingsScreen(
     model: AmiViewModel,
     onImport: () -> Unit,
     onNotifications: () -> Unit,
     onBridgeFolder: () -> Unit,
     onLyricsFolder: () -> Unit,
-    onLocalLibrary: () -> Unit = {},
     onListening: () -> Unit = {},
     onInstallUpdate: () -> Unit = {},
     settingsVisible: Boolean = true,
@@ -140,7 +141,6 @@ import kotlinx.coroutines.withContext
                 SettingsSection.LOCAL -> {
                     item {
                         SettingsGroup {
-                            SettingRow(Icons.Rounded.LibraryMusic, stringResource(R.string.settings_local_browse), onLocalLibrary)
                             SettingRow(Icons.Rounded.CreateNewFolder, stringResource(R.string.settings_import), onImport)
                             SettingRow(Icons.Rounded.Sync, stringResource(R.string.settings_scan), { if (roots.isNotEmpty()) repo.scan() else onImport() }, trailing = {
                                 if (importState.running) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.ChevronRight, null)
