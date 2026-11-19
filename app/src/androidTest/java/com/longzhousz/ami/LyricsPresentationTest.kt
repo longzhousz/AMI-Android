@@ -160,8 +160,8 @@ class LyricsPresentationTest {
         compose.onNodeWithTag("lyric-7").assertIsSelected().assertIsDisplayed()
     }
 
-    @Test fun longPressTranslationSelectsTheSourceAndShowsLyricsAgain() {
-        var displayed by mutableStateOf<List<String>?>(translations)
+    @Test fun translationDefaultsToNeteaseAndLongPressCanChooseAi() {
+        var displayed by mutableStateOf<List<String>?>(null)
         var busy by mutableStateOf(false)
         var aiCalls = 0
         var neteaseCalls = 0
@@ -186,15 +186,13 @@ class LyricsPresentationTest {
                 )
             }
         }
-        compose.onNodeWithContentDescription("隐藏译文").performClick()
-        compose.onNodeWithContentDescription("显示译文").performTouchInput { longClick() }
-        compose.onNodeWithText("AI 智能翻译").assertIsDisplayed()
-        screenshot("translation-sources", system = true)
-        compose.onNodeWithText("网易云译文").performClick()
+        compose.onNodeWithContentDescription("翻译歌词").performClick()
         compose.onNodeWithText("网易云的译文").assertIsDisplayed()
         assertEquals(1, neteaseCalls)
         assertEquals(0, aiCalls)
         compose.onNodeWithContentDescription("隐藏译文").performTouchInput { longClick() }
+        compose.onNodeWithText("AI 智能翻译").assertIsDisplayed()
+        screenshot("translation-sources", system = true)
         compose.onNodeWithText("AI 智能翻译").performClick()
         compose.onNodeWithText(translations.first()).assertIsDisplayed()
         assertEquals(1, aiCalls)

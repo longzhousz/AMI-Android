@@ -318,13 +318,6 @@ private fun LocalLibraryHome(
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         LibrarySourceSwitch(true, {}, onCloud)
                         Spacer(Modifier.weight(1f))
-                        ActionIcon(if (searchExpanded) Icons.Rounded.Close else Icons.Rounded.Search, if (searchExpanded) "收起搜索" else "搜索本地音乐", {
-                            searchExpanded = !searchExpanded
-                            if (!searchExpanded) {
-                                query = ""
-                                focus.clearFocus()
-                            }
-                        })
                         LocalLibraryMenu(
                             favorites,
                             recent,
@@ -336,6 +329,13 @@ private fun LocalLibraryHome(
                             onRecent = { recent = it },
                             onShuffle = { onPlay(results.songs.shuffled(), 0) },
                         )
+                        ActionIcon(if (searchExpanded) Icons.Rounded.Close else Icons.Rounded.Search, if (searchExpanded) "收起搜索" else "搜索本地音乐", {
+                            searchExpanded = !searchExpanded
+                            if (!searchExpanded) {
+                                query = ""
+                                focus.clearFocus()
+                            }
+                        })
                     }
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {

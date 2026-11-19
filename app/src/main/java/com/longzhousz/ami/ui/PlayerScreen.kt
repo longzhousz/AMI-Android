@@ -277,7 +277,7 @@ internal val PlayerColors =
                     translating,
                     translation != null,
                     showTranslation,
-                    onTranslation = { if (translation != null) showTranslation = !showTranslation else actions.translate() },
+                    onTranslation = { if (translation != null) showTranslation = !showTranslation else actions.neteaseTranslation() },
                     onChooseTranslation = { netease ->
                         showTranslation = true
                         if (!lyricsMode) toggle()

@@ -86,7 +86,7 @@ class LocalLibraryLayoutTest {
                 .assertIsDisplayed()
                 .fetchSemanticsNode()
                 .boundsInRoot
-        assertTrue("Source and actions must not overlap", cloud.right <= search.left && search.right <= menu.left)
+        assertTrue("Source and actions must not overlap", cloud.right <= menu.left && menu.right <= search.left)
         assertTrue("The album and song options must remain on their own row", albums.top >= cloud.bottom && albums.right <= songs.left)
     }
 }
