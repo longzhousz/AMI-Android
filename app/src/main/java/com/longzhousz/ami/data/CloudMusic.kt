@@ -31,6 +31,8 @@ class CloudMusic internal constructor(
     val direct: Boolean,
     web: NeteaseTransport,
     cache: OnlineAudioCache? = null,
+    queuePath: File = File(context.noBackupFilesDir, "netease-queue.json"),
+    private val accountKeyOverride: (() -> String?)? = null,
 ) {
     constructor(context: Context, direct: Boolean = com.longzhousz.ami.BuildConfig.BUILD_TYPE != "cloudPreview") : this(context, direct, NeteaseTransport())
 
@@ -47,7 +49,7 @@ class CloudMusic internal constructor(
     private fun cacheAccount(): String = synchronized(authLock) { account.accountKey().also { audioCache.switchAccount(it) } }
 
     private val secret = SecretStore(context, "netease-connection")
-    private val queueFile = AtomicFile(File(context.noBackupFilesDir, "netease-queue.json"))
+    private val queueFile = AtomicFile(queuePath)
     private val queueLock = Mutex()
     private val closer = Dispatchers.IO.limitedParallelism(1)
     val configured = MutableStateFlow(if (direct) account.configured() else secret.configured())
@@ -56,10 +58,23 @@ class CloudMusic internal constructor(
     val likesRevision = MutableStateFlow(0L)
     val radio = MutableStateFlow<String?>(null)
     private var queueTracks: List<CloudTrack> = emptyList()
+    private var catalogAccount: String? = null
 
     fun stopRadio() {
         radio.value = null
     }
+
+    /** SHA-256 of the signed-in uid; null when this build or session has no NetEase account. */
+    private fun currentAccountKey(): String? = accountKeyOverride?.invoke() ?: if (direct) runCatching { account.accountKey() }.getOrNull() else null
+
+    private suspend fun clearQueue() =
+        queueLock.withLock {
+            queueFile.delete()
+            queueTracks = emptyList()
+            catalog.value = emptyMap()
+            catalogAccount = null
+            radio.value = null
+        }
 
     val audioQuality = MutableStateFlow<Map<String, AudioQuality>>(emptyMap())
 
@@ -208,6 +223,7 @@ class CloudMusic internal constructor(
     suspend fun disconnect() =
         withContext(Dispatchers.IO) {
             stopRadio()
+            clearQueue()
             if (direct) {
                 synchronized(authLock) {
                     account.logout()
@@ -233,17 +249,21 @@ class CloudMusic internal constructor(
             }
         }
 
+    suspend fun albums(): List<CloudPlaylist> {
+        check(direct)
+        val rows = request("albums").getJSONArray("albums")
+        require(rows.length() <= 1000)
+        return (0 until rows.length())
+            .map { rows.getJSONObject(it) }
+            .map {
+                CloudPlaylist(id(it.getString("id")), it.getString("title").take(200), picture(it), it.optInt("count"), "album", it.optString("artist").take(200))
+            }.also { albums -> synchronized(this) { albums.forEach { album -> album.cover?.let { albumCovers[album.id] = it } } } }
+    }
+
     suspend fun library(): CloudLibrary {
         check(direct)
         val playlists = playlists()
-        val rows = request("albums").getJSONArray("albums")
-        require(rows.length() <= 1000)
-        val albums =
-            (0 until rows.length()).map { rows.getJSONObject(it) }.map {
-                CloudPlaylist(id(it.getString("id")), it.getString("title").take(200), picture(it), it.optInt("count"), "album", it.optString("artist").take(200))
-            }
-        synchronized(this) { albums.forEach { album -> album.cover?.let { albumCovers[album.id] = it } } }
-        return CloudLibrary(albums + playlists.filter { it.kind == "created" }, playlists.firstOrNull { it.kind == "liked" })
+        return CloudLibrary(albums() + playlists.filter { it.kind == "created" }, playlists.firstOrNull { it.kind == "liked" })
     }
 
     suspend fun tracks(
@@ -352,11 +372,13 @@ class CloudMusic internal constructor(
                     )
                 }
             }
+        val accountKey = currentAccountKey()
         val saved =
             JSONObject()
                 .put("tracks", rows)
                 .put("radio", radioToken)
-                .put("radioAccount", if (radioToken == null) null else account.accountKey())
+                .put("account", accountKey)
+                .put("radioAccount", if (radioToken == null) null else accountKey)
         val bytes = saved.toString().toByteArray(Charsets.UTF_8)
         require(bytes.size <= 2_000_000) { "播放队列过大，请减少载入的曲目" }
         val output = queueFile.startWrite()
@@ -369,6 +391,7 @@ class CloudMusic internal constructor(
         }
         queueTracks = tracks
         catalog.value = tracks.map { it.song() }.associateBy { it.id }
+        catalogAccount = accountKey
         radio.value = radioToken
     }
 
@@ -394,31 +417,65 @@ class CloudMusic internal constructor(
         withContext(Dispatchers.IO) {
             if (ids.none { it.startsWith("netease:") }) return@withContext emptyList()
             queueLock.withLock {
-                if (catalog.value.isEmpty() && queueFile.baseFile.exists()) {
-                    runCatching {
-                        require(queueFile.baseFile.length() <= 2_000_000)
-                        val text = queueFile.openRead().bufferedReader().use { it.readText() }
-                        val root = text.takeIf { it.trimStart().startsWith('{') }?.let(::JSONObject)
-                        val rows = root?.getJSONArray("tracks") ?: JSONArray(text)
-                        require(rows.length() <= 1000)
-                        queueTracks =
-                            (0 until rows.length()).map { row ->
-                                val track = track(rows.getJSONObject(row))
-                                synchronized(this) {
-                                    track.albumId?.let { albumId -> track.cover?.let { albumCovers[albumId] = it } }
-                                    track.copy(cover = track.cover ?: track.albumId?.let { albumCovers[it] })
-                                }
-                            }
-                        catalog.value = queueTracks.map { it.song() }.associateBy { it.id }
-                        radio.value =
-                            root?.optString("radio")?.takeIf {
-                                it.matches(Regex("[a-f0-9-]{36}")) && root.optString("radioAccount") == account.accountKey()
-                            }
-                    }
-                }
+                loadSavedQueue()
                 ids.mapNotNull { catalog.value[it] }
             }
         }
+
+    /** Called under queueLock; an account mismatch must never expose another queue. */
+    private fun loadSavedQueue() {
+        val current = currentAccountKey()
+        if (catalog.value.isNotEmpty() && catalogAccount != current) {
+            // The process outlived an account change; its cached queue is stale.
+            queueFile.delete()
+            queueTracks = emptyList()
+            catalog.value = emptyMap()
+            catalogAccount = null
+            radio.value = null
+        }
+        if (catalog.value.isNotEmpty() || !queueFile.baseFile.exists()) return
+        runCatching {
+            require(queueFile.baseFile.length() <= 2_000_000)
+            val text = queueFile.openRead().bufferedReader().use { it.readText() }
+            val root = text.takeIf { it.trimStart().startsWith('{') }?.let(::JSONObject)
+            val savedAccount = root?.optString("account").orEmpty().takeIf { it.isNotBlank() }
+            val savedRadioAccount = root?.optString("radioAccount").orEmpty().takeIf { it.isNotBlank() }
+            val sameAccount =
+                when {
+                    !direct -> savedAccount == null
+
+                    current == null -> false
+
+                    // Legacy FM queues proved their owner through radioAccount.
+                    else -> savedAccount == current || (savedAccount == null && savedRadioAccount == current)
+                }
+            if (!sameAccount) {
+                // Another account's metadata is useless here; local tracks restore without it.
+                queueFile.delete()
+                queueTracks = emptyList()
+                catalog.value = emptyMap()
+                catalogAccount = null
+                radio.value = null
+                return@runCatching
+            }
+            val rows = root?.getJSONArray("tracks") ?: JSONArray(text)
+            require(rows.length() <= 1000)
+            queueTracks =
+                (0 until rows.length()).map { row ->
+                    val track = track(rows.getJSONObject(row))
+                    synchronized(this) {
+                        track.albumId?.let { albumId -> track.cover?.let { albumCovers[albumId] = it } }
+                        track.copy(cover = track.cover ?: track.albumId?.let { albumCovers[it] })
+                    }
+                }
+            catalog.value = queueTracks.map { it.song() }.associateBy { it.id }
+            catalogAccount = current
+            radio.value =
+                root?.optString("radio")?.takeIf {
+                    it.matches(Regex("[a-f0-9-]{36}")) && current != null && root.optString("radioAccount") == current
+                }
+        }
+    }
 
     suspend fun lyrics(song: Song): SongLyrics =
         withContext(Dispatchers.IO) {

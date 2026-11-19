@@ -102,6 +102,12 @@ class AmiViewModel internal constructor(
 
     fun refreshOnlineLibrary() = online.refreshOnlineLibrary()
 
+    fun refreshOnlinePlaylists() = online.refreshOnlinePlaylists()
+
+    fun refreshOnlineAlbums() = online.refreshOnlineAlbums()
+
+    fun disconnectCloud() = online.disconnectCloud()
+
     fun refreshCloudLikes(force: Boolean = false) = online.refreshCloudLikes(force)
 
     fun favoriteCloud(track: CloudTrack) = online.favoriteCloud(track)

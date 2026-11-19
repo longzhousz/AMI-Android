@@ -52,7 +52,40 @@ data class CloudLibraryState(
     val refreshing: Boolean = false,
     val error: String? = null,
     val revision: Long = 0,
+    val albums: List<CloudPlaylist> = emptyList(),
+    val createdPlaylists: List<CloudPlaylist> = emptyList(),
+    val playlistsLoading: Boolean = false,
+    val albumsLoading: Boolean = false,
+    val playlistsLoaded: Boolean = false,
+    val albumsLoaded: Boolean = false,
+    val playlistsError: String? = null,
+    val albumsError: String? = null,
 )
+
+/** Publish the playlist page immediately; the album page may still be loading or failed. */
+internal fun CloudLibraryState.withPlaylists(playlists: List<CloudPlaylist>): CloudLibraryState {
+    val created = playlists.filter { it.kind == "created" }
+    return copy(
+        library =
+            library.copy(
+                collections = shuffledShelf(albums + created, library.collections),
+                liked = playlists.firstOrNull { it.kind == "liked" },
+            ),
+        createdPlaylists = created,
+        playlistsLoaded = true,
+        playlistsError = null,
+        loaded = albumsLoaded,
+    )
+}
+
+internal fun CloudLibraryState.withAlbums(albums: List<CloudPlaylist>): CloudLibraryState =
+    copy(
+        library = library.copy(collections = shuffledShelf(albums + createdPlaylists, library.collections)),
+        albums = albums,
+        albumsLoaded = true,
+        albumsError = null,
+        loaded = playlistsLoaded,
+    )
 
 /** Reorder the shelf only; collection tracks and the playback queue are separate. */
 internal fun shuffledShelf(

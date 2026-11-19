@@ -134,6 +134,8 @@ private data class CollectionScene(
         onRefreshLikes = { model.refreshCloudLikes(force = true) },
         onImport = onImport,
         sourceSelector = sourceSelector,
+        onRetryPlaylists = model::refreshOnlinePlaylists,
+        onRetryAlbums = model::refreshOnlineAlbums,
     )
 }
 
@@ -156,6 +158,8 @@ internal fun OnlineLibraryContent(
     onRefreshLikes: () -> Unit = {},
     onImport: (() -> Unit)? = null,
     sourceSelector: (@Composable () -> Unit)? = null,
+    onRetryPlaylists: () -> Unit = onRefresh,
+    onRetryAlbums: () -> Unit = onRefresh,
 ) {
     val configured by cloud.configured.collectAsStateWithLifecycle()
     val likes by cloud.likes.collectAsStateWithLifecycle()
@@ -478,7 +482,8 @@ internal fun OnlineLibraryContent(
                                     }),
                             )
                         }
-                        val failure = error ?: state.error
+                        val libraryFailure = if (favorites) state.playlistsError else state.playlistsError ?: state.albumsError
+                        val failure = error ?: libraryFailure
                         if (failure != null) {
                             Row(
                                 Modifier
@@ -499,13 +504,19 @@ internal fun OnlineLibraryContent(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(failure, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                TextButton({
-                                    if (state.error != null) {
-                                        onRefresh()
-                                    } else {
-                                        reload++
+                                if (error == null) {
+                                    if (state.playlistsError != null) {
+                                        TextButton(onRetryPlaylists) { Text("重试歌单") }
                                     }
-                                }) { Text("重试") }
+                                    if (state.albumsError != null && !favorites) {
+                                        TextButton(onRetryAlbums) { Text("重试专辑") }
+                                    }
+                                    if (state.playlistsError == null && state.albumsError == null) {
+                                        TextButton(onRefresh) { Text("重试") }
+                                    }
+                                } else {
+                                    TextButton({ reload++ }) { Text("重试") }
+                                }
                             }
                         }
                         val pullState = rememberPullToRefreshState()

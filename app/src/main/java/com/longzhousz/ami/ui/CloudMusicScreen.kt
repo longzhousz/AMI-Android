@@ -47,7 +47,7 @@ import kotlinx.coroutines.launch
 @Composable fun CloudMusicScreen(model: AmiViewModel) =
     CloudMusicContent(model.cloud, model::playCloud, onDisconnect = {
         model.cancelCloudPreparation()
-        if (model.findSong(model.player.state.value.id)?.isCloudSong() == true) model.player.pause()
+        model.player.removeCloudSongs()
     })
 
 @Composable internal fun CloudMusicContent(

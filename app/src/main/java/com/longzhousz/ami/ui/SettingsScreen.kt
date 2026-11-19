@@ -254,19 +254,8 @@ fun SettingsScreen(
                 dismissButton = {
                     if (configured) {
                         TextButton({
-                            scope.launch {
-                                try {
-                                    model.cancelCloudPreparation()
-                                    if (model.findSong(model.player.state.value.id)?.isCloudSong() == true) model.player.pause()
-                                    model.resetOnlineLibrary()
-                                    model.cloud.disconnect()
-                                    dialog = null
-                                } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                                    throw cancelled
-                                } catch (_: Exception) {
-                                    model.showMessage("退出登录未完成，请重试")
-                                }
-                            }
+                            model.disconnectCloud()
+                            dialog = null
                         }) { Text(stringResource(R.string.settings_sign_out)) }
                     } else {
                         TextButton({ dialog = null }) { Text(stringResource(R.string.common_cancel)) }

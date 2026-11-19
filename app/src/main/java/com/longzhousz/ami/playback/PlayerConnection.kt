@@ -177,6 +177,16 @@ class PlayerConnection(
         controller?.let { c -> (c.mediaItemCount - 1 downTo 0).filter { c.getMediaItemAt(it).mediaId == id }.forEach { c.removeMediaItem(it) } }
     }
 
+    /** Signing out must not leave an old account's stream in the session queue. */
+    fun removeCloudSongs() {
+        controller?.let { c ->
+            if (c.currentMediaItem?.mediaId?.startsWith("netease:") == true) c.pause()
+            (c.mediaItemCount - 1 downTo 0)
+                .filter { c.getMediaItemAt(it).mediaId.startsWith("netease:") }
+                .forEach { c.removeMediaItem(it) }
+        }
+    }
+
     fun stop() {
         controller?.let {
             it.pause()

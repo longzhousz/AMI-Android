@@ -4,7 +4,8 @@ import com.longzhousz.ami.core.CloudLibraryState
 import com.longzhousz.ami.core.CloudTrack
 import com.longzhousz.ami.core.ErrorCode
 import com.longzhousz.ami.core.Song
-import com.longzhousz.ami.core.shuffledShelf
+import com.longzhousz.ami.core.withAlbums
+import com.longzhousz.ami.core.withPlaylists
 import com.longzhousz.ami.data.AppDiagnostics
 import com.longzhousz.ami.data.LibraryRepository
 import kotlinx.coroutines.CancellationException
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -29,9 +31,11 @@ class OnlineStateHolder internal constructor(
     val cloud = repository.cloud
     private val player get() = playback.player
     private var cloudPlayJob: kotlinx.coroutines.Job? = null
-    private var libraryJob: kotlinx.coroutines.Job? = null
+    private var playlistsJob: kotlinx.coroutines.Job? = null
+    private var albumsJob: kotlinx.coroutines.Job? = null
     private var likesJob: kotlinx.coroutines.Job? = null
     private var likesSession = -1L
+    private var revisionPending = false
     private val _onlineLibrary = MutableStateFlow(CloudLibraryState())
     val onlineLibrary = _onlineLibrary.asStateFlow()
     private val _onlineRefresh = MutableStateFlow<Int?>(null)
@@ -51,32 +55,120 @@ class OnlineStateHolder internal constructor(
     }
 
     fun resetOnlineLibrary() {
-        libraryJob?.cancel()
+        playlistsJob?.cancel()
+        albumsJob?.cancel()
+        revisionPending = false
         cloud.clearPages()
         _onlineLibrary.value = CloudLibraryState()
     }
 
     fun refreshOnlineLibrary() {
-        if (!cloud.configured.value || libraryJob?.isActive == true) return
+        if (!cloud.configured.value) return
         refreshCloudLikes(force = true)
-        libraryJob =
+        refreshOnlinePlaylists()
+        refreshOnlineAlbums()
+    }
+
+    /** The liked playlist arrives with this page, so a failed album request must not block it. */
+    fun refreshOnlinePlaylists() {
+        if (!cloud.configured.value || playlistsJob?.isActive == true) return
+        revisionPending = true
+        playlistsJob =
             scope.launch {
-                _onlineLibrary.value = _onlineLibrary.value.copy(refreshing = true, error = null)
+                _onlineLibrary.update {
+                    it.copy(
+                        refreshing = true,
+                        playlistsLoading = true,
+                        playlistsError = null,
+                        error = if (it.albumsError != null) "曲库暂时无法刷新" else null,
+                    )
+                }
                 try {
                     cloud.refreshCatalog()
-                    val fresh = cloud.library()
+                    val playlists = cloud.playlists()
                     ensureActive()
-                    _onlineLibrary.value =
-                        CloudLibraryState(
-                            fresh.copy(collections = shuffledShelf(fresh.collections, _onlineLibrary.value.library.collections)),
-                            loaded = true,
-                            revision = _onlineLibrary.value.revision + 1,
+                    val bump = revisionPending
+                    revisionPending = false
+                    _onlineLibrary.update { current ->
+                        current.withPlaylists(playlists).copy(
+                            refreshing = current.albumsLoading,
+                            playlistsLoading = false,
+                            error = if (current.albumsError != null) "曲库暂时无法刷新" else null,
+                            revision = if (bump) current.revision + 1 else current.revision,
                         )
+                    }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
                     AppDiagnostics.errors.record(ErrorCode.ONLINE_LIBRARY, failure)
-                    _onlineLibrary.value = _onlineLibrary.value.copy(refreshing = false, error = "曲库暂时无法刷新")
+                    _onlineLibrary.update { current ->
+                        current.copy(
+                            refreshing = current.albumsLoading,
+                            playlistsLoading = false,
+                            playlistsError = "歌单暂时无法刷新",
+                            error = "曲库暂时无法刷新",
+                        )
+                    }
+                }
+            }
+    }
+
+    /** Signing out also stops account-owned playback and drops its queue metadata. */
+    fun disconnectCloud() {
+        cancelCloudPreparation()
+        resetOnlineLibrary()
+        player.removeCloudSongs()
+        scope.launch {
+            try {
+                cloud.disconnect()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                AppDiagnostics.errors.record(ErrorCode.ONLINE_LIBRARY, failure)
+                message("退出登录未完成，请重试")
+            }
+        }
+    }
+
+    fun refreshOnlineAlbums() {
+        if (!cloud.configured.value || albumsJob?.isActive == true) return
+        revisionPending = true
+        albumsJob =
+            scope.launch {
+                _onlineLibrary.update {
+                    it.copy(
+                        refreshing = true,
+                        albumsLoading = true,
+                        albumsError = null,
+                        error = if (it.playlistsError != null) "曲库暂时无法刷新" else null,
+                    )
+                }
+                try {
+                    cloud.refreshCatalog()
+                    val albums = cloud.albums()
+                    ensureActive()
+                    val bump = revisionPending
+                    revisionPending = false
+                    _onlineLibrary.update { current ->
+                        current.withAlbums(albums).copy(
+                            refreshing = current.playlistsLoading,
+                            albumsLoading = false,
+                            error = if (current.playlistsError != null) "曲库暂时无法刷新" else null,
+                            revision = if (bump) current.revision + 1 else current.revision,
+                        )
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    AppDiagnostics.errors.record(ErrorCode.ONLINE_LIBRARY, failure)
+                    _onlineLibrary.update { current ->
+                        current.copy(
+                            refreshing = current.playlistsLoading,
+                            albumsLoading = false,
+                            albumsError = "专辑暂时无法刷新",
+                            error = "曲库暂时无法刷新",
+                        )
+                    }
                 }
             }
     }

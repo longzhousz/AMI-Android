@@ -179,9 +179,9 @@ LibraryScanner
 调用链：登录 `NeteaseLoginActivity → CloudMusic.login() → NeteaseAccount.login() → SecretStore`；浏览 `OnlineLibraryScreen → OnlineStateHolder → CloudMusic → NeteaseAccount.request()`；红心 `AmiViewModel.favorite() → OnlineStateHolder.favorite() → CloudMusic.toggleLike() → NeteaseLikes.set() → NeteaseAccount.likes.write`。
 
 1. 登录在本应用 WebView 完成，凭据加密保存在 `noBackupFilesDir`；`accountKey` 是 uid 的 SHA-256。
-2. 歌单列表、专辑、曲目、搜索、红心均按需读取；歌单目录和分页只在内存，当前在线播放队列的曲目元数据写入 `netease-queue.json`，当前活动队列的 ID 写入 `playback_queue`。
+2. 歌单列表、专辑、曲目、搜索、红心均按需读取；歌单与收藏专辑分别请求，一方失败不阻塞另一方，错误提示可分别重试。歌单目录和分页只在内存，当前在线播放队列的曲目元数据写入 `netease-queue.json` 并记录 `accountKey()` 生成的账号标识，当前活动队列的 ID 写入 `playback_queue`。
 3. 红心由 `song/like` 写入；`NeteaseLikes` 先乐观更新 `ids+pending`，成功后修补已载入的“我喜欢”前缀，失败按 `before` 回滚。`login/logout` 都会 `reset()`，旧 session 的结果不回写新账号。
-4. 登录还会停止 FM、清空音源/失败缓存，并通过 `cacheAccount()` 切换在线音频缓存；不同 uid 会清掉上一账号的缓存。退出登录清凭据、红心状态、在线音频缓存、歌单分页和在线歌词内存；本地 `songs`、本地收藏、`netease_lyrics`、SAF 授权、听歌统计不变。
+4. 登录还会停止 FM、清空音源/失败缓存，并通过 `cacheAccount()` 切换在线音频缓存；不同 uid 会清掉上一账号的缓存。退出登录清凭据、红心状态、在线音频缓存、歌单分页、在线歌词内存、在线队列元数据和 FM 续接状态，并停止、移出播放器中的在线曲目；本地 `songs`、本地收藏、`netease_lyrics`、SAF 授权、听歌统计不变。
 5. 客户端没有创建、编辑、删除、收藏/取消收藏歌单或专辑的接口；除红心外，在线路径都是读操作。
 
 ## 6. 交叉点矩阵
@@ -193,7 +193,7 @@ LibraryScanner
 | 收藏 | `songs.favorite` | `CloudLikes.ids`（`originalId`） | 不会；`AmiViewModel.favorite` 按 `isCloudSong()` 分流 |
 | 歌词 | `song_lyrics` / `lyric_overrides` / `netease_lyrics` | `cloud.lyrics` 网络读取，只缓存内存 | 不会；本地数字文件名歌词会覆盖同 `music_id` 的本地缓存 |
 | 听歌统计 | 本地歌按 `neteaseId` 或 `local:digest`；艺人/专辑用名称摘要 | 云歌按 `netease:<id>`；艺人/专辑用结构 ID | 只有歌曲 key 合并；艺人/专辑维度不合并 |
-| 播放队列 | `playback_queue` 保存完整活动队列，可含本地与 `netease:` ID | `netease-queue.json` 只保存云歌元数据与 FM token | 恢复时按 queue 顺序合并；两处都无账号字段（见 R3） |
+| 播放队列 | `playback_queue` 保存完整活动队列，可含本地与 `netease:` ID | `netease-queue.json` 保存云歌元数据、FM token 与账号标识 | 恢复时按 queue 顺序合并；账号不一致的在线项不载入，本地项保留（见 R3） |
 | 备份 | 本地表白名单、统计、译文、`netease_lyrics` | 不含 Cookie、红心、歌单 | 不会向云端重放 |
 | Agent | `like.set` 默认本地 | `target=cloud` 才写云端；权限在 `AgentBridge` 追加 | 分流；云端路径接受任意数字 ID（见 R9） |
 
@@ -215,7 +215,8 @@ LibraryScanner
 | NCM | 解码副本放私有 `AudioCache`，源文件不动；清理只删未被引用的文件。 |
 | CUE | 成功导入会删来源整轨行，删前把收藏、手排曲序和手动歌词迁移到新分轨；删除/编辑 CUE 会留下旧虚拟曲目；一个引用文件失败会让整张 CUE 本次失败。 |
 | 备份/恢复 | 只动本地表和统计；不含账号登录、云端红心、在线歌单。 |
-| 退出/换账号 | 清在线凭据、红心、在线音频缓存、分页；本地曲库、本地喜欢、歌词、统计保留；在线队列文件保留（见 R3）。 |
+| 退出/换账号 | 清在线凭据、红心、在线音频缓存、分页、在线队列元数据与 FM 续接状态，并停止、移出播放器中的在线曲目；本地曲库、本地喜欢、歌词、统计保留。 |
+| 换账号后恢复队列 | `netease-queue.json` 的账号标识与当前账号不一致时不载入任何在线曲目并删除旧元数据；本地曲目按原顺序和进度恢复。 |
 | Agent 红心 | 默认写本地；显式 `target=cloud` 才写当前账号；权限在 `AgentBridge.hasPermissions()` 按 target 检查。 |
 
 ## 8. 重构必须保持的不变量
@@ -228,7 +229,7 @@ LibraryScanner
 6. **导入不调用账号接口**：`LibraryScanner` 不调用 `CloudMusic`/`NeteaseAccount`；除读取用户授权的 SAF 文档外，唯一外部请求是无凭据的网易云封面 CDN。
 7. **缓存目录分离**：本地 NCM/封面在 `filesDir/AudioCache`、`filesDir/Covers`；在线音频在 `cacheDir/online-audio`；在线封面在 `cacheDir/OnlineArtwork`。清理逻辑不要跨目录。
 8. **备份白名单**：不导出 Cookie、API Key、云端红心、在线歌单、SAF 授权、播放队列和原始路径；恢复不向云端重放。
-9. **队列恢复按 ID 映射**：`playback_queue`/`playback_checkpoint` 保存完整活动队列，可含 `netease:` ID，且没有账号字段；`netease-queue.json` 只保存云歌元数据。恢复顺序由 `PlaybackSnapshot.restore()` 决定；若要做账号隔离，两处都要处理或按账号过滤。
+9. **队列恢复按 ID 映射**：`playback_queue`/`playback_checkpoint` 保存完整活动队列，可含 `netease:` ID，且没有账号字段；`netease-queue.json` 保存云歌元数据并记录 `accountKey()` 账号标识。恢复顺序由 `PlaybackSnapshot.restore()` 决定；账号不一致时不得载入在线项，本地项仍按原队列位置恢复。退出登录必须清掉账号相关的队列元数据与 FM 状态。
 10. **账号切换 session 隔离**：`NeteaseLikes.reset()` 后，旧请求和旧回滚不得写新账号状态。
 11. **Agent 权限在 Bridge**：`agentOnline`/`agentLibrary` 的 target 追加检查在 `AgentBridge.hasPermissions()`，不要只改 `AgentProtocol` 的权限表。
 

@@ -85,6 +85,8 @@ class OnlineLibraryTest {
 
     @Volatile private var audioAvailable = true
 
+    @Volatile private var albumStatus = 200
+
     @Volatile private var preheatCookies = false
     private val homeReads =
         java.util.concurrent.atomic
@@ -426,6 +428,54 @@ class OnlineLibraryTest {
             assertFalse(persisted.contains("qa-only-not-a-real-session"))
             assertFalse(File(context.noBackupFilesDir, "netease-account.enc").readBytes().toString(Charsets.ISO_8859_1).contains("qa-only-not-a-real-session"))
         }
+
+    @Test fun playlistsLoadIndependentlyWhenTheAlbumRequestFails() =
+        runBlocking(Dispatchers.IO) {
+            albumStatus = 500
+            try {
+                val playlists = cloud.playlists()
+                assertTrue(playlists.any { it.kind == "liked" })
+                assertTrue(playlists.any { it.kind == "created" })
+                assertTrue(runCatching { cloud.albums() }.isFailure)
+            } finally {
+                albumStatus = 200
+            }
+        }
+
+    @Test fun failedAlbumsStillShowPlaylistsAndRetryOnlyTheAlbumRequest() {
+        val created = CloudPlaylist("created-1", "我的歌单", null, 3, "created")
+        var playlistsRetried = 0
+        var albumsRetried = 0
+        compose.setContent {
+            AmiTheme("dark") {
+                Surface {
+                    OnlineLibraryContent(
+                        cloud,
+                        CloudLibraryState(
+                            CloudLibrary(listOf(created)),
+                            loaded = true,
+                            error = "曲库暂时无法刷新",
+                            albumsError = "专辑暂时无法刷新",
+                        ),
+                        false,
+                        null,
+                        {},
+                        { _, _ -> },
+                        {},
+                        onRetryPlaylists = { playlistsRetried++ },
+                        onRetryAlbums = { albumsRetried++ },
+                    )
+                }
+            }
+        }
+        compose.onNodeWithTag("collection-created:created-1").assertIsDisplayed()
+        compose.onNodeWithText("重试专辑").assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            assertEquals(1, albumsRetried)
+            assertEquals(0, playlistsRetried)
+        }
+        compose.onAllNodesWithText("重试歌单").assertCountEquals(0)
+    }
 
     @Test fun heartsWriteTheFirstPartyAccountAndAnotherClientReadsTheSameResult() =
         runBlocking(Dispatchers.IO) {
@@ -1533,6 +1583,7 @@ class OnlineLibraryTest {
             return when {
                 url.path.endsWith("song/lyric/v1") -> lyricStatus
                 url.path == "/eapi/song/like" -> likeStatus
+                url.path.endsWith("album/sublist") -> albumStatus
                 else -> 200
             }
         }
