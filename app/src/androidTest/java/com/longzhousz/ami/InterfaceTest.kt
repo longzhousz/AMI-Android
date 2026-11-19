@@ -94,19 +94,23 @@ class InterfaceTest {
         }
     }
 
-    @Test fun immersiveFavoritesUseLightSystemIconsAndSettingsRestoreTheLightTheme() {
+    @Test fun favoritesFollowTheLightThemeAndSettingsKeepDarkSystemIcons() {
         val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
         val previous = model.theme.value
         try {
             compose.runOnIdle { model.setTheme("light") }
+            compose.waitUntil(30000) { !model.repository.loading.value }
             compose.onNodeWithContentDescription("我喜欢").performClick()
-            compose.onNodeWithTag("favorites-hero").assertIsDisplayed()
+            compose.waitUntil(10000) {
+                compose.onAllNodesWithTag("favorites-hero").fetchSemanticsNodes().isNotEmpty() ||
+                    compose.onAllNodesWithTag("local-library").fetchSemanticsNodes().isNotEmpty()
+            }
             compose.runOnIdle {
                 val bars =
                     androidx.core.view.WindowCompat
                         .getInsetsController(compose.activity.window, compose.activity.window.decorView)
-                assertFalse(bars.isAppearanceLightStatusBars)
-                assertFalse(bars.isAppearanceLightNavigationBars)
+                assertTrue(bars.isAppearanceLightStatusBars)
+                assertTrue(bars.isAppearanceLightNavigationBars)
             }
             compose.onNodeWithContentDescription("设置").performClick()
             compose.onNodeWithText("我的聆听").assertIsDisplayed()
@@ -521,6 +525,47 @@ class InterfaceTest {
             openLocalLibrary()
             compose.onNodeWithText(songs[35].title).assertIsDisplayed()
             compose.onNodeWithText(songs.first().title).assertDoesNotExist()
+        } finally {
+            songs.forEach { model.repository.db.remove(it.id) }
+            model.repository.reload()
+        }
+    }
+
+    @Test fun bottomFavoritesOpenLocalHeartsWithoutAskingForNeteaseLogin() {
+        val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
+        val songs =
+            listOf(
+                Song("qa-bottom-favorite-0", "file:///unused-favorite-0", folder = "qa-bottom-favorites", title = "本地红心验证", importedAt = 2),
+                Song("qa-bottom-favorite-1", "file:///unused-favorite-1", folder = "qa-bottom-favorites", title = "本地非红心验证", importedAt = 1),
+            )
+        try {
+            compose.waitUntil(30000) { !model.repository.loading.value }
+            songs.forEach { model.repository.db.upsert(it) }
+            model.repository.db.favorite(songs[0].id, true)
+            model.repository.reload()
+            compose.onNodeWithContentDescription("我喜欢").performClick()
+            if (model.cloud.configured.value) {
+                // Both sources: the favorites tab starts on NetEase and offers the source switch.
+                compose.waitUntil(10000) {
+                    compose.onAllNodesWithTag("online-favorites").fetchSemanticsNodes().isNotEmpty() &&
+                        compose.onAllNodesWithTag("library-source-local").fetchSemanticsNodes().size == 1
+                }
+                compose.onNodeWithTag("library-source-local").performClick()
+            }
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("local-library").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("本地喜欢").assertIsDisplayed()
+            compose.onNodeWithText(songs[0].title).assertIsDisplayed()
+            compose.onNodeWithText(songs[1].title).assertDoesNotExist()
+            compose.waitUntil(10000) { compose.onAllNodesWithText("登录网易云").fetchSemanticsNodes().isEmpty() }
+            screenshot("local-favorites-tab")
+            compose.onNodeWithContentDescription("${songs[0].title}的更多操作").performClick()
+            compose.onNodeWithText("取消喜欢").performClick()
+            compose.waitUntil(10000) {
+                !model.repository.db
+                    .songSummaries()
+                    .single { it.id == songs[0].id }
+                    .favorite
+            }
         } finally {
             songs.forEach { model.repository.db.remove(it.id) }
             model.repository.reload()

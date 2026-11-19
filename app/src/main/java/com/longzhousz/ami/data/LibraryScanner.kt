@@ -114,12 +114,25 @@ class LibraryScanner(
         val handled = mutableSetOf<String>()
         val present = repository.db.songIds().toMutableSet()
         val checkedFiles = mutableMapOf<String, Boolean>()
+        // A snapshot survives flushes that delete the source row before another CUE reads it.
+        val sourceData = mutableMapOf<String, InheritedSongData?>()
+
+        fun inheritedOf(id: String): InheritedSongData? {
+            if (id in sourceData) return sourceData[id]
+            return repository.db.inheritedData(id).also { sourceData[id] = it }
+        }
+
+        data class Inherit(
+            val data: InheritedSongData,
+            val ids: List<String>,
+        )
 
         data class Write(
             val songs: List<Song>,
             val key: String,
             val record: ScanRecord?,
             val removed: List<String>,
+            val inherited: List<Inherit> = emptyList(),
         )
         val pending = mutableListOf<Write>()
         var pendingCount = 0
@@ -135,6 +148,7 @@ class LibraryScanner(
             repository.db.transaction {
                 pending.forEach { write ->
                     write.songs.forEach(repository.db::upsert)
+                    write.inherited.forEach { repository.db.inheritUserData(it.data, it.ids) }
                     write.removed.forEach(repository.db::remove)
                     if (write.record != null) repository.db.saveScanRecord(write.record) else repository.db.removeScanRecord(write.key)
                 }
@@ -155,10 +169,11 @@ class LibraryScanner(
             fingerprint: String?,
             sources: List<String> = emptyList(),
             removed: List<String> = emptyList(),
+            inherited: List<Inherit> = emptyList(),
         ) {
             val artifacts = songs.flatMap { song -> listOfNotNull(song.cover, song.uri.takeIf { it.startsWith("file:") }?.let { Uri.parse(it).path }) }.distinct()
             val record = fingerprint?.let { ScanRecord(key, it, songs.map { song -> song.id }, sources, artifacts) }
-            pending += Write(songs, key, record, removed)
+            pending += Write(songs, key, record, removed, inherited)
             present += songs.map { it.id }
             present -= removed.toSet()
             pendingCount += songs.size
@@ -201,6 +216,7 @@ class LibraryScanner(
                         }
                         val errorsBefore = errors.size
                         val sheet = Cue.parse(files.readText(entry.uri))
+                        val cueImportedAt = System.currentTimeMillis()
                         val baseByFile =
                             sheet.tracks.map { it.file }.distinct().associateWith { name ->
                                 val relative = (entry.relative.substringBeforeLast('/', "") + "/" + name).trimStart('/')
@@ -237,9 +253,18 @@ class LibraryScanner(
                                     lyricTranslation = "",
                                     neteaseId = null,
                                     folder = source.folder,
+                                    // Equal inherited user_order keeps this order through the albumsOf tie-break.
+                                    importedAt = cueImportedAt + trackIndex,
                                 )
                             }
                         val sources = baseByFile.values.map { identity(it.first.uri) }
+
+                        fun sourceId(file: String) = digest(identity(baseByFile.getValue(file).first.uri))
+                        val inherited =
+                            songs
+                                .withIndex()
+                                .groupBy({ sourceId(sheet.tracks[it.index].file) }, { it.value.id })
+                                .mapNotNull { (id, ids) -> inheritedOf(id)?.let { Inherit(it, ids) } }
                         val pendingArtwork = baseByFile.values.any { it.second.artworkPending }
                         add(
                             songs,
@@ -248,6 +273,7 @@ class LibraryScanner(
                                 .takeIf { errors.size == errorsBefore && !pendingArtwork },
                             sources,
                             sources.map(::digest),
+                            inherited,
                         )
                         handled += sources
                     } else {

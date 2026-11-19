@@ -133,6 +133,8 @@ internal fun LocalLibraryScreen(
     onFavorite: (Song) -> Unit,
     onRemove: (Song) -> Unit,
     onReorder: (List<String>) -> Unit,
+    initialFavorites: Boolean = false,
+    showSourceSwitch: Boolean = true,
 ) {
     var visit by rememberSaveable { mutableIntStateOf(0) }
     val target = LocalCollectionScene(selectedAlbum, visit)
@@ -182,6 +184,8 @@ internal fun LocalLibraryScreen(
                         },
                         modifier = sceneModifier,
                         active = active,
+                        initialFavorites = initialFavorites,
+                        showSourceSwitch = showSourceSwitch,
                     )
                 }
             } else {
@@ -225,9 +229,11 @@ private fun LocalLibraryHome(
     coverModifier: @Composable (Album) -> Modifier,
     modifier: Modifier,
     active: Boolean,
+    initialFavorites: Boolean,
+    showSourceSwitch: Boolean,
 ) {
-    var mode by rememberSaveable { mutableIntStateOf(0) }
-    var favorites by rememberSaveable { mutableStateOf(false) }
+    var mode by rememberSaveable { mutableIntStateOf(if (initialFavorites) 1 else 0) }
+    var favorites by rememberSaveable { mutableStateOf(initialFavorites) }
     var recent by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var searchExpanded by rememberSaveable { mutableStateOf(false) }
@@ -260,7 +266,7 @@ private fun LocalLibraryHome(
         }
     }
     LaunchedEffect(searchExpanded) { if (searchExpanded) searchFocus.requestFocus() }
-    BackHandler(active && (searchExpanded || favorites)) {
+    BackHandler(active && (searchExpanded || (favorites && !initialFavorites))) {
         if (searchExpanded) {
             searchExpanded = false
             query = ""
@@ -321,26 +327,23 @@ private fun LocalLibraryHome(
                         .statusBarsPadding()
                         .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 12.dp),
                 ) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        LibrarySourceSwitch(true, {}, onCloud)
-                        Spacer(Modifier.weight(1f))
-                        LocalLibraryMenuButton(favorites) { menu = true }
-                        ActionIcon(if (searchExpanded) Icons.Rounded.Close else Icons.Rounded.Search, if (searchExpanded) "收起搜索" else "搜索本地音乐", {
+                    LocalLibraryHeaderRow(
+                        favorites,
+                        searchExpanded,
+                        showSourceSwitch,
+                        initialFavorites,
+                        onCloud,
+                        onMenu = { menu = true },
+                        onSearchToggle = {
                             searchExpanded = !searchExpanded
                             if (!searchExpanded) {
                                 query = ""
                                 focus.clearFocus()
                             }
-                        })
-                    }
+                        },
+                    )
                     Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        LibrarySegments(listOf("专辑", "歌曲"), mode, listOf("library-mode-albums", "library-mode-songs")) {
-                            mode = it
-                            if (it == 0) favorites = false
-                        }
-                        if (favorites) Text("本地喜欢", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.labelMedium, color = FavoriteRed)
-                    }
+                    LocalLibraryModeRow(mode, favorites, initialFavorites, { mode = it }, { favorites = false })
                     AnimatedVisibility(searchExpanded) {
                         LocalLibrarySearch(query, searchFocus, { query = it }, { focus.clearFocus() })
                     }
@@ -353,6 +356,7 @@ private fun LocalLibraryHome(
                     favorites,
                     recent,
                     results.songs.isNotEmpty() && !loading,
+                    showFavorites = !initialFavorites,
                     onDismiss = { menu = false },
                     onFavorites = {
                         favorites = !favorites
@@ -362,6 +366,52 @@ private fun LocalLibraryHome(
                     onShuffle = { onPlay(results.songs.shuffled(), 0) },
                 )
             }
+        }
+    }
+}
+
+@Composable private fun LocalLibraryHeaderRow(
+    favorites: Boolean,
+    searchExpanded: Boolean,
+    showSourceSwitch: Boolean,
+    favoritesOnly: Boolean,
+    onCloud: () -> Unit,
+    onMenu: () -> Unit,
+    onSearchToggle: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        if (showSourceSwitch) LibrarySourceSwitch(true, {}, onCloud)
+        Spacer(Modifier.weight(1f))
+        LocalLibraryMenuButton(favorites, favoritesOnly, onMenu)
+        ActionIcon(
+            if (searchExpanded) Icons.Rounded.Close else Icons.Rounded.Search,
+            if (searchExpanded) "收起搜索" else "搜索本地音乐",
+            onSearchToggle,
+        )
+    }
+}
+
+@Composable private fun LocalLibraryModeRow(
+    mode: Int,
+    favorites: Boolean,
+    initialFavorites: Boolean,
+    onMode: (Int) -> Unit,
+    onAllSongs: () -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (!initialFavorites) {
+            LibrarySegments(listOf("专辑", "歌曲"), mode, listOf("library-mode-albums", "library-mode-songs")) {
+                onMode(it)
+                if (it == 0) onAllSongs()
+            }
+        }
+        if (favorites) {
+            Text(
+                "本地喜欢",
+                Modifier.padding(start = if (initialFavorites) 0.dp else 12.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = FavoriteRed,
+            )
         }
     }
 }
@@ -455,11 +505,18 @@ private fun localFilterChanged(
 
 @Composable private fun LocalLibraryMenuButton(
     favorites: Boolean,
+    favoritesOnly: Boolean,
     onClick: () -> Unit,
 ) {
     ActionIcon(
         if (favorites) Icons.Rounded.Favorite else Icons.Rounded.MoreHoriz,
-        if (favorites) "本地喜欢" else "本地音乐选项",
+        if (favoritesOnly) {
+            "本地收藏选项"
+        } else if (favorites) {
+            "本地喜欢"
+        } else {
+            "本地音乐选项"
+        },
         onClick,
         tint = if (favorites) FavoriteRed else MaterialTheme.colorScheme.onSurface,
     )
@@ -471,6 +528,7 @@ private fun localFilterChanged(
     favorites: Boolean,
     recent: Boolean,
     canShuffle: Boolean,
+    showFavorites: Boolean,
     onDismiss: () -> Unit,
     onFavorites: () -> Unit,
     onRecent: (Boolean) -> Unit,
@@ -498,10 +556,12 @@ private fun localFilterChanged(
             .testTag("local-library-menu")
             .padding(vertical = 8.dp),
     ) {
-        DropdownMenuItem({ Text(if (favorites) "全部本地音乐" else "本地喜欢") }, {
-            onFavorites()
-            onDismiss()
-        }, leadingIcon = { Icon(Icons.Rounded.FavoriteBorder, null) })
+        if (showFavorites) {
+            DropdownMenuItem({ Text(if (favorites) "全部本地音乐" else "本地喜欢") }, {
+                onFavorites()
+                onDismiss()
+            }, leadingIcon = { Icon(Icons.Rounded.FavoriteBorder, null) })
+        }
         DropdownMenuItem({ Text("默认排序") }, {
             onRecent(false)
             onDismiss()

@@ -49,6 +49,7 @@ import com.longzhousz.ami.core.ListeningScale
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.core.durationLabel
 import com.longzhousz.ami.core.isCloudSong
+import com.longzhousz.ami.core.showLocalFavorites
 import com.longzhousz.ami.playback.PlaybackState
 import com.longzhousz.ami.playback.PlayerConnection
 import kotlinx.coroutines.awaitCancellation
@@ -74,7 +75,13 @@ fun AmiApp(
     val theme by model.theme.collectAsStateWithLifecycle()
     var fullPlayer by rememberSaveable { mutableStateOf(false) }
     var page by rememberSaveable { mutableIntStateOf(if (initialPage == 3 && model.cloud.direct) 0 else initialPage.coerceIn(0, 6)) }
-    val immersiveFavorites = page == 1 && model.cloud.direct
+    val library by model.repository.library.collectAsStateWithLifecycle()
+    val cloudConfigured by model.cloud.configured.collectAsStateWithLifecycle()
+    val loading by model.repository.loading.collectAsStateWithLifecycle()
+    var favoritesSource by rememberSaveable { mutableStateOf<String?>(null) }
+    val hasLocalMusic = library.songs.isNotEmpty()
+    val localFavoritesSelected = showLocalFavorites(model.cloud.direct, hasLocalMusic, loading, cloudConfigured, favoritesSource)
+    val immersiveFavorites = page == 1 && model.cloud.direct && !localFavoritesSelected
     val darkTheme = resolveDarkTheme(theme)
     var playerOverStatusBar by remember { mutableStateOf(false) }
     var playerOverNavigationBar by remember { mutableStateOf(false) }
@@ -84,9 +91,7 @@ fun AmiApp(
         navigationBarImmersive = (immersiveFavorites && darkTheme) || (fullPlayer && playerOverNavigationBar),
     ) {
         val focus = LocalFocusManager.current
-        val library by model.repository.library.collectAsStateWithLifecycle()
         val onlineLikes by model.cloud.likes.collectAsStateWithLifecycle()
-        val loading by model.repository.loading.collectAsStateWithLifecycle()
         val playback by model.player.state.collectAsStateWithLifecycle()
         val selection by model.playerSelection.collectAsStateWithLifecycle()
         val importing by model.repository.importState.collectAsStateWithLifecycle()
@@ -94,7 +99,6 @@ fun AmiApp(
         val songsById = library.songsById
         val albumsByKey = library.albumsByKey
         var librarySource by rememberSaveable { mutableStateOf("local") }
-        val hasLocalMusic = library.songs.isNotEmpty()
         val localSelected = hasLocalMusic && librarySource == "local"
         var albumKey by rememberSaveable { mutableStateOf<String?>(null) }
         var queue by rememberSaveable { mutableStateOf(false) }
@@ -109,6 +113,7 @@ fun AmiApp(
         var lastNavPage by remember { mutableIntStateOf(-1) }
         var lastNavTap by remember { mutableLongStateOf(0L) }
         val selectedAlbum = albumsByKey[albumKey]
+        val localAlbumInline = (page == 0 && localSelected) || (page == 1 && localFavoritesSelected)
         val bridgeAlbum by model.bridgeAlbum.collectAsStateWithLifecycle()
         val bridgeEnabled by model.bridgeEnabled.collectAsStateWithLifecycle()
         val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -175,11 +180,15 @@ fun AmiApp(
         BackHandler(page in 1..2 && selectedAlbum == null && !fullPlayer && !queue) { page = 0 }
         BackHandler(page >= 4 && selectedAlbum == null && !fullPlayer && !queue) { page = 2 }
         LaunchedEffect(page) {
-            if (page == 0 || page in 4..5) model.repository.load()
+            if (page in 0..1 || page in 4..5) model.repository.load()
             if (page in 4..5) {
                 librarySource = "local"
                 page = 0
             }
+        }
+
+        fun refreshLocalLibrary() {
+            if (model.repository.roots().isNotEmpty()) model.repository.scan() else model.showMessage("请先添加音乐文件夹")
         }
         CompositionLocalProvider(LocalGlassBackdrop provides contentBackdrop) {
             Box(Modifier.fillMaxSize()) {
@@ -207,7 +216,7 @@ fun AmiApp(
                                         }
                                     }
                                 }
-                                AnimatedContent(AppDestination(page, if (page == 0 && localSelected) null else albumKey), Modifier.weight(1f), transitionSpec = {
+                                AnimatedContent(AppDestination(page, if (localAlbumInline) null else albumKey), Modifier.weight(1f), transitionSpec = {
                                     AmiMotion.page(if (targetState.page != initialState.page) targetState.page > initialState.page else targetState.albumKey != null)
                                 }, label = "app-destination") { destination ->
                                     val album = albumsByKey[destination.albumKey]
@@ -259,6 +268,33 @@ fun AmiApp(
                                                 }
                                             }
 
+                                            destination.page == 1 && model.cloud.direct && !cloudConfigured && loading -> {
+                                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                                            }
+
+                                            destination.page == 1 && localFavoritesSelected -> {
+                                                pageState.SaveableStateProvider("local-favorites") {
+                                                    LocalLibraryScreen(
+                                                        library,
+                                                        loading,
+                                                        importing.running,
+                                                        playback.id,
+                                                        floatingInset,
+                                                        selectedAlbum = selectedAlbum,
+                                                        onCloud = { favoritesSource = "cloud" },
+                                                        onRefresh = ::refreshLocalLibrary,
+                                                        onAlbum = { albumKey = it.key },
+                                                        onBack = { albumKey = null },
+                                                        onPlay = { list, index -> model.play(list, index) },
+                                                        onFavorite = model::favorite,
+                                                        onRemove = { remove = it },
+                                                        onReorder = model::reorder,
+                                                        initialFavorites = true,
+                                                        showSourceSwitch = cloudConfigured,
+                                                    )
+                                                }
+                                            }
+
                                             !model.cloud.direct -> {
                                                 CloudMusicScreen(model)
                                             }
@@ -277,9 +313,7 @@ fun AmiApp(
                                                         floatingInset,
                                                         selectedAlbum = selectedAlbum,
                                                         onCloud = { librarySource = "cloud" },
-                                                        onRefresh = {
-                                                            if (model.repository.roots().isNotEmpty()) model.repository.scan() else model.showMessage("请先添加音乐文件夹")
-                                                        },
+                                                        onRefresh = ::refreshLocalLibrary,
                                                         onAlbum = { albumKey = it.key },
                                                         onBack = { albumKey = null },
                                                         onPlay = { list, index -> model.play(list, index) },
@@ -308,10 +342,18 @@ fun AmiApp(
                                                                 null
                                                             },
                                                         sourceSelector =
-                                                            if (destination.page == 0 && hasLocalMusic) {
-                                                                { LibrarySourceSwitch(false, { librarySource = "local" }, {}) }
-                                                            } else {
-                                                                null
+                                                            when {
+                                                                destination.page == 0 && hasLocalMusic -> {
+                                                                    { LibrarySourceSwitch(false, { librarySource = "local" }, {}) }
+                                                                }
+
+                                                                destination.page == 1 && hasLocalMusic && cloudConfigured -> {
+                                                                    { LibrarySourceSwitch(false, { favoritesSource = "local" }, {}) }
+                                                                }
+
+                                                                else -> {
+                                                                    null
+                                                                }
                                                             },
                                                     ) {
                                                         if (page == 0) {
@@ -374,8 +416,8 @@ fun AmiApp(
                                             page = index
                                             albumKey = null
                                             focus.clearFocus()
-                                            if (doubleTap && index == 0 && localSelected) {
-                                                if (model.repository.roots().isNotEmpty()) model.repository.scan() else model.showMessage("请先添加音乐文件夹")
+                                            if (doubleTap && ((index == 0 && localSelected) || (index == 1 && localFavoritesSelected))) {
+                                                refreshLocalLibrary()
                                             } else if (doubleTap && index < 2) {
                                                 model.requestOnlineRefresh(index)
                                             }
@@ -389,7 +431,11 @@ fun AmiApp(
                                                         customActions =
                                                             listOf(
                                                                 CustomAccessibilityAction("刷新$label") {
-                                                                    model.requestOnlineRefresh(index)
+                                                                    if ((index == 0 && localSelected) || (index == 1 && localFavoritesSelected)) {
+                                                                        refreshLocalLibrary()
+                                                                    } else {
+                                                                        model.requestOnlineRefresh(index)
+                                                                    }
                                                                     true
                                                                 },
                                                             )

@@ -103,7 +103,7 @@ LibraryScanner
 | 本地状态与备份 | `LibraryStateHolder.kt` | `favorite()`、`remove()`、`importLyrics()`、`exportData()/restoreData()` | 备份操作在 `importLock` 内；手动写不持锁 |
 | 播放状态 | `PlaybackStateHolder.kt` | `findSong()`、`loadLyrics()`、`currentSong` | 本地/云歌查找与歌词分流 |
 | 在线状态 | `OnlineStateHolder.kt` | `refreshOnlineLibrary()`、`favorite()`、`resetOnlineLibrary()` | 见 3.2 |
-| 主界面路由 | `ui/AmiApp.kt` | 本地页 4/5、在线页 0/1、导入条 | 底部“曲库/我喜欢”是在线；本地音乐在设置 |
+| 主界面路由 | `ui/AmiApp.kt` | 本地页 0、在线页 0/1、导入条 | 「我喜欢」按来源显示本地收藏或网易云红心；两边都有时复用「本地／网易云」切换 |
 | 设置入口 | `ui/SettingsScreen.kt` | 本地音乐、扫描、文件夹授权、退出登录 | 文件选择实际在 `MainActivity` |
 
 ### 3.5 核心数据结构
@@ -171,7 +171,7 @@ LibraryScanner
 3. **遍历**：`DocumentFiles.walk()` 逐级查询，深度上限 48、条目上限 100000；按 `authority:documentId` 去重，同一 provider 下父子目录或重叠授权只产生一个条目。
 4. **增量**：指纹由文件时间/大小、CUE 文件、同目录 LRC、封面等依赖的 stamp 组成。`ScanRecord.reusable()` 还要求记录里的歌曲 ID 都仍在 `songs`、封面和 NCM 解码文件都仍在磁盘；否则重读。
 5. **读取**：`readSong()` 用 `MediaMetadataRetriever` 取标签和时长；NCM 先解码到 `filesDir/AudioCache`；封面依次尝试内嵌、NCM 容器、同目录 `cover/folder/front`、NCM 元数据里的网易云图片；同名 LRC 解码为侧载歌词；MP3/FLAC/NCM 的网易云 ID 写入 `netease_id`。CUE 虚拟曲目以 `includeLyrics=false` 读取，`neteaseId` 为空。
-6. **写库**：按 64 首或约 100 万字符歌词批量 flush，一个事务内执行 `upsert`、CUE 来源行删除、`scan_cache` 增删。`upsert` 先 UPDATE；UPDATE 不包含 `favorite`、`user_order`、`imported_at`，所以重扫保留收藏、手排曲序和首次导入时间。手动歌词在 `lyric_overrides`，扫描的 `upsert` 不覆盖；但 CUE 接管删除来源行时会级联删除它（见 R1）。
+6. **写库**：按 64 首或约 100 万字符歌词批量 flush，一个事务内执行 `upsert`、CUE 来源行迁移与删除、`scan_cache` 增删。`upsert` 先 UPDATE；UPDATE 不包含 `favorite`、`user_order`、`imported_at`，所以重扫保留收藏、手排曲序和首次导入时间。手动歌词在 `lyric_overrides`，扫描的 `upsert` 不覆盖；CUE 接管删除来源行前，会先把来源行的 `favorite`、`user_order` 和 `lyric_overrides` 迁移到新分轨（`LibraryDatabase.inheritUserData()`）。
 7. **收尾**：扫描**正常完成**时调用 `applyBackupLinks()`，再 `reload()`；错误按文件收集，取消/异常时 `finally` 仍会 flush 已完成批次，但不会执行 `applyBackupLinks()`。界面顶部导入条带取消按钮。
 
 ## 5. 在线账号流程
@@ -213,7 +213,7 @@ LibraryScanner
 | 系统撤销授权 | 下次扫描该根报 `SecurityException`，旧歌曲保留，每次扫描重复报错。 |
 | 手动从曲库移除 | 删行并从播放器队列移除；源文件保留；重扫按同 ID 复活，但 `imported_at` 重置，原收藏/曲序已丢。 |
 | NCM | 解码副本放私有 `AudioCache`，源文件不动；清理只删未被引用的文件。 |
-| CUE | 成功导入会删来源整轨行；删除/编辑 CUE 会留下旧虚拟曲目；一个引用文件失败会让整张 CUE 本次失败。 |
+| CUE | 成功导入会删来源整轨行，删前把收藏、手排曲序和手动歌词迁移到新分轨；删除/编辑 CUE 会留下旧虚拟曲目；一个引用文件失败会让整张 CUE 本次失败。 |
 | 备份/恢复 | 只动本地表和统计；不含账号登录、云端红心、在线歌单。 |
 | 退出/换账号 | 清在线凭据、红心、在线音频缓存、分页；本地曲库、本地喜欢、歌词、统计保留；在线队列文件保留（见 R3）。 |
 | Agent 红心 | 默认写本地；显式 `target=cloud` 才写当前账号；权限在 `AgentBridge.hasPermissions()` 按 target 检查。 |
@@ -223,7 +223,7 @@ LibraryScanner
 1. **ID 命名空间互斥**：本地普通歌曲 ID 是 64 位十六进制；CUE 虚拟曲目是 `sha256(identity#曲号)`；在线 ID 必须以 `netease:` 开头且 `uri` 以 `ami-cloud://song/` 开头（`Song.isCloudSong()`）。不要让导入路径生成 `netease:` ID。
 2. **`songs` 只由本地路径写**：扫描、收藏、排序、删除、备份链接。在线歌单、红心、在线缓存不得写 `songs` 或 `lyric_overrides`。
 3. **收藏与红心分流**：本地 `songs.favorite`；云端 `CloudLikes.ids`。UI、ViewModel、Agent、备份都必须按 `isCloudSong()` 或显式 `target` 分流。
-4. **重扫保留用户字段**：`upsert` 的 UPDATE 不能加入 `favorite`、`user_order`、`imported_at`；手动歌词在 `lyric_overrides`，`upsert` 不覆盖。**例外**：CUE 接管会删除来源 `songs` 行并级联删除 `lyric_overrides`，必须在 CUE 策略中显式保留或迁移这些歌词。
+4. **重扫保留用户字段**：`upsert` 的 UPDATE 不能加入 `favorite`、`user_order`、`imported_at`；手动歌词在 `lyric_overrides`，`upsert` 不覆盖。CUE 接管会在同一事务内、删除来源 `songs` 行之前，把 `favorite`、`user_order` 和 `lyric_overrides` 迁移到分轨 ID（`inheritUserData()`）；删行后的 `ON DELETE CASCADE` 不会再影响已迁移数据。
 5. **账号内容只读，红心例外**：不要新增创建/编辑/删除歌单的调用；红心写入必须保留 session、pending、失败回滚和账号切换失效。
 6. **导入不调用账号接口**：`LibraryScanner` 不调用 `CloudMusic`/`NeteaseAccount`；除读取用户授权的 SAF 文档外，唯一外部请求是无凭据的网易云封面 CDN。
 7. **缓存目录分离**：本地 NCM/封面在 `filesDir/AudioCache`、`filesDir/Covers`；在线音频在 `cacheDir/online-audio`；在线封面在 `cacheDir/OnlineArtwork`。清理逻辑不要跨目录。

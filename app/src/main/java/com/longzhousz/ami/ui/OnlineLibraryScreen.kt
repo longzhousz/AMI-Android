@@ -383,7 +383,7 @@ internal fun OnlineLibraryContent(
                                 }),
                         )
                     } else {
-                        if (!favorites) sourceSelector?.invoke()
+                        sourceSelector?.invoke()
                         Spacer(Modifier.weight(1f))
                     }
                     if (!favorites && toolbarSelection == null && !toolbarSearching && configured) {
@@ -416,7 +416,7 @@ internal fun OnlineLibraryContent(
                 Column(
                     Modifier
                         .fillMaxSize()
-                        .then(if (floatingToolbar) Modifier.layerBackdrop(shelfBackdrop) else Modifier)
+                        .then(if (floatingToolbar || (favorites && sourceSelector != null)) Modifier.layerBackdrop(shelfBackdrop) else Modifier)
                         .padding(top = if (floatingToolbar && searchExpanded) statusTop + 76.dp else 0.dp),
                 ) {
                     if (!favorites && searching) toolbar(null, true)
@@ -725,7 +725,7 @@ internal fun OnlineLibraryContent(
                         }
                     }
                 }
-                if (floatingToolbar) {
+                if (floatingToolbar || (favorites && sourceSelector != null)) {
                     Box(Modifier.align(Alignment.TopEnd)) {
                         CompositionLocalProvider(LocalGlassBackdrop provides shelfBackdrop) { toolbar(null, false) }
                     }

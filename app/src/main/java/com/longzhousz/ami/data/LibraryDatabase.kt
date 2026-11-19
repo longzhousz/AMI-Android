@@ -19,6 +19,15 @@ data class ScanRecord(
     val artifacts: List<String> = emptyList(),
 )
 
+/** Snapshot of the user data a whole-file row passes to its CUE tracks. */
+data class InheritedSongData(
+    val favorite: Boolean,
+    val order: Int?,
+    val lyrics: LocalLyrics?,
+    val lyricName: String,
+    val hasOriginal: Boolean,
+)
+
 class LibraryDatabase(
     context: Context,
     name: String = "ami.sqlite3",
@@ -426,6 +435,39 @@ class LibraryDatabase(
 
     @Synchronized fun remove(id: String) {
         writableDatabase.delete("songs", "id=?", arrayOf(id))
+    }
+
+    /** Read before the source row is deleted; later CUE sheets reuse the same snapshot. */
+    @Synchronized fun inheritedData(id: String): InheritedSongData? {
+        var favorite = false
+        var order: Int? = null
+        writableDatabase.rawQuery("SELECT favorite,user_order FROM songs WHERE id=?", arrayOf(id)).use {
+            if (!it.moveToFirst()) return null
+            favorite = it.getInt(0) != 0
+            if (!it.isNull(1)) order = it.getInt(1)
+        }
+        val lyric =
+            writableDatabase.rawQuery("SELECT original,translated,name,has_original FROM lyric_overrides WHERE song_id=?", arrayOf(id)).use {
+                if (!it.moveToFirst()) null else Triple(LocalLyrics(it.getString(0), it.getString(1)), it.getString(2), it.getInt(3) != 0)
+            }
+        return InheritedSongData(favorite, order, lyric?.first, lyric?.second.orEmpty(), lyric?.third == true)
+    }
+
+    /** CUE tracks replacing a whole-file row inherit its favorite, manual order and lyrics. */
+    @Synchronized fun inheritUserData(
+        data: InheritedSongData,
+        toIds: List<String>,
+    ) {
+        toIds.forEach { id ->
+            if (data.favorite) writableDatabase.execSQL("UPDATE songs SET favorite=1 WHERE id=?", arrayOf(id))
+            if (data.order != null) writableDatabase.execSQL("UPDATE songs SET user_order=COALESCE(user_order,?) WHERE id=?", arrayOf(data.order, id))
+            data.lyrics?.let { lyrics ->
+                writableDatabase.execSQL(
+                    "INSERT OR IGNORE INTO lyric_overrides(song_id,original,translated,name,has_original,revision) VALUES(?,?,?,?,?,?)",
+                    arrayOf(id, lyrics.original, lyrics.translated, data.lyricName, if (data.hasOriginal) 1 else 0, lyricRevision(lyrics.original, lyrics.translated)),
+                )
+            }
+        }
     }
 
     @Synchronized fun cacheLyrics(
