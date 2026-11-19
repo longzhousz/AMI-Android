@@ -79,6 +79,7 @@ class CloudMusicTest {
         compose.onNodeWithTag("cloud-address").performTextInput(backend.address)
         compose.onNodeWithTag("cloud-pair-confirm").performClick()
         compose.waitUntil(10000) { visible("晚风收藏") }
+        compose.onNodeWithText("慢慢听").assertIsDisplayed()
         screenshot("cloud-playlists")
         compose.onNodeWithText("晚风收藏").performClick()
         compose.waitUntil(10000) { visible("把晚风留在唱片里") }
