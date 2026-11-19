@@ -58,7 +58,7 @@ AMI 是 agent-music-interface。Agent 通过用户显式授权的 SAF 交换文�
 
 ### 播放与当前队列
 
-`player.seek` 用 `positionMs`，`player.jump` 用 `index`，`player.mode` 用 `loop`、`one` 或 `shuffle`。`queue.get` 返回当前 Media3 队列的 `songIds` 和 `currentIndex`。`queue.set` 使用 `songIds` 与 `index` 重建队列；`queue.add` 使用 `songIds` 和可选 `index`；`queue.remove` 使用 `songIds`；`queue.clear` 清空队列；`queue.reorder` 用目标顺序的完整 `songIds`。队列操作在私人 FM 播放时返回 `failed`。`album.reorderTracks` 修改的是专辑持久曲序，不用于编排当前播放队列。
+`player.seek` 用 `positionMs`，`player.jump` 用 `index`，`player.mode` 用 `loop`、`one` 或 `shuffle`。`queue.get` 返回当前 Media3 队列的 `songIds` 和 `currentIndex`。`queue.set` 使用 `songIds` 与 `index` 重建队列；`queue.add` 使用 `songIds` 和可选 `index`；`queue.remove` 使用 `songIds`；`queue.clear` 清空队列；`queue.reorder` 用目标顺序的完整 `songIds`。队列操作只接受曲库中已有资料的歌曲；搜索或读取在线曲目得到的 `netease:` ID 须先由 `online.play` 加载，才能用于 `queue.set` 或 `queue.add`。队列操作在私人 FM 播放时返回 `failed`。`album.reorderTracks` 修改的是专辑持久曲序，不用于编排当前播放队列。
 
 ### 红心与在线
 
