@@ -10,7 +10,7 @@
 
 验证范围：格式、静态分析、JVM 单测、Lint、Debug 与优化版构建；专用 Android 36 模拟器单独运行本地布局、网易云曲库与界面流程的仪器测试，覆盖导航刷新回顶、移除本地菜单后的收藏路径、发现菜单和曲库主流程。完整设备套件、真实网易云账号、真机听感、液态玻璃真机效果与真实新版覆盖安装未验证。
 
-安装包大小：待优化版构建后填写；SHA-256：`待优化版构建后填写`。
+安装包大小：5680982 bytes；SHA-256：`ae45927f82bfbbfeb2a60c5f703a47331356d52e35c7f6e01b3ba910d17b48d0`。
 
 发布证书 SHA-256：`238e0c33d7deebc6dd873ae8f0e844cf626b873f2ddf2ea8900d4916e2dd6f39`。下载入口为 [GitHub 最新发布](https://github.com/longzhousz/AMI-Android/releases/latest)。
 
