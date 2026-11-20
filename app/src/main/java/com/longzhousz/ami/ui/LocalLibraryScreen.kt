@@ -127,6 +127,7 @@ internal fun LocalLibraryScreen(
     selectedAlbum: Album?,
     onCloud: () -> Unit,
     onRefresh: () -> Unit,
+    onRefreshRequest: () -> Int,
     onAlbum: (Album) -> Unit,
     onBack: () -> Unit,
     onPlay: (List<Song>, Int) -> Unit,
@@ -166,6 +167,7 @@ internal fun LocalLibraryScreen(
                         bottomInset,
                         onCloud = { if (active) onCloud() },
                         onRefresh = { if (active) onRefresh() },
+                        onRefreshRequest = onRefreshRequest,
                         onAlbum = {
                             if (active) {
                                 visit++
@@ -222,6 +224,7 @@ private fun LocalLibraryHome(
     bottomInset: Dp,
     onCloud: () -> Unit,
     onRefresh: () -> Unit,
+    onRefreshRequest: () -> Int,
     onAlbum: (Album) -> Unit,
     onPlay: (List<Song>, Int) -> Unit,
     onFavorite: (Song) -> Unit,
@@ -237,7 +240,6 @@ private fun LocalLibraryHome(
     var recent by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var searchExpanded by rememberSaveable { mutableStateOf(false) }
-    var menu by remember { mutableStateOf(false) }
     var headerHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -261,6 +263,15 @@ private fun LocalLibraryHome(
             previousQuery = query
             previousRecent = recent
             previousFavorites = favorites
+            songList.scrollToItem(0)
+            albumGrid.scrollToItem(0)
+        }
+    }
+    val refreshRequest = onRefreshRequest()
+    var seenRefreshRequest by remember { mutableIntStateOf(refreshRequest) }
+    LaunchedEffect(refreshRequest) {
+        if (refreshRequest != seenRefreshRequest) {
+            seenRefreshRequest = refreshRequest
             songList.scrollToItem(0)
             albumGrid.scrollToItem(0)
         }
@@ -331,9 +342,7 @@ private fun LocalLibraryHome(
                         favorites,
                         searchExpanded,
                         showSourceSwitch,
-                        initialFavorites,
                         onCloud,
-                        onMenu = { menu = true },
                         onSearchToggle = {
                             searchExpanded = !searchExpanded
                             if (!searchExpanded) {
@@ -349,23 +358,6 @@ private fun LocalLibraryHome(
                     }
                 }
             }
-            CompositionLocalProvider(LocalGlassBackdrop provides shelfBackdrop) {
-                LocalLibraryMenu(
-                    expanded = menu,
-                    active = active,
-                    favorites,
-                    recent,
-                    results.songs.isNotEmpty() && !loading,
-                    showFavorites = !initialFavorites,
-                    onDismiss = { menu = false },
-                    onFavorites = {
-                        favorites = !favorites
-                        mode = 1
-                    },
-                    onRecent = { recent = it },
-                    onShuffle = { onPlay(results.songs.shuffled(), 0) },
-                )
-            }
         }
     }
 }
@@ -374,15 +366,12 @@ private fun LocalLibraryHome(
     favorites: Boolean,
     searchExpanded: Boolean,
     showSourceSwitch: Boolean,
-    favoritesOnly: Boolean,
     onCloud: () -> Unit,
-    onMenu: () -> Unit,
     onSearchToggle: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         if (showSourceSwitch) LibrarySourceSwitch(true, {}, onCloud)
         Spacer(Modifier.weight(1f))
-        LocalLibraryMenuButton(favorites, favoritesOnly, onMenu)
         ActionIcon(
             if (searchExpanded) Icons.Rounded.Close else Icons.Rounded.Search,
             if (searchExpanded) "收起搜索" else "搜索本地音乐",
@@ -500,80 +489,6 @@ private fun localFilterChanged(
                 }
             }
         }
-    }
-}
-
-@Composable private fun LocalLibraryMenuButton(
-    favorites: Boolean,
-    favoritesOnly: Boolean,
-    onClick: () -> Unit,
-) {
-    ActionIcon(
-        if (favorites) Icons.Rounded.Favorite else Icons.Rounded.MoreHoriz,
-        if (favoritesOnly) {
-            "本地收藏选项"
-        } else if (favorites) {
-            "本地喜欢"
-        } else {
-            "本地音乐选项"
-        },
-        onClick,
-        tint = if (favorites) FavoriteRed else MaterialTheme.colorScheme.onSurface,
-    )
-}
-
-@Composable private fun BoxScope.LocalLibraryMenu(
-    expanded: Boolean,
-    active: Boolean,
-    favorites: Boolean,
-    recent: Boolean,
-    canShuffle: Boolean,
-    showFavorites: Boolean,
-    onDismiss: () -> Unit,
-    onFavorites: () -> Unit,
-    onRecent: (Boolean) -> Unit,
-    onShuffle: () -> Unit,
-) {
-    val visible = expanded && active
-    BackHandler(visible) { onDismiss() }
-    if (!visible) return
-    Box(
-        Modifier
-            .matchParentSize()
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss)
-            .clearAndSetSemantics {},
-    )
-    // Keep the menu and its sampled shelf in the same window and coordinate space.
-    Column(
-        Modifier
-            .align(Alignment.TopEnd)
-            .statusBarsPadding()
-            .padding(top = 60.dp, end = 24.dp)
-            .width(IntrinsicSize.Max)
-            .liquidGlass(RoundedCornerShape(24.dp), prominent = true)
-            .verticalScroll(rememberScrollState())
-            .semantics { paneTitle = "本地音乐选项" }
-            .testTag("local-library-menu")
-            .padding(vertical = 8.dp),
-    ) {
-        if (showFavorites) {
-            DropdownMenuItem({ Text(if (favorites) "全部本地音乐" else "本地喜欢") }, {
-                onFavorites()
-                onDismiss()
-            }, leadingIcon = { Icon(Icons.Rounded.FavoriteBorder, null) })
-        }
-        DropdownMenuItem({ Text("默认排序") }, {
-            onRecent(false)
-            onDismiss()
-        }, trailingIcon = { if (!recent) Icon(Icons.Rounded.Check, null) })
-        DropdownMenuItem({ Text("最近导入") }, {
-            onRecent(true)
-            onDismiss()
-        }, trailingIcon = { if (recent) Icon(Icons.Rounded.Check, null) })
-        DropdownMenuItem({ Text("随机播放") }, {
-            onShuffle()
-            onDismiss()
-        }, enabled = canShuffle, leadingIcon = { Icon(Icons.Rounded.Shuffle, null) })
     }
 }
 

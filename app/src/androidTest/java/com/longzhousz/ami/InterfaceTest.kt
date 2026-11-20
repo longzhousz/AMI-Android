@@ -240,9 +240,6 @@ class InterfaceTest {
             compose.onNodeWithTag("library-source-local").performClick()
             compose.onNodeWithTag("library-mode-songs").assertIsSelected()
             compose.onNodeWithText("本地来源验证").assertIsDisplayed()
-            compose.onNodeWithContentDescription("本地音乐选项").performClick()
-            compose.onNodeWithText("本地喜欢").performClick()
-            compose.onNodeWithText("本地来源验证").assertIsDisplayed()
             compose.runOnIdle { model.setTheme("dark") }
             screenshot("local-library-dark")
             compose.onNodeWithContentDescription("设置").performClick()
@@ -651,22 +648,17 @@ class InterfaceTest {
             compose.onNodeWithTag("library-search").performTextClearance()
             compose.onNodeWithTag("library-search").performImeAction()
             compose.onNodeWithContentDescription("收起搜索").performClick()
-            compose.onNodeWithContentDescription("本地音乐选项").performClick()
-            compose.onNodeWithText("最近导入").performClick()
-            assertTrue(
-                compose
-                    .onNodeWithText(songs.last().title)
-                    .fetchSemanticsNode()
-                    .boundsInRoot.top <
-                    compose
-                        .onNodeWithText(songs[3].title)
-                        .fetchSemanticsNode()
-                        .boundsInRoot.top,
-            )
-            compose.onNodeWithContentDescription("本地音乐选项").performClick()
-            compose.onNodeWithText("默认排序").performClick()
-            compose.onNodeWithContentDescription("本地音乐选项").performClick()
-            compose.onNodeWithText("本地喜欢").performClick()
+            compose.onNodeWithContentDescription("曲库").performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("local-library").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithContentDescription("我喜欢").performClick()
+            compose.waitUntil(10000) {
+                compose.onAllNodesWithText("本地喜欢").fetchSemanticsNodes().isNotEmpty() ||
+                    compose.onAllNodesWithTag("library-source-local").fetchSemanticsNodes().isNotEmpty()
+            }
+            if (compose.onAllNodesWithTag("library-source-local").fetchSemanticsNodes().isNotEmpty()) {
+                compose.onNodeWithTag("library-source-local").performClick()
+            }
+            compose.waitUntil(10000) { compose.onAllNodesWithText("本地喜欢").fetchSemanticsNodes().isNotEmpty() }
             compose.onAllNodesWithText("本地喜欢").assertCountEquals(1)
             try {
                 compose.onNodeWithText(songs.first().title).assertIsDisplayed()
@@ -678,8 +670,8 @@ class InterfaceTest {
             compose.onNodeWithText(songs[2].title).assertIsDisplayed()
             compose.onNodeWithText(songs[1].title).assertDoesNotExist()
             screenshot("favorites-songs")
-            compose.onNodeWithContentDescription("本地喜欢").performClick()
-            compose.onNodeWithText("全部本地音乐").performClick()
+            compose.onNodeWithContentDescription("曲库").performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("library-source-local").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("专辑").performClick()
             screenshot("library-albums")
             compose.onNodeWithText("晚风与回声").performClick()

@@ -112,6 +112,7 @@ fun AmiApp(
         val floatingInset = if (current != null) 156.dp else 88.dp
         var lastNavPage by remember { mutableIntStateOf(-1) }
         var lastNavTap by remember { mutableLongStateOf(0L) }
+        var localRefreshRequest by remember { mutableIntStateOf(0) }
         val selectedAlbum = albumsByKey[albumKey]
         val localAlbumInline = (page == 0 && localSelected) || (page == 1 && localFavoritesSelected)
         val bridgeAlbum by model.bridgeAlbum.collectAsStateWithLifecycle()
@@ -188,6 +189,7 @@ fun AmiApp(
         }
 
         fun refreshLocalLibrary() {
+            localRefreshRequest++
             if (model.repository.roots().isNotEmpty()) model.repository.scan() else model.showMessage("请先添加音乐文件夹")
         }
         CompositionLocalProvider(LocalGlassBackdrop provides contentBackdrop) {
@@ -283,6 +285,7 @@ fun AmiApp(
                                                         selectedAlbum = selectedAlbum,
                                                         onCloud = { favoritesSource = "cloud" },
                                                         onRefresh = ::refreshLocalLibrary,
+                                                        onRefreshRequest = { localRefreshRequest },
                                                         onAlbum = { albumKey = it.key },
                                                         onBack = { albumKey = null },
                                                         onPlay = { list, index -> model.play(list, index) },
@@ -314,6 +317,7 @@ fun AmiApp(
                                                         selectedAlbum = selectedAlbum,
                                                         onCloud = { librarySource = "cloud" },
                                                         onRefresh = ::refreshLocalLibrary,
+                                                        onRefreshRequest = { localRefreshRequest },
                                                         onAlbum = { albumKey = it.key },
                                                         onBack = { albumKey = null },
                                                         onPlay = { list, index -> model.play(list, index) },
@@ -413,6 +417,7 @@ fun AmiApp(
                                             val doubleTap = lastNavPage == index && now - lastNavTap <= android.view.ViewConfiguration.getDoubleTapTimeout()
                                             lastNavPage = if (doubleTap) -1 else index
                                             lastNavTap = now
+                                            // Refresh means a fresh shelf at the top, not a position tied to the album left behind.
                                             page = index
                                             albumKey = null
                                             focus.clearFocus()

@@ -365,6 +365,26 @@ class OnlineLibraryTest {
         }
     }
 
+    @Test fun bottomNavigationRefreshReturnsTheOnlineShelfToTheTopWithoutARevisionChange() {
+        var state by mutableStateOf(CloudLibraryState(library(), loaded = true))
+        var request by mutableIntStateOf(0)
+        var refreshes = 0
+        compose.setContent {
+            AmiTheme("light") {
+                Surface {
+                    OnlineLibraryContent(cloud, state, false, null, { refreshes++ }, { _, _ -> }, {}, refreshRequest = request)
+                }
+            }
+        }
+        compose.onNodeWithTag("online-shelf").performScrollToIndex(state.library.collections.lastIndex)
+        compose.runOnIdle { request++ }
+        compose.waitUntil(5000) { refreshes == 1 }
+        compose.runOnIdle {
+            assertEquals(0, state.revision)
+            assertEquals(1, refreshes)
+        }
+    }
+
     @Test fun explicitFavoritesRefreshFetchesAgainAndShelfRefreshMovesTheFirstCard() {
         var state by mutableStateOf(CloudLibraryState(library(), loaded = true))
         var request by mutableIntStateOf(0)

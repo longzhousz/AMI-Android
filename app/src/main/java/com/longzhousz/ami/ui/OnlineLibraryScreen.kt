@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -203,6 +204,7 @@ internal fun OnlineLibraryContent(
         }
     }
     var seenRevision by rememberSaveable { mutableLongStateOf(state.revision) }
+    var seenRefreshRequest by remember { mutableIntStateOf(refreshRequest) }
 
     fun back() {
         selectedKey = null
@@ -226,18 +228,18 @@ internal fun OnlineLibraryContent(
     }
     LaunchedEffect(searchExpanded) { if (searchExpanded) searchFocus.requestFocus() }
     LaunchedEffect(refreshRequest) {
-        if (refreshRequest > 0) {
-            if (favorites) {
-                refresh()
-            } else {
-                back()
-                onRefresh()
-            }
+        if (refreshRequest > seenRefreshRequest) {
+            seenRefreshRequest = refreshRequest
+            // Leave any album view first; the shelf itself must come back from its top.
+            back()
+            shelf.requestScrollToItem(0)
+            if (favorites) refresh() else onRefresh()
         }
     }
     LaunchedEffect(state.revision) {
         if (seenRevision != state.revision) {
             seenRevision = state.revision
+            // Shared with pull/title refresh: only shelf revisions reset the viewport.
             shelf.requestScrollToItem(0)
         }
     }
@@ -391,17 +393,26 @@ internal fun OnlineLibraryContent(
                         Spacer(Modifier.weight(1f))
                     }
                     if (!favorites && toolbarSelection == null && !toolbarSearching && configured) {
-                        Box {
-                            ActionIcon(Icons.Rounded.Explore, "发现音乐", { discoveryMenu = true }, enabled = !discovering)
-                            GlassDropdownMenu(discoveryMenu, { discoveryMenu = false }) {
-                                DropdownMenuItem({ Text("私人 FM") }, {
-                                    discoveryMenu = false
-                                    onDiscover("fm")
-                                }, leadingIcon = { Icon(Icons.Rounded.Radio, null) })
-                                DropdownMenuItem({ Text("每日推荐") }, {
-                                    discoveryMenu = false
-                                    onDiscover("daily")
-                                }, leadingIcon = { Icon(Icons.Rounded.WbSunny, null) })
+                        // Match the shelf sampling and prominent optics of the local library's former menu action.
+                        CompositionLocalProvider(LocalGlassBackdrop provides shelfBackdrop) {
+                            Box {
+                                ActionIcon(
+                                    Icons.Rounded.Explore,
+                                    "发现音乐",
+                                    { discoveryMenu = true },
+                                    enabled = !discovering,
+                                    modifier = Modifier.liquidGlass(CircleShape, prominent = true),
+                                )
+                                GlassDropdownMenu(discoveryMenu, { discoveryMenu = false }) {
+                                    DropdownMenuItem({ Text("私人 FM") }, {
+                                        discoveryMenu = false
+                                        onDiscover("fm")
+                                    }, leadingIcon = { Icon(Icons.Rounded.Radio, null) })
+                                    DropdownMenuItem({ Text("每日推荐") }, {
+                                        discoveryMenu = false
+                                        onDiscover("daily")
+                                    }, leadingIcon = { Icon(Icons.Rounded.WbSunny, null) })
+                                }
                             }
                         }
                     }
