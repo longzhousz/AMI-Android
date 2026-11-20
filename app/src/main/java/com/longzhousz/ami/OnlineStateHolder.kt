@@ -35,19 +35,10 @@ class OnlineStateHolder internal constructor(
     private var albumsJob: kotlinx.coroutines.Job? = null
     private var likesJob: kotlinx.coroutines.Job? = null
     private var likesSession = -1L
-    private var revisionPending = false
     private val _onlineLibrary = MutableStateFlow(CloudLibraryState())
     val onlineLibrary = _onlineLibrary.asStateFlow()
-    private val _onlineRefresh = MutableStateFlow<Int?>(null)
-    val onlineRefresh = _onlineRefresh.asStateFlow()
     private val _discovering = MutableStateFlow(false)
     val discovering = _discovering.asStateFlow()
-
-    fun requestOnlineRefresh(page: Int) {
-        if (page in 0..1) _onlineRefresh.value = page
-    }
-
-    fun consumeOnlineRefresh(page: Int) = _onlineRefresh.compareAndSet(page, null)
 
     fun cancelCloudPreparation() {
         cloudPlayJob?.cancel()
@@ -57,7 +48,6 @@ class OnlineStateHolder internal constructor(
     fun resetOnlineLibrary() {
         playlistsJob?.cancel()
         albumsJob?.cancel()
-        revisionPending = false
         cloud.clearPages()
         _onlineLibrary.value = CloudLibraryState()
     }
@@ -72,7 +62,6 @@ class OnlineStateHolder internal constructor(
     /** The liked playlist arrives with this page, so a failed album request must not block it. */
     fun refreshOnlinePlaylists() {
         if (!cloud.configured.value || playlistsJob?.isActive == true) return
-        revisionPending = true
         playlistsJob =
             scope.launch {
                 _onlineLibrary.update {
@@ -87,14 +76,11 @@ class OnlineStateHolder internal constructor(
                     cloud.refreshCatalog()
                     val playlists = cloud.playlists()
                     ensureActive()
-                    val bump = revisionPending
-                    revisionPending = false
                     _onlineLibrary.update { current ->
                         current.withPlaylists(playlists).copy(
                             refreshing = current.albumsLoading,
                             playlistsLoading = false,
                             error = if (current.albumsError != null) "曲库暂时无法刷新" else null,
-                            revision = if (bump) current.revision + 1 else current.revision,
                         )
                     }
                 } catch (cancelled: CancellationException) {
@@ -132,7 +118,6 @@ class OnlineStateHolder internal constructor(
 
     fun refreshOnlineAlbums() {
         if (!cloud.configured.value || albumsJob?.isActive == true) return
-        revisionPending = true
         albumsJob =
             scope.launch {
                 _onlineLibrary.update {
@@ -147,14 +132,11 @@ class OnlineStateHolder internal constructor(
                     cloud.refreshCatalog()
                     val albums = cloud.albums()
                     ensureActive()
-                    val bump = revisionPending
-                    revisionPending = false
                     _onlineLibrary.update { current ->
                         current.withAlbums(albums).copy(
                             refreshing = current.playlistsLoading,
                             albumsLoading = false,
                             error = if (current.playlistsError != null) "曲库暂时无法刷新" else null,
-                            revision = if (bump) current.revision + 1 else current.revision,
                         )
                     }
                 } catch (cancelled: CancellationException) {

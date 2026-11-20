@@ -112,7 +112,10 @@ fun AmiApp(
         val floatingInset = if (current != null) 156.dp else 88.dp
         var lastNavPage by remember { mutableIntStateOf(-1) }
         var lastNavTap by remember { mutableLongStateOf(0L) }
-        var localRefreshRequest by remember { mutableIntStateOf(0) }
+        var localLibraryRefresh by rememberSaveable { mutableIntStateOf(0) }
+        var localFavoritesRefresh by rememberSaveable { mutableIntStateOf(0) }
+        var onlineLibraryRefresh by rememberSaveable { mutableIntStateOf(0) }
+        var onlineFavoritesRefresh by rememberSaveable { mutableIntStateOf(0) }
         val selectedAlbum = albumsByKey[albumKey]
         val localAlbumInline = (page == 0 && localSelected) || (page == 1 && localFavoritesSelected)
         val bridgeAlbum by model.bridgeAlbum.collectAsStateWithLifecycle()
@@ -189,8 +192,21 @@ fun AmiApp(
         }
 
         fun refreshLocalLibrary() {
-            localRefreshRequest++
             if (model.repository.roots().isNotEmpty()) model.repository.scan() else model.showMessage("请先添加音乐文件夹")
+        }
+
+        fun navigate(index: Int) {
+            page = index
+            albumKey = null
+            focus.clearFocus()
+        }
+
+        fun refreshTab(index: Int) {
+            navigate(index)
+            when (index) {
+                0 -> if (localSelected) localLibraryRefresh++ else onlineLibraryRefresh++
+                1 -> if (localFavoritesSelected) localFavoritesRefresh++ else onlineFavoritesRefresh++
+            }
         }
         CompositionLocalProvider(LocalGlassBackdrop provides contentBackdrop) {
             Box(Modifier.fillMaxSize()) {
@@ -285,14 +301,14 @@ fun AmiApp(
                                                         selectedAlbum = selectedAlbum,
                                                         onCloud = { favoritesSource = "cloud" },
                                                         onRefresh = ::refreshLocalLibrary,
-                                                        onRefreshRequest = { localRefreshRequest },
+                                                        refreshRequest = localFavoritesRefresh,
                                                         onAlbum = { albumKey = it.key },
                                                         onBack = { albumKey = null },
                                                         onPlay = { list, index -> model.play(list, index) },
                                                         onFavorite = model::favorite,
                                                         onRemove = { remove = it },
                                                         onReorder = model::reorder,
-                                                        initialFavorites = true,
+                                                        favorites = true,
                                                         showSourceSwitch = cloudConfigured,
                                                     )
                                                 }
@@ -317,7 +333,7 @@ fun AmiApp(
                                                         selectedAlbum = selectedAlbum,
                                                         onCloud = { librarySource = "cloud" },
                                                         onRefresh = ::refreshLocalLibrary,
-                                                        onRefreshRequest = { localRefreshRequest },
+                                                        refreshRequest = localLibraryRefresh,
                                                         onAlbum = { albumKey = it.key },
                                                         onBack = { albumKey = null },
                                                         onPlay = { list, index -> model.play(list, index) },
@@ -359,6 +375,7 @@ fun AmiApp(
                                                                     null
                                                                 }
                                                             },
+                                                        refreshRequest = if (destination.page == 1) onlineFavoritesRefresh else onlineLibraryRefresh,
                                                     ) {
                                                         if (page == 0) {
                                                             focus.clearFocus()
@@ -414,18 +431,10 @@ fun AmiApp(
                                     IconButton(
                                         onClick = {
                                             val now = android.os.SystemClock.uptimeMillis()
-                                            val doubleTap = lastNavPage == index && now - lastNavTap <= android.view.ViewConfiguration.getDoubleTapTimeout()
+                                            val doubleTap = index < 2 && lastNavPage == index && now - lastNavTap <= android.view.ViewConfiguration.getDoubleTapTimeout()
                                             lastNavPage = if (doubleTap) -1 else index
                                             lastNavTap = now
-                                            // Refresh means a fresh shelf at the top, not a position tied to the album left behind.
-                                            page = index
-                                            albumKey = null
-                                            focus.clearFocus()
-                                            if (doubleTap && ((index == 0 && localSelected) || (index == 1 && localFavoritesSelected))) {
-                                                refreshLocalLibrary()
-                                            } else if (doubleTap && index < 2) {
-                                                model.requestOnlineRefresh(index)
-                                            }
+                                            if (doubleTap) refreshTab(index) else navigate(index)
                                         },
                                         modifier =
                                             Modifier
@@ -436,11 +445,7 @@ fun AmiApp(
                                                         customActions =
                                                             listOf(
                                                                 CustomAccessibilityAction("刷新$label") {
-                                                                    if ((index == 0 && localSelected) || (index == 1 && localFavoritesSelected)) {
-                                                                        refreshLocalLibrary()
-                                                                    } else {
-                                                                        model.requestOnlineRefresh(index)
-                                                                    }
+                                                                    refreshTab(index)
                                                                     true
                                                                 },
                                                             )

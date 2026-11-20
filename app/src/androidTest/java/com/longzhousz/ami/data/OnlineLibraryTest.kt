@@ -191,12 +191,7 @@ class OnlineLibraryTest {
                 Surface {
                     OnlineLibraryContent(cloud, state, false, null, {
                         refreshes++
-                        state =
-                            state.copy(
-                                library = state.library.copy(collections = shuffledShelf(state.library.collections, state.library.collections)),
-                                revision =
-                                    state.revision + 1,
-                            )
+                        state = state.copy(library = state.library.copy(collections = shuffledShelf(state.library.collections, state.library.collections)))
                     }, { rows, index -> plays += rows to index }, {})
                 }
             }
@@ -365,8 +360,9 @@ class OnlineLibraryTest {
         }
     }
 
-    @Test fun bottomNavigationRefreshReturnsTheOnlineShelfToTheTopWithoutARevisionChange() {
-        var state by mutableStateOf(CloudLibraryState(library(), loaded = true))
+    @Test fun navigationRefreshKeepsTheOnlineShelfAtTheTopAcrossBothResponses() {
+        val cards = (1..40).map { CloudPlaylist(it.toString(), "专辑 $it", null, 1, "album") }
+        var state by mutableStateOf(CloudLibraryState(CloudLibrary(cards), loaded = true))
         var request by mutableIntStateOf(0)
         var refreshes = 0
         compose.setContent {
@@ -376,13 +372,37 @@ class OnlineLibraryTest {
                 }
             }
         }
-        compose.onNodeWithTag("online-shelf").performScrollToIndex(state.library.collections.lastIndex)
+        val first = compose.onNodeWithTag("collection-${cards.first().key}")
+        val top = first.fetchSemanticsNode().boundsInRoot.top
+        val shelf = compose.onNodeWithTag("online-shelf")
+        shelf.performScrollToIndex(24)
+        first.assertDoesNotExist()
+
         compose.runOnIdle { request++ }
         compose.waitUntil(5000) { refreshes == 1 }
-        compose.runOnIdle {
-            assertEquals(0, state.revision)
-            assertEquals(1, refreshes)
+        assertEquals(
+            top,
+            first
+                .assertIsDisplayed()
+                .fetchSemanticsNode()
+                .boundsInRoot.top,
+            1f,
+        )
+
+        for (shift in listOf(12, 24)) {
+            val reordered = cards.drop(shift) + cards.take(shift)
+            compose.runOnIdle { state = state.copy(library = CloudLibrary(reordered)) }
+            val newFirst = compose.onNodeWithTag("collection-${reordered.first().key}")
+            assertEquals(
+                top,
+                newFirst
+                    .assertIsDisplayed()
+                    .fetchSemanticsNode()
+                    .boundsInRoot.top,
+                1f,
+            )
         }
+        compose.runOnIdle { assertEquals(1, refreshes) }
     }
 
     @Test fun explicitFavoritesRefreshFetchesAgainAndShelfRefreshMovesTheFirstCard() {
@@ -394,12 +414,7 @@ class OnlineLibraryTest {
                 Surface {
                     key(favorites) {
                         OnlineLibraryContent(cloud, state, favorites, null, {
-                            state =
-                                state.copy(
-                                    library = state.library.copy(collections = shuffledShelf(state.library.collections, state.library.collections)),
-                                    revision =
-                                        state.revision + 1,
-                                )
+                            state = state.copy(library = state.library.copy(collections = shuffledShelf(state.library.collections, state.library.collections)))
                         }, { _, _ -> }, {}, refreshRequest = request)
                     }
                 }
@@ -421,7 +436,11 @@ class OnlineLibraryTest {
         }
         val first = state.library.collections.first()
         compose.runOnIdle { request++ }
-        compose.waitUntil(5000) { state.revision > 0 }
+        compose.waitUntil(5000) {
+            state.library.collections
+                .first()
+                .key != first.key
+        }
         compose.runOnIdle {
             assertNotEquals(
                 first.key,

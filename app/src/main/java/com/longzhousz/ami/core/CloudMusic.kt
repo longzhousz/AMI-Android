@@ -51,7 +51,6 @@ data class CloudLibraryState(
     val loaded: Boolean = false,
     val refreshing: Boolean = false,
     val error: String? = null,
-    val revision: Long = 0,
     val albums: List<CloudPlaylist> = emptyList(),
     val createdPlaylists: List<CloudPlaylist> = emptyList(),
     val playlistsLoading: Boolean = false,

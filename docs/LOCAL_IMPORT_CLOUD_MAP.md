@@ -78,6 +78,7 @@ LibraryScanner
 | 红心状态机 | `NeteaseLikes.kt` | `refresh()`、`set()`、`reset()` | 乐观更新、失败回滚、session 隔离 |
 | 在线曲库门面 | `data/CloudMusic.kt` | `library()`、`tracks()`、`toggleLike()`、`rememberQueue()`、`restore()`、`resolve()` | 歌单页在内存；队列 JSON 落盘 |
 | 在线状态持有者 | `OnlineStateHolder.kt` | `resetOnlineLibrary()`、`refreshOnlineLibrary()`、`refreshCloudLikes()`、`playCloud()` | 负责刷新、播放队列和错误提示 |
+| 曲库共用界面 | `ui/AmiApp.kt`、`ui/LibraryShelf.kt` | 底栏双击、专辑／歌单网格和封面转场 | 刷新请求按标签和来源保存。回顶独立于扫描或网络结果，卡片更新时保留顶部位置 |
 | 在线 UI | `ui/OnlineLibraryScreen.kt`、`ui/PlayerScreen.kt` | 收藏/红心按钮、我喜欢页 | 云歌用 `likes.ids`，本地歌用 `songs.favorite` |
 | 账号切换/退出 | `data/CloudMusic.kt`、`ui/SettingsScreen.kt` | `login()`、`disconnect()` | `resetOnlineLibrary()` 在 `OnlineStateHolder`；清在线缓存和分页，不清本地曲库 |
 

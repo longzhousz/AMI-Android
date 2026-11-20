@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -497,7 +498,7 @@ class InterfaceTest {
         }
     }
 
-    @Test fun returningFromSettingsPreservesLibraryScroll() {
+    @Test fun singleTapPreservesLibraryScrollAndDoubleTapReturnsToTheTop() {
         val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
         val songs =
             (0 until 60).map { index ->
@@ -522,6 +523,20 @@ class InterfaceTest {
             openLocalLibrary()
             compose.onNodeWithText(songs[35].title).assertIsDisplayed()
             compose.onNodeWithText(songs.first().title).assertDoesNotExist()
+
+            val libraryTab = compose.onNodeWithContentDescription("曲库")
+            libraryTab.performTouchInput { doubleClick() }
+            compose.onNodeWithText(songs.first().title).assertIsDisplayed()
+            compose.onNodeWithText(songs[35].title).assertDoesNotExist()
+
+            compose.onNodeWithTag("library-song-list").performScrollToIndex(35)
+            compose.onNodeWithText(songs[35].title).assertIsDisplayed()
+            compose.onNodeWithContentDescription("设置").performClick()
+            compose.onNodeWithText("我的聆听").assertIsDisplayed()
+            libraryTab.performTouchInput { doubleClick() }
+            compose.onNodeWithTag("library-mode-songs").assertIsSelected()
+            compose.onNodeWithText(songs.first().title).assertIsDisplayed()
+            compose.onNodeWithText(songs[35].title).assertDoesNotExist()
         } finally {
             songs.forEach { model.repository.db.remove(it.id) }
             model.repository.reload()

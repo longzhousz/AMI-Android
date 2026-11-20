@@ -5,25 +5,15 @@ import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionLayout
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -43,7 +33,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -73,13 +62,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
-private data class CollectionScene(
-    val collection: CloudPlaylist?,
-    val visit: Int,
-) {
-    val key get() = collection?.let { "${it.key}:$visit" } ?: "shelf"
-}
-
 @Composable internal fun rememberNeteaseLogin(model: AmiViewModel): () -> Unit {
     val context = LocalContext.current
     val login =
@@ -100,17 +82,15 @@ private data class CollectionScene(
     bottomInset: Dp = 24.dp,
     onImport: (() -> Unit)? = null,
     sourceSelector: (@Composable () -> Unit)? = null,
+    refreshRequest: Int = 0,
     onOpenPlayer: () -> Unit = {},
 ) {
     val configured by model.cloud.configured.collectAsStateWithLifecycle()
     val state by model.onlineLibrary.collectAsStateWithLifecycle()
     val playback by model.player.state.collectAsStateWithLifecycle()
     val signIn = rememberNeteaseLogin(model)
-    val refresh by model.onlineRefresh.collectAsStateWithLifecycle()
     val discovering by model.discovering.collectAsStateWithLifecycle()
     val likes by model.cloud.likes.collectAsStateWithLifecycle()
-    var request by remember { mutableIntStateOf(0) }
-    LaunchedEffect(refresh) { if (model.consumeOnlineRefresh(if (favorites) 1 else 0)) request++ }
     LaunchedEffect(configured) {
         if (!configured) {
             model.resetOnlineLibrary()
@@ -127,7 +107,7 @@ private data class CollectionScene(
         model::refreshOnlineLibrary,
         model::playCloud,
         signIn,
-        request,
+        refreshRequest,
         bottomInset,
         onDiscover = { model.discover(it, onOpenPlayer) },
         discovering = discovering,
@@ -203,8 +183,6 @@ internal fun OnlineLibraryContent(
                 .toSet()
         }
     }
-    var seenRevision by rememberSaveable { mutableLongStateOf(state.revision) }
-    var seenRefreshRequest by remember { mutableIntStateOf(refreshRequest) }
 
     fun back() {
         selectedKey = null
@@ -227,21 +205,9 @@ internal fun OnlineLibraryContent(
         if (!showingTracks || (favorites && collection == null)) onRefresh()
     }
     LaunchedEffect(searchExpanded) { if (searchExpanded) searchFocus.requestFocus() }
-    LaunchedEffect(refreshRequest) {
-        if (refreshRequest > seenRefreshRequest) {
-            seenRefreshRequest = refreshRequest
-            // Leave any album view first; the shelf itself must come back from its top.
-            back()
-            shelf.requestScrollToItem(0)
-            if (favorites) refresh() else onRefresh()
-        }
-    }
-    LaunchedEffect(state.revision) {
-        if (seenRevision != state.revision) {
-            seenRevision = state.revision
-            // Shared with pull/title refresh: only shelf revisions reset the viewport.
-            shelf.requestScrollToItem(0)
-        }
+    LibraryNavigationRefresh(refreshRequest, shelf, list.takeIf { favorites }) {
+        back()
+        if (favorites) refresh() else onRefresh()
     }
     BackHandler(selected != null || searching || searchExpanded) { back() }
     LaunchedEffect(configured, key, offset, reload, if (favorites) likesRevision else 0L) {
@@ -560,184 +526,129 @@ internal fun OnlineLibraryContent(
                                         )
                                 },
                         ) {
-                            SharedTransitionLayout(Modifier.fillMaxSize()) {
-                                val targetScene = CollectionScene(selected, selectedVisit)
-                                val shelfTransition = remember { fadeIn(tween(200, 80)) togetherWith fadeOut(tween(140)) }
-                                val detailTransition = remember { fadeIn(tween(200, 80)) togetherWith fadeOut(tween(140)) }
-                                SideEffect {
-                                    shelfTransition.targetContentZIndex = if (targetScene.collection == null) 1f else 0f
-                                    detailTransition.targetContentZIndex = if (targetScene.collection != null) 1f else 0f
-                                }
-                                AnimatedContent(
-                                    targetScene,
-                                    Modifier.fillMaxSize(),
-                                    contentKey = { it.key },
-                                    // Keep each scene's transform independent so a reversed transition
-                                    // can put the active page above the page that is leaving.
-                                    transitionSpec = {
-                                        if (targetState.collection == null) shelfTransition else detailTransition
-                                    },
-                                    label = "collection-transition",
-                                ) { scene ->
-                                    val destination = scene.collection
-                                    val active = scene.key == targetScene.key
-                                    val sceneModifier = if (active) Modifier else Modifier.clearAndSetSemantics {}
-                                    // Exiting details retain their own list, including during rapid reversal.
-                                    val pageList = remember(destination?.key, scene.visit, searching, submitted) { list }
-                                    val pageKey =
-                                        if (searching) {
-                                            "search:$submitted"
-                                        } else if (favorites) {
-                                            collection?.key
-                                        } else {
-                                            destination?.key
-                                        }
-                                    val pageTracks = tracks.takeIf { loadedKey == pageKey } ?: pageKey?.let { cloud.savedPage(favorites, it)?.tracks }.orEmpty()
-                                    if (!favorites && destination == null && !searching) {
-                                        LazyVerticalGrid(
-                                            GridCells.Adaptive(145.dp),
-                                            state = shelf,
-                                            modifier = sceneModifier.fillMaxSize().testTag("online-shelf"),
-                                            contentPadding =
-                                                PaddingValues(
-                                                    start = 24.dp,
-                                                    end = 24.dp,
-                                                    top =
-                                                        when {
-                                                            searchExpanded -> 4.dp
-
-                                                            // The failure row already sits below the status bar and toolbar.
-                                                            failure != null -> 8.dp
-
-                                                            // The initial gap scrolls away with the covers.
-                                                            else -> statusTop + if (sourceSelector != null) 76.dp else 12.dp
-                                                        },
-                                                    bottom = bottomInset,
-                                                ),
-                                            horizontalArrangement = Arrangement.spacedBy(18.dp),
-                                            verticalArrangement = Arrangement.spacedBy(22.dp),
-                                        ) {
-                                            items(state.library.collections, key = { it.key }) { card ->
-                                                Column(
-                                                    Modifier
-                                                        .animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = spring(stiffness = 320f))
-                                                        .clickable(enabled = active) {
-                                                            selectedVisit++
-                                                            selectedKey = card.key
-                                                            submitted = ""
-                                                            offset = 0
-                                                            reload = 0
-                                                            error = null
-                                                            searchExpanded = false
-                                                            focus.clearFocus()
-                                                        }.testTag("collection-${card.key}"),
-                                                ) {
-                                                    Cover(
-                                                        card.cover,
-                                                        card.title,
-                                                        Modifier.fillMaxWidth().aspectRatio(1f).then(
-                                                            if (card.key in visibleCards) {
-                                                                Modifier.sharedElement(
-                                                                    rememberSharedContentState("cover:${card.key}"),
-                                                                    animatedVisibilityScope = this@AnimatedContent,
-                                                                    boundsTransform = { _, _ -> spring(dampingRatio = .9f, stiffness = 320f) },
-                                                                )
-                                                            } else {
-                                                                Modifier
-                                                            },
-                                                        ),
-                                                    )
-                                                    Text(
-                                                        card.title,
-                                                        Modifier.padding(top = 10.dp, start = 2.dp),
-                                                        style = MaterialTheme.typography.titleMedium,
-                                                        maxLines = 2,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                    )
-                                                    Text(
-                                                        if (card.kind == "album") card.artist.ifBlank { "专辑" } else "歌单 · ${card.count} 首",
-                                                        Modifier.padding(start = 2.dp, top = 4.dp),
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                    )
-                                                }
-                                            }
-                                            if (state.loaded && state.library.collections.isEmpty() && failure == null) {
-                                                item(span = { GridItemSpan(maxLineSpan) }) {
-                                                    ShelfEmpty("收藏的专辑和你创建的歌单，会出现在这里")
-                                                }
-                                            }
-                                        }
+                            LibraryCollectionTransition(selected, selected?.key, selectedVisit) { destination, visit, active, visibility ->
+                                val sceneModifier = if (active) Modifier else Modifier.clearAndSetSemantics {}
+                                // Exiting details retain their own list, including during rapid reversal.
+                                val pageList = remember(destination?.key, visit, searching, submitted) { list }
+                                val pageKey =
+                                    if (searching) {
+                                        "search:$submitted"
+                                    } else if (favorites) {
+                                        collection?.key
                                     } else {
-                                        Column(sceneModifier.fillMaxSize()) {
-                                            // Keep the detail toolbar inside its scene so the shared
-                                            // transition's coordinate space stays fixed while returning.
-                                            if (!favorites && destination != null) toolbar(destination, false)
-                                            LazyColumn(
-                                                state = pageList,
-                                                modifier = Modifier.weight(1f).fillMaxWidth().testTag("online-tracks"),
-                                                contentPadding = PaddingValues(start = if (favorites) 0.dp else 24.dp, end = if (favorites) 0.dp else 24.dp, bottom = bottomInset),
-                                            ) {
-                                                if (favorites) {
-                                                    item(key = "favorites-album-wall") {
-                                                        FavoritesHero(pageTracks.take(30))
-                                                    }
+                                        destination?.key
+                                    }
+                                val pageTracks = tracks.takeIf { loadedKey == pageKey } ?: pageKey?.let { cloud.savedPage(favorites, it)?.tracks }.orEmpty()
+                                if (!favorites && destination == null && !searching) {
+                                    LibraryShelfGrid(
+                                        state = shelf,
+                                        firstKey =
+                                            state.library.collections
+                                                .firstOrNull()
+                                                ?.key,
+                                        contentTop =
+                                            when {
+                                                searchExpanded -> 4.dp
+
+                                                // The failure row already sits below the status bar and toolbar.
+                                                failure != null -> 8.dp
+
+                                                // The initial gap scrolls away with the covers.
+                                                else -> statusTop + if (sourceSelector != null) 76.dp else 12.dp
+                                            },
+                                        bottomInset = bottomInset,
+                                        modifier = sceneModifier.testTag("online-shelf"),
+                                    ) {
+                                        items(state.library.collections, key = { it.key }) { card ->
+                                            LibraryShelfCard(
+                                                card.title,
+                                                if (card.kind == "album") card.artist.ifBlank { "专辑" } else "歌单 · ${card.count} 首",
+                                                card.cover,
+                                                enabled = active,
+                                                onClick = {
+                                                    selectedVisit++
+                                                    selectedKey = card.key
+                                                    submitted = ""
+                                                    offset = 0
+                                                    reload = 0
+                                                    error = null
+                                                    searchExpanded = false
+                                                    focus.clearFocus()
+                                                },
+                                                modifier = Modifier.testTag("collection-${card.key}"),
+                                                coverModifier = if (card.key in visibleCards) libraryCoverTransition(card.key, visibility) else Modifier,
+                                            )
+                                        }
+                                        if (state.loaded && state.library.collections.isEmpty() && failure == null) {
+                                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                                ShelfEmpty("收藏的专辑和你创建的歌单，会出现在这里")
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Column(sceneModifier.fillMaxSize()) {
+                                        // Keep the detail toolbar inside its scene so the shared
+                                        // transition's coordinate space stays fixed while returning.
+                                        if (!favorites && destination != null) toolbar(destination, false)
+                                        LazyColumn(
+                                            state = pageList,
+                                            modifier = Modifier.weight(1f).fillMaxWidth().testTag("online-tracks"),
+                                            contentPadding = PaddingValues(start = if (favorites) 0.dp else 24.dp, end = if (favorites) 0.dp else 24.dp, bottom = bottomInset),
+                                        ) {
+                                            if (favorites) {
+                                                item(key = "favorites-album-wall") {
+                                                    FavoritesHero(pageTracks.take(30))
                                                 }
-                                                if (destination != null) {
-                                                    item(key = "collection-header") {
-                                                        Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                                            Cover(
-                                                                destination.cover,
-                                                                destination.title,
-                                                                Modifier
-                                                                    .fillMaxWidth(.68f)
-                                                                    .widthIn(max = 280.dp)
-                                                                    .aspectRatio(1f)
-                                                                    .sharedElement(
-                                                                        rememberSharedContentState("cover:${destination.key}"),
-                                                                        animatedVisibilityScope = this@AnimatedContent,
-                                                                        boundsTransform = { _, _ -> spring(dampingRatio = .9f, stiffness = 320f) },
-                                                                    ).testTag("collection-cover"),
-                                                            )
-                                                            Text(
-                                                                if (destination.kind == "album") destination.artist else "${destination.count} 首",
-                                                                Modifier.padding(top = 12.dp),
-                                                                style = MaterialTheme.typography.bodySmall,
-                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                                itemsIndexed(pageTracks, key = { _, it -> it.id }) { index, track ->
-                                                    SongRow(
-                                                        track.song().copy(favorite = track.originalId in likes.ids || (favorites && !likes.ready)),
-                                                        currentId == "netease:${track.id}",
-                                                        {
-                                                            if (active) {
-                                                                if (track.available) onPlay(pageTracks, index) else error = "当前账号暂时无法播放这首歌"
-                                                            }
-                                                        },
-                                                        { if (active) onFavorite(track) },
-                                                        modifier =
+                                            }
+                                            if (destination != null) {
+                                                item(key = "collection-header") {
+                                                    Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                                        Cover(
+                                                            destination.cover,
+                                                            destination.title,
                                                             Modifier
-                                                                .animateItem()
-                                                                .then(if (favorites) Modifier.padding(horizontal = 24.dp) else Modifier)
-                                                                .alpha(if (track.available) 1f else .5f),
-                                                        favoriteEnabled = active && cloud.direct && likes.ready && track.originalId !in likes.pending,
-                                                        showFavorite = !favorites,
-                                                    )
-                                                }
-                                                if (more && loadedKey == key) {
-                                                    item {
-                                                        Spacer(Modifier.fillMaxWidth().height(20.dp))
+                                                                .fillMaxWidth(.68f)
+                                                                .widthIn(max = 280.dp)
+                                                                .aspectRatio(1f)
+                                                                .then(libraryCoverTransition(destination.key, visibility))
+                                                                .testTag("collection-cover"),
+                                                        )
+                                                        Text(
+                                                            if (destination.kind == "album") destination.artist else "${destination.count} 首",
+                                                            Modifier.padding(top = 12.dp),
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        )
                                                     }
                                                 }
-                                                if (pageTracks.isEmpty() && !loading && !state.refreshing && state.loaded && failure == null) {
-                                                    item {
-                                                        ShelfEmpty(if (favorites) "还没有红心歌曲" else "没有找到歌曲")
-                                                    }
+                                            }
+                                            itemsIndexed(pageTracks, key = { _, it -> it.id }) { index, track ->
+                                                SongRow(
+                                                    track.song().copy(favorite = track.originalId in likes.ids || (favorites && !likes.ready)),
+                                                    currentId == "netease:${track.id}",
+                                                    {
+                                                        if (active) {
+                                                            if (track.available) onPlay(pageTracks, index) else error = "当前账号暂时无法播放这首歌"
+                                                        }
+                                                    },
+                                                    { if (active) onFavorite(track) },
+                                                    modifier =
+                                                        Modifier
+                                                            .animateItem()
+                                                            .then(if (favorites) Modifier.padding(horizontal = 24.dp) else Modifier)
+                                                            .alpha(if (track.available) 1f else .5f),
+                                                    favoriteEnabled = active && cloud.direct && likes.ready && track.originalId !in likes.pending,
+                                                    showFavorite = !favorites,
+                                                )
+                                            }
+                                            if (more && loadedKey == key) {
+                                                item {
+                                                    Spacer(Modifier.fillMaxWidth().height(20.dp))
+                                                }
+                                            }
+                                            if (pageTracks.isEmpty() && !loading && !state.refreshing && state.loaded && failure == null) {
+                                                item {
+                                                    ShelfEmpty(if (favorites) "还没有红心歌曲" else "没有找到歌曲")
                                                 }
                                             }
                                         }

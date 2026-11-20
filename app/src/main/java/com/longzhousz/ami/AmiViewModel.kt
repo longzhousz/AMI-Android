@@ -38,7 +38,6 @@ class AmiViewModel internal constructor(
     val translationModels get() = playback.translationModels
     val translationStyle get() = playback.translationStyle
     val onlineLibrary get() = online.onlineLibrary
-    val onlineRefresh get() = online.onlineRefresh
     val discovering get() = online.discovering
     val bridge get() = library.bridge
     val bridgeEnabled get() = library.bridgeEnabled
@@ -93,10 +92,6 @@ class AmiViewModel internal constructor(
         name: String,
         block: () -> Unit,
     ) = playback.act(name, block)
-
-    fun requestOnlineRefresh(page: Int) = online.requestOnlineRefresh(page)
-
-    fun consumeOnlineRefresh(page: Int) = online.consumeOnlineRefresh(page)
 
     fun resetOnlineLibrary() = online.resetOnlineLibrary()
 
