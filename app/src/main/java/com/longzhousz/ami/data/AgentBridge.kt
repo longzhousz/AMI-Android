@@ -10,6 +10,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
@@ -40,12 +41,35 @@ class AgentBridge(
         val error: String? = null,
     )
 
-    private data class RequestDescriptor(
+    internal class RequestDescriptor(
         val action: String,
-        val completion: CompletableDeferred<ActionResult>,
         val startedAt: Long,
         val bytes: Long,
-    )
+    ) {
+        val cancellation = CompletableDeferred<Unit>()
+        private var settled: ActionResult? = null
+        private var execution: Job? = null
+
+        @Synchronized fun register(job: Job) {
+            execution = job
+            if (settled != null) job.cancel()
+        }
+
+        @Synchronized fun cancel(): Boolean {
+            if (settled != null) return false
+            settled = ActionResult(AgentProtocol.STATUS_CANCELLED)
+            cancellation.complete(Unit)
+            execution?.cancel()
+            return true
+        }
+
+        @Synchronized fun settle(result: ActionResult): ActionResult {
+            if (settled == null) settled = result
+            return settled!!
+        }
+
+        @Synchronized fun settledResult(): ActionResult? = settled
+    }
 
     private data class PendingRequest(
         val action: String,
@@ -95,14 +119,26 @@ class AgentBridge(
                 pending[requestId]
             } ?: return
         val completion = CompletableDeferred<Unit>()
+        var execution: Job? = null
         val worker =
             workScope.launch {
                 try {
                     val result =
                         when {
-                            !hasPermissions(request.action, request.payload) -> ActionResult(AgentProtocol.STATUS_BLOCKED, error = AgentProtocol.ERROR_BLOCKED)
-                            !accept -> ActionResult(AgentProtocol.STATUS_CANCELLED)
-                            else -> executeSafely(request.action, request.payload, requestId, execute)
+                            !hasPermissions(request.action, request.payload) -> {
+                                ActionResult(AgentProtocol.STATUS_BLOCKED, error = AgentProtocol.ERROR_BLOCKED)
+                            }
+
+                            !accept -> {
+                                ActionResult(AgentProtocol.STATUS_CANCELLED)
+                            }
+
+                            else -> {
+                                executeSafely(request.action, request.payload, requestId) { action, payload ->
+                                    execution = currentCoroutineContext()[Job]
+                                    execute(action, payload)
+                                }
+                            }
                         }
                     finalize(request.root, requestId, request.action, request.uri, result)
                 } catch (_: Exception) {
@@ -276,49 +312,59 @@ class AgentBridge(
             keys.all { repository.prefs.getBoolean(it, AgentProtocol.permissionDefaults.getValue(it)) }
         }
 
-    private suspend fun executeSafely(
+    internal suspend fun executeSafely(
         action: String,
         payload: JSONObject,
         requestId: String,
         execute: suspend (String, JSONObject) -> ActionResult,
     ): ActionResult {
         if (!isActiveRequest(requestId)) reserve(requestId)
-        val completion = CompletableDeferred<ActionResult>()
         val bytes = requestSize[requestId] ?: payload.toString().length.toLong()
-        synchronized(inFlight) { inFlight[requestId] = RequestDescriptor(action, completion, System.currentTimeMillis(), bytes) }
+        val descriptor = RequestDescriptor(action, System.currentTimeMillis(), bytes)
+        synchronized(inFlight) { inFlight[requestId] = descriptor }
         try {
             return coroutineScope {
-                val execution = async { runCatching { execute(action, payload) } }
+                val execution =
+                    async {
+                        descriptor.register(currentCoroutineContext()[Job]!!)
+                        val result =
+                            try {
+                                execute(action, payload)
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                ActionResult(AgentProtocol.STATUS_FAILED)
+                            }
+                        descriptor.settle(result)
+                    }
                 val result =
                     withTimeout(45_000L) {
                         select<ActionResult> {
-                            execution.onAwait { it.getOrElse { ActionResult(AgentProtocol.STATUS_FAILED) } }
-                            completion.onAwait { it }
+                            execution.onAwait { it }
+                            descriptor.cancellation.onAwait { descriptor.settledResult()!! }
                         }
                     }
-                if (!completion.isCompleted) execution.cancel()
-                result
+                descriptor.settle(result)
             }
         } catch (timeout: TimeoutCancellationException) {
-            return ActionResult(AgentProtocol.STATUS_TIMEOUT)
+            return descriptor.settle(ActionResult(AgentProtocol.STATUS_TIMEOUT))
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            return ActionResult(AgentProtocol.STATUS_FAILED)
+            return descriptor.settle(ActionResult(AgentProtocol.STATUS_FAILED))
         } finally {
             synchronized(inFlight) { inFlight.remove(requestId) }
             requestSize.remove(requestId)
         }
     }
 
-    private fun cancelRequest(target: String): ActionResult {
+    internal fun cancelRequest(target: String): ActionResult {
         if (!AgentProtocol.requestId.matches(target)) return ActionResult(AgentProtocol.STATUS_INVALID, error = AgentProtocol.ERROR_INVALID_REQUEST_ID)
-        val completion =
+        val descriptor =
             synchronized(inFlight) {
-                inFlight[target]?.completion
+                inFlight[target]
             } ?: return ActionResult(AgentProtocol.STATUS_CONFLICT)
-        completion.complete(ActionResult(AgentProtocol.STATUS_CANCELLED))
-        return ActionResult()
+        return if (descriptor.cancel()) ActionResult() else ActionResult(AgentProtocol.STATUS_CONFLICT)
     }
 
     private suspend fun requestConfirmation(

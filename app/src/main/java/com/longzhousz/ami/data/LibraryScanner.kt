@@ -25,11 +25,14 @@ import java.net.URI
 import java.net.UnknownHostException
 import java.util.Locale
 
-class LibraryScanner(
+class LibraryScanner internal constructor(
+    private val beforeAdd: (Int) -> Unit,
     private val context: Context,
     private val repository: LibraryRepository,
     private val downloadArtwork: suspend (String) -> ByteArray = ArtworkDownloader()::download,
 ) {
+    constructor(context: Context, repository: LibraryRepository, downloadArtwork: suspend (String) -> ByteArray = ArtworkDownloader()::download) : this({ _ -> }, context, repository, downloadArtwork)
+
     private data class FolderAssets(
         val lyrics: Map<String, DocumentEntry>,
         val cover: DocumentEntry?,
@@ -141,7 +144,6 @@ class LibraryScanner(
         var skipped = 0
         var lastReload = System.nanoTime()
         var lastProgress = 0L
-        var changed = lyricReport.imported > 0
 
         fun flush() {
             if (pending.isEmpty()) return
@@ -153,7 +155,6 @@ class LibraryScanner(
                     if (write.record != null) repository.db.saveScanRecord(write.record) else repository.db.removeScanRecord(write.key)
                 }
             }
-            changed = true
             pending.clear()
             pendingCount = 0
             pendingLyrics = 0
@@ -183,6 +184,7 @@ class LibraryScanner(
         try {
             work.forEachIndexed { index, entry ->
                 currentCoroutineContext().ensureActive()
+                beforeAdd(index)
                 val now = System.nanoTime()
                 if (index == 0 || index == work.lastIndex || now - lastProgress >= 150_000_000L) {
                     repository.importState.value = ImportState(true, index, work.size, entry.name, errors.takeLast(20))
@@ -298,10 +300,9 @@ class LibraryScanner(
             }
         } finally {
             flush()
-            if (changed) repository.reload()
+            repository.db.applyBackupLinks()
+            repository.reload()
         }
-        repository.db.applyBackupLinks()
-        repository.reload()
         repository.importState.value = ImportState(false, work.size, work.size, "已导入 / 更新 $imported 首 · 网易云歌词 ${lyricReport.imported} 份 · 跳过 $skipped 个音频镜像 · ${errors.size} 个问题", errors.takeLast(50))
     }
 

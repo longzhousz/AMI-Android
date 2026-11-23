@@ -210,6 +210,7 @@ class CloudMusic internal constructor(
         check(direct)
         stopRadio()
         val nickname = account.login(cookies)
+        clearQueue()
         withContext(Dispatchers.IO) { runCatching { cacheAccount() } }
         clearPages()
         configured.value = true
@@ -219,6 +220,8 @@ class CloudMusic internal constructor(
     fun refreshCatalog() {
         if (direct) account.invalidate()
     }
+
+    internal suspend fun clearQueueForRelogin() = clearQueue()
 
     suspend fun disconnect() =
         withContext(Dispatchers.IO) {
