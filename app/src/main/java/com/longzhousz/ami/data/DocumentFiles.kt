@@ -21,7 +21,7 @@ data class DocumentEntry(
     val stem get() = name.substringBeforeLast('.')
 }
 
-class DocumentFiles(
+open class DocumentFiles(
     context: Context,
 ) {
     private val resolver = context.contentResolver
@@ -30,7 +30,7 @@ class DocumentFiles(
         fun identity(uri: Uri): String = "${uri.authority}:${DocumentsContract.getDocumentId(uri)}"
     }
 
-    suspend fun walk(
+    open suspend fun walk(
         root: Uri,
         id: String,
         path: String,

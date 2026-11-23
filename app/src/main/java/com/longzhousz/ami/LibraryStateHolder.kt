@@ -163,7 +163,7 @@ class LibraryStateHolder internal constructor(
         persistAction("library.remove") { repository.remove(song) }
     }
 
-    private val agentActions by lazy { AgentActions(this, playback) }
+    internal val agentActions by lazy { AgentActions(this, playback) }
 
     suspend fun processBridge() = bridge.process { action, payload -> agentActions.execute(action, payload) }
 

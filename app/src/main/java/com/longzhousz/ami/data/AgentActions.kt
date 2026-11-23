@@ -303,23 +303,26 @@ internal class AgentActions(
             ).put("nextOffset", page.nextOffset)
             .put("more", page.more)
 
-    private fun onlinePlay(payload: JSONObject): AgentBridge.ActionResult {
+    internal fun onlinePlay(payload: JSONObject): AgentBridge.ActionResult {
+        check(repository.cloud.direct && repository.cloud.configured.value) { "请先登录网易云音乐" }
         val rows = payload.getJSONArray("tracks")
         val tracks =
             (0 until rows.length()).map { index ->
                 val row = rows.getJSONObject(index)
+                val id = neteaseId(row.getString("id"))
+                val originalId = neteaseId(row.getString("originalId"))
                 CloudTrack(
-                    id = row.getString("id"),
-                    originalId = row.getString("originalId"),
+                    id = id,
+                    originalId = originalId,
                     title = row.getString("title"),
                     artist = row.getString("artist"),
                     album = row.getString("album"),
                     duration = row.getLong("durationMs"),
                     cover = null,
                     available = row.getBoolean("available"),
-                    primaryArtistId = row.optString("primaryArtistId").takeIf { it.isNotBlank() },
+                    primaryArtistId = row.optString("primaryArtistId").takeIf { it.isNotBlank() }?.let(::neteaseId),
                     primaryArtistName = row.optString("primaryArtistName").takeIf { it.isNotBlank() },
-                    albumId = row.optString("albumId").takeIf { it.isNotBlank() },
+                    albumId = row.optString("albumId").takeIf { it.isNotBlank() }?.let(::neteaseId),
                 )
             }
         require(tracks.isNotEmpty() && tracks.size <= 1000)
