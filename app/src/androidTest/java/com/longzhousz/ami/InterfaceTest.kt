@@ -202,7 +202,7 @@ class InterfaceTest {
             compose.onRoot().performTouchInput { click(initial.center - rootAtSwitch.topLeft) }
             compose.mainClock.advanceTimeBy(1500)
             compose.mainClock.autoAdvance = true
-            val cover = compose.onNodeWithTag("local-collection-cover").fetchSemanticsNode().boundsInRoot
+            val cover = compose.onNodeWithTag("collection-cover").fetchSemanticsNode().boundsInRoot
             assertTrue("The local album cover should expand like the online shelf", cover.width > initial.width + 10)
             compose.onNodeWithText("曲序").performClick()
             compose.onNodeWithText("调整曲序").assertIsDisplayed()
@@ -231,7 +231,7 @@ class InterfaceTest {
             compose.onRoot().performTouchInput { click(point - root.topLeft) }
             compose.mainClock.advanceTimeBy(1500)
             compose.mainClock.autoAdvance = true
-            compose.onNodeWithTag("local-collection-cover").assertIsDisplayed()
+            compose.onNodeWithTag("collection-cover").assertIsDisplayed()
             compose.onNodeWithContentDescription("返回曲库").performClick()
             compose.onNodeWithTag("library-mode-songs").performClick()
             compose.onNodeWithText("本地来源验证").assertIsDisplayed()

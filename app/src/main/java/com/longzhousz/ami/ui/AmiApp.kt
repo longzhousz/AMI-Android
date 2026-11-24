@@ -9,8 +9,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -44,10 +42,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.longzhousz.ami.AmiViewModel
-import com.longzhousz.ami.core.Album
 import com.longzhousz.ami.core.ListeningScale
 import com.longzhousz.ami.core.Song
-import com.longzhousz.ami.core.durationLabel
 import com.longzhousz.ami.core.isCloudSong
 import com.longzhousz.ami.core.showLocalFavorites
 import com.longzhousz.ami.playback.PlaybackState
@@ -241,16 +237,21 @@ fun AmiApp(
                                     Box(Modifier.fillMaxSize().then(if ((model.cloud.direct && destination.page in 0..1 && album == null) || album != null) Modifier else Modifier.statusBarsPadding())) {
                                         when {
                                             album != null -> {
-                                                AlbumScreen(
-                                                    album,
-                                                    playback.id,
-                                                    { albumKey = null },
-                                                    onPlay = { list, index -> model.play(list, index) },
-                                                    onFavorite = model::favorite,
-                                                    onRemove = { remove = it },
-                                                    onReorder = model::reorder,
-                                                    bottomInset = floatingInset,
-                                                )
+                                                val active = destination.albumKey == albumKey
+                                                GlassBackdropHost(Modifier.fillMaxSize(), background = { PlayerBackdrop(album.cover) }) {
+                                                    LocalAlbumDetail(
+                                                        album,
+                                                        playback.id,
+                                                        { albumKey = null },
+                                                        onPlay = { list, index -> model.play(list, index) },
+                                                        onFavorite = model::favorite,
+                                                        onRemove = { remove = it },
+                                                        onReorder = model::reorder,
+                                                        bottomInset = floatingInset,
+                                                        modifier = if (active) Modifier else Modifier.clearAndSetSemantics {},
+                                                        active = active,
+                                                    )
+                                                }
                                             }
 
                                             destination.page == 2 -> {
@@ -559,81 +560,6 @@ fun AmiApp(
                 ActionIcon(Icons.Rounded.SkipNext, "下一首", onNext, glass = false)
             }
             LinearProgressIndicator(progress = { if (duration > 0) (clock.value.toFloat() / duration).coerceIn(0f, 1f) else 0f }, modifier = Modifier.fillMaxWidth().height(2.dp), color = MaterialTheme.colorScheme.primary, trackColor = Color.Transparent, drawStopIndicator = {})
-        }
-    }
-}
-
-@Composable internal fun AlbumScreen(
-    album: Album,
-    currentId: String?,
-    onBack: () -> Unit,
-    onPlay: (List<Song>, Int) -> Unit,
-    onFavorite: (Song) -> Unit,
-    onRemove: (Song) -> Unit,
-    onReorder: (List<String>) -> Unit,
-    bottomInset: androidx.compose.ui.unit.Dp,
-    modifier: Modifier = Modifier,
-    coverModifier: Modifier = Modifier,
-    active: Boolean = true,
-) {
-    var reorder by remember { mutableStateOf(false) }
-    GlassBackdropHost(modifier.fillMaxSize(), background = { PlayerBackdrop(album.cover) }) {
-        Column(Modifier.statusBarsPadding().padding(top = 12.dp)) {
-            Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 24.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                ActionIcon(Icons.Rounded.ArrowBack, "返回曲库", onBack)
-                Text(album.title, Modifier.weight(1f).padding(start = 8.dp), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                TextButton({ reorder = true }) {
-                    Icon(Icons.Rounded.SwapVert, null, Modifier.size(18.dp))
-                    Text("曲序")
-                }
-            }
-            LazyColumn(contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = bottomInset)) {
-                item {
-                    Column(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Cover(
-                            album.cover,
-                            album.title,
-                            Modifier
-                                .fillMaxWidth(.68f)
-                                .widthIn(max = 280.dp)
-                                .aspectRatio(1f)
-                                .then(coverModifier)
-                                .testTag("local-collection-cover"),
-                        )
-                        Text(album.artist, Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("${album.songs.size} 首歌曲 · ${durationLabel(album.duration)}", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row(Modifier.padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Button({ onPlay(album.songs, 0) }, Modifier.weight(1f).liquidGlass(CircleShape), colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.primary), contentPadding = PaddingValues(14.dp)) {
-                                Icon(Icons.Rounded.PlayArrow, null)
-                                Spacer(Modifier.width(6.dp))
-                                Text("播放")
-                            }
-                            FilledTonalButton({ onPlay(album.songs.shuffled(), 0) }, Modifier.weight(1f).liquidGlass(CircleShape), colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.Transparent), contentPadding = PaddingValues(14.dp)) {
-                                Icon(Icons.Rounded.Shuffle, null)
-                                Spacer(Modifier.width(6.dp))
-                                Text("随机播放")
-                            }
-                        }
-                    }
-                }
-                itemsIndexed(album.songs, key = { _, song -> song.id }) { index, song ->
-                    SongRow(
-                        song,
-                        currentId == song.id,
-                        { onPlay(album.songs, index) },
-                        { onFavorite(song) },
-                        { onRemove(song) },
-                        index + 1,
-                        modifier = Modifier.animateItem(placementSpec = spring(stiffness = 500f)),
-                    )
-                }
-            }
-        }
-        if (reorder && active) {
-            ReorderDialog(album, { reorder = false }, { ids ->
-                onReorder(ids)
-                reorder = false
-            })
         }
     }
 }

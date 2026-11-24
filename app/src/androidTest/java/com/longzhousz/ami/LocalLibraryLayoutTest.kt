@@ -11,12 +11,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -26,6 +34,7 @@ import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.ui.AmiTheme
 import com.longzhousz.ami.ui.LocalLibraryScreen
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -138,7 +147,7 @@ class LocalLibraryLayoutTest {
 
         grid.performScrollToIndex(24)
         compose.onNodeWithTag("local-album:${library.albums[24].key}").performClick()
-        compose.onNodeWithTag("local-collection-cover").assertIsDisplayed()
+        compose.onNodeWithTag("collection-cover").assertIsDisplayed()
         grid.assertDoesNotExist()
 
         compose.runOnIdle {
@@ -154,5 +163,70 @@ class LocalLibraryLayoutTest {
             1f,
         )
         compose.runOnIdle { assertEquals(2, refreshes) }
+    }
+
+    @Test fun expandedAlbumTitleAndDetailReturnPreserveTheFilteredShelf() {
+        val songs =
+            (10..49).map { index ->
+                val album = "合集 $index · 晚风吹过城南的街道时我们一起听见远处的海浪与歌声"
+                Song("qa-search-$index", "file:///qa/$index", folder = "qa", title = "曲目 $index", album = album, duration = 90_000)
+            }
+        val library = LibrarySnapshot(songs + Song("qa-unmatched", "file:///qa/other", folder = "qa", title = "其他歌曲", album = "安静的专辑"))
+        var selectedAlbum by mutableStateOf<Album?>(null)
+        compose.setContent {
+            AmiTheme("light") {
+                Surface {
+                    LocalLibraryScreen(
+                        library,
+                        false,
+                        false,
+                        null,
+                        24.dp,
+                        selectedAlbum = selectedAlbum,
+                        onCloud = {},
+                        onRefresh = {},
+                        onAlbum = { selectedAlbum = it },
+                        onBack = { selectedAlbum = null },
+                        onPlay = { _, _ -> },
+                        onFavorite = {},
+                        onRemove = {},
+                        onReorder = {},
+                    )
+                }
+            }
+        }
+
+        fun titleLayout(): TextLayoutResult {
+            val layouts = mutableListOf<TextLayoutResult>()
+            compose
+                .onNodeWithTag("collection-title", useUnmergedTree = true)
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            return layouts.single()
+        }
+        compose.onNodeWithText("安静的专辑").assertIsDisplayed()
+        compose.onNodeWithContentDescription("搜索本地音乐").performClick()
+        val search = compose.onNodeWithTag("library-search")
+        search.performTextInput("合集")
+        search.performImeAction()
+        val matches = library.search("合集", false, false).albums
+        val card = compose.onNodeWithTag("local-album:${matches[20].key}")
+        compose.waitUntil(5000) { compose.onAllNodesWithText("安静的专辑").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithTag("local-album-grid").performScrollToIndex(20)
+        val before = card.fetchSemanticsNode().boundsInRoot
+        card.performClick()
+        compose.onNodeWithText("1 首歌曲 · 1:30").assertIsDisplayed()
+        compose.onNodeWithText("播放").assertDoesNotExist()
+        compose.onNodeWithText("随机播放").assertDoesNotExist()
+        assertTrue(titleLayout().isLineEllipsized(0))
+        val heading = compose.onNodeWithTag("collection-heading")
+        heading.performClick()
+        val expanded = titleLayout()
+        assertTrue(expanded.lineCount > 1)
+        assertFalse(expanded.hasVisualOverflow)
+        heading.performClick()
+        assertTrue(titleLayout().isLineEllipsized(0))
+        compose.onNodeWithContentDescription("返回曲库").performClick()
+        search.assertIsNotFocused()
+        assertEquals(before.top, card.fetchSemanticsNode().boundsInRoot.top, 2f)
     }
 }

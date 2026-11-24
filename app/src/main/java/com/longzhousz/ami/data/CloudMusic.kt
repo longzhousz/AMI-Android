@@ -315,6 +315,10 @@ class CloudMusic internal constructor(
             },
             result.getInt("nextOffset"),
             result.optBoolean("more"),
+            albumSummary =
+                result.optInt("albumCount", -1).takeIf { it >= 0 }?.let {
+                    CloudAlbumSummary(it, result.optLong("albumDuration", -1L).takeIf { duration -> duration >= 0L })
+                },
         )
     }
 

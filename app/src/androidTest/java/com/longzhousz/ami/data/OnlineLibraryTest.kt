@@ -177,6 +177,10 @@ class OnlineLibraryTest {
             assertEquals((1..35).map(Int::toString), (first.tracks + second.tracks).map { it.id })
             assertTrue(first.more)
             assertFalse(second.more)
+            assertEquals(CloudAlbumSummary(35, 6_300_000), first.albumSummary)
+            assertEquals(first.albumSummary, second.albumSummary)
+            val albumWithMissingDuration = shelf.collections.first { it.key == "album:201" }
+            assertEquals(CloudAlbumSummary(35, null), cloud.tracks(albumWithMissingDuration).albumSummary)
             val playlist = shelf.collections.first { it.kind == "created" }
             assertEquals(listOf("105", "101", "104"), cloud.tracks(playlist).tracks.map { it.id })
             assertEquals(listOf("201", "202"), cloud.tracks(shelf.liked!!).tracks.map { it.id })
@@ -204,6 +208,7 @@ class OnlineLibraryTest {
         compose.onNodeWithTag("collection-album:200").performClick()
         compose.onNodeWithTag("online-refresh-indicator").assertDoesNotExist()
         compose.waitUntil(10000) { visible("专辑曲目 01") }
+        compose.onNodeWithText("35 首歌曲 · 105:00").assertIsDisplayed()
         compose.onNodeWithText("专辑曲目 01").performClick()
         compose.onNodeWithTag("online-tracks").performScrollToIndex(28)
         compose.waitUntil(10000) { requests.any { it.first == "v3/song/detail" && it.second.optString("c").contains("31") } }
@@ -211,11 +216,13 @@ class OnlineLibraryTest {
         val albumReads = requests.count { it.first.startsWith("v1/album/") || it.first == "v3/song/detail" }
         compose.onNodeWithTag("collection-album:201").performClick()
         compose.waitUntil(10000) { visible("专辑曲目 01") }
+        compose.onNodeWithText("35 首歌曲").assertIsDisplayed()
         compose.onNodeWithContentDescription("返回曲库").performClick()
         val afterOtherAlbum = requests.count { it.first.startsWith("v1/album/") || it.first == "v3/song/detail" }
         assertTrue(afterOtherAlbum > albumReads)
         compose.onNodeWithTag("collection-album:200").performClick()
         compose.onNodeWithText("专辑曲目 01").assertIsDisplayed()
+        compose.onNodeWithText("35 首歌曲 · 105:00").assertIsDisplayed()
         compose.onNodeWithTag("online-refresh-indicator").assertDoesNotExist()
         assertEquals(
             "Other albums must not evict this loaded album",
@@ -227,6 +234,7 @@ class OnlineLibraryTest {
             requests.count { it.first.startsWith("v1/album/") || it.first == "v3/song/detail" } > afterOtherAlbum
         }
         compose.onNodeWithTag("online-refresh-indicator").assertDoesNotExist()
+        screenshot("online-album-details")
         compose.onNodeWithContentDescription("返回曲库").performClick()
         compose.onNodeWithTag("online-refresh-indicator").assertExists()
         val before = state.library.collections.map { it.key }
@@ -1517,8 +1525,14 @@ class OnlineLibraryTest {
                         JSONObject().put("data", JSONArray().put(album(200, "晚风与回声")).put(album(201, "海边来信")))
                     }
 
-                    "v1/album/200", "v1/album/201", "v1/album/1021" -> {
+                    "v1/album/200", "v1/album/1021" -> {
                         JSONObject().put("songs", JSONArray((1..35).map(::song)))
+                    }
+
+                    "v1/album/201" -> {
+                        val rows = (1..35).map(::song)
+                        rows.last().remove("dt")
+                        JSONObject().put("songs", JSONArray(rows))
                     }
 
                     "v6/playlist/detail" -> {

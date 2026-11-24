@@ -261,6 +261,7 @@ internal val FavoriteRed = Color(0xFFEE4865)
     modifier: Modifier = Modifier,
     favoriteEnabled: Boolean = true,
     showFavorite: Boolean = true,
+    enabled: Boolean = true,
 ) {
     var menu by remember { mutableStateOf(false) }
     val background by animateColorAsState(
@@ -272,7 +273,7 @@ internal val FavoriteRed = Color(0xFFEE4865)
         modifier
             .fillMaxWidth()
             .background(background)
-            .clickable(onClick = onPlay)
+            .clickable(enabled = enabled, onClick = onPlay)
             .padding(vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -311,14 +312,14 @@ internal val FavoriteRed = Color(0xFFEE4865)
                 "${song.title}：${if (song.favorite) "取消喜欢" else "加入喜欢"}",
                 onFavorite,
                 tint = if (song.favorite) FavoriteRed else MaterialTheme.colorScheme.onSurfaceVariant,
-                enabled = favoriteEnabled,
+                enabled = enabled && favoriteEnabled,
                 glass = false,
             )
         }
         if (!song.isCloudSong()) {
             Box {
-                ActionIcon(Icons.Rounded.MoreVert, "${song.title}的更多操作", { menu = true }, glass = false)
-                GlassDropdownMenu(menu, { menu = false }) {
+                ActionIcon(Icons.Rounded.MoreVert, "${song.title}的更多操作", { menu = true }, enabled = enabled, glass = false)
+                GlassDropdownMenu(menu && enabled, { menu = false }) {
                     DropdownMenuItem(
                         if (song.favorite) {
                             { Text("取消喜欢") }

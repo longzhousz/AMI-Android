@@ -153,10 +153,16 @@ data class CloudTrack(
         )
 }
 
+data class CloudAlbumSummary(
+    val count: Int,
+    val duration: Long?,
+)
+
 data class CloudTracks(
     val tracks: List<CloudTrack>,
     val nextOffset: Int,
     val more: Boolean,
+    val albumSummary: CloudAlbumSummary? = null,
 )
 
 data class CloudLikes(

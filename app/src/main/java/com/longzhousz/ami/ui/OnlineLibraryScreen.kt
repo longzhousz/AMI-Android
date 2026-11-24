@@ -9,9 +9,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.items
@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -162,6 +163,7 @@ internal fun OnlineLibraryContent(
     var reload by remember { mutableIntStateOf(0) }
     var loadedKey by remember { mutableStateOf(key.takeIf { initialPage != null }) }
     var tracks by remember { mutableStateOf(initialPage?.tracks.orEmpty()) }
+    var albumSummary by remember { mutableStateOf(initialPage?.albumSummary) }
     var next by remember { mutableIntStateOf(initialPage?.nextOffset ?: 0) }
     var more by remember { mutableStateOf(initialPage?.more ?: false) }
     var loading by remember { mutableStateOf(false) }
@@ -213,6 +215,7 @@ internal fun OnlineLibraryContent(
     LaunchedEffect(configured, key, offset, reload, if (favorites) likesRevision else 0L) {
         if (!configured) {
             tracks = emptyList()
+            albumSummary = null
             loadedKey = null
             offset = 0
             loading = false
@@ -230,6 +233,7 @@ internal fun OnlineLibraryContent(
             reload = 0
             cloud.savedPage(true, key)?.let { saved ->
                 tracks = saved.tracks
+                albumSummary = saved.albumSummary
                 loadedKey = key
                 next = saved.nextOffset
                 more = saved.more
@@ -240,6 +244,7 @@ internal fun OnlineLibraryContent(
         if (offset == 0 && reload == 0) {
             cloud.savedPage(favorites, key)?.let { saved ->
                 tracks = saved.tracks
+                albumSummary = saved.albumSummary
                 loadedKey = key
                 next = saved.nextOffset
                 more = saved.more
@@ -267,6 +272,7 @@ internal fun OnlineLibraryContent(
         error = null
         if (loadedKey != key) {
             tracks = emptyList()
+            albumSummary = null
             more = false
             list.scrollToItem(0)
         }
@@ -275,11 +281,12 @@ internal fun OnlineLibraryContent(
             val merged = withContext(Dispatchers.Default) { (previous + page.tracks).distinctBy { it.id }.take(20000) }
             if (!isCurrentPage()) return@LaunchedEffect
             tracks = merged
+            albumSummary = page.albumSummary
             loadedKey = key
             next = page.nextOffset
             more = page.more
             if (tracks.size >= 20000) more = false
-            cloud.savePage(favorites, key, CloudTracks(tracks, next, more))
+            cloud.savePage(favorites, key, page.copy(tracks = merged, more = more))
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -318,47 +325,30 @@ internal fun OnlineLibraryContent(
             val shelfBackdrop = rememberLayerBackdrop()
             val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             val floatingToolbar = !favorites && selected == null && !searching
-            val toolbar: @Composable (CloudPlaylist?, Boolean) -> Unit = { toolbarSelection, toolbarSearching ->
-                val toolbarFloating = !favorites && toolbarSelection == null && !toolbarSearching
-                val toolbarAtTop = toolbarFloating || toolbarSearching || (toolbarSelection != null && error == null && state.error == null)
+            val toolbar: @Composable (Boolean) -> Unit = { toolbarSearching ->
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .then(if (favorites || toolbarAtTop) Modifier.statusBarsPadding() else Modifier)
-                        .padding(start = if (toolbarSelection != null || toolbarSearching) 8.dp else 24.dp, end = 24.dp, top = if (favorites || toolbarAtTop) 12.dp else 0.dp, bottom = 12.dp)
+                        .statusBarsPadding()
+                        .padding(start = if (toolbarSearching) 8.dp else 24.dp, end = 24.dp, top = 12.dp, bottom = 12.dp)
                         .testTag("collection-toolbar"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (toolbarSelection != null || toolbarSearching) {
-                        ActionIcon(Icons.Rounded.ArrowBack, "返回曲库", ::back)
+                    if (toolbarSearching) {
+                        ActionIcon(Icons.AutoMirrored.Rounded.ArrowBack, "返回曲库", ::back)
                         Spacer(Modifier.width(8.dp))
-                    }
-                    if (toolbarSelection != null || toolbarSearching) {
                         Text(
-                            if (favorites) {
-                                "我喜欢"
-                            } else if (toolbarSearching) {
-                                "搜索结果"
-                            } else {
-                                toolbarSelection?.title.orEmpty()
-                            },
-                            style = if (toolbarSelection == null && !toolbarSearching) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleLarge,
+                            "搜索结果",
+                            Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleLarge,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier =
-                                Modifier.weight(1f).combinedClickable(onClick = {}, onDoubleClick = {
-                                    if (favorites) {
-                                        refresh()
-                                    } else if (toolbarSelection == null && !toolbarSearching) {
-                                        onRefresh()
-                                    }
-                                }),
                         )
                     } else {
                         sourceSelector?.invoke()
                         Spacer(Modifier.weight(1f))
                     }
-                    if (!favorites && toolbarSelection == null && !toolbarSearching && configured) {
+                    if (!favorites && !toolbarSearching && configured) {
                         // Match the shelf sampling and prominent optics of the local library's former menu action.
                         CompositionLocalProvider(LocalGlassBackdrop provides shelfBackdrop) {
                             Box {
@@ -382,7 +372,7 @@ internal fun OnlineLibraryContent(
                             }
                         }
                     }
-                    if (!favorites && toolbarSelection == null && configured) {
+                    if (!favorites && configured) {
                         ActionIcon(
                             if (searchExpanded) Icons.Rounded.Close else Icons.Rounded.Search,
                             if (searchExpanded) "收起搜索" else "搜索音乐",
@@ -400,7 +390,7 @@ internal fun OnlineLibraryContent(
                         .then(if (floatingToolbar || (favorites && sourceSelector != null)) Modifier.layerBackdrop(shelfBackdrop) else Modifier)
                         .padding(top = if (floatingToolbar && searchExpanded) statusTop + 76.dp else 0.dp),
                 ) {
-                    if (!favorites && searching) toolbar(null, true)
+                    if (!favorites && searching) toolbar(true)
                     if (!configured) {
                         if (favorites) FavoritesHero(emptyList())
                         Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
@@ -538,7 +528,9 @@ internal fun OnlineLibraryContent(
                                     } else {
                                         destination?.key
                                     }
-                                val pageTracks = tracks.takeIf { loadedKey == pageKey } ?: pageKey?.let { cloud.savedPage(favorites, it)?.tracks }.orEmpty()
+                                val currentPage = loadedKey == pageKey
+                                val cachedPage = pageKey?.takeUnless { currentPage }?.let { cloud.savedPage(favorites, it) }
+                                val pageTracks = if (currentPage) tracks else cachedPage?.tracks.orEmpty()
                                 if (!favorites && destination == null && !searching) {
                                     LibraryShelfGrid(
                                         state = shelf,
@@ -586,72 +578,70 @@ internal fun OnlineLibraryContent(
                                         }
                                     }
                                 } else {
-                                    Column(sceneModifier.fillMaxSize()) {
-                                        // Keep the detail toolbar inside its scene so the shared
-                                        // transition's coordinate space stays fixed while returning.
-                                        if (!favorites && destination != null) toolbar(destination, false)
-                                        LazyColumn(
-                                            state = pageList,
-                                            modifier = Modifier.weight(1f).fillMaxWidth().testTag("online-tracks"),
-                                            contentPadding = PaddingValues(start = if (favorites) 0.dp else 24.dp, end = if (favorites) 0.dp else 24.dp, bottom = bottomInset),
-                                        ) {
-                                            if (favorites) {
-                                                item(key = "favorites-album-wall") {
-                                                    FavoritesHero(pageTracks.take(30))
-                                                }
-                                            }
-                                            if (destination != null) {
-                                                item(key = "collection-header") {
-                                                    Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                                        Cover(
-                                                            destination.cover,
-                                                            destination.title,
-                                                            Modifier
-                                                                .fillMaxWidth(.68f)
-                                                                .widthIn(max = 280.dp)
-                                                                .aspectRatio(1f)
-                                                                .then(libraryCoverTransition(destination.key, visibility))
-                                                                .testTag("collection-cover"),
-                                                        )
-                                                        Text(
-                                                            if (destination.kind == "album") destination.artist else "${destination.count} 首",
-                                                            Modifier.padding(top = 12.dp),
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                            itemsIndexed(pageTracks, key = { _, it -> it.id }) { index, track ->
-                                                SongRow(
-                                                    track.song().copy(favorite = track.originalId in likes.ids || (favorites && !likes.ready)),
-                                                    currentId == "netease:${track.id}",
-                                                    {
-                                                        if (active) {
-                                                            if (track.available) onPlay(pageTracks, index) else error = "当前账号暂时无法播放这首歌"
-                                                        }
-                                                    },
-                                                    { if (active) onFavorite(track) },
-                                                    modifier =
-                                                        Modifier
-                                                            .animateItem()
-                                                            .then(if (favorites) Modifier.padding(horizontal = 24.dp) else Modifier)
-                                                            .alpha(if (track.available) 1f else .5f),
-                                                    favoriteEnabled = active && cloud.direct && likes.ready && track.originalId !in likes.pending,
-                                                    showFavorite = !favorites,
-                                                )
-                                            }
-                                            if (more && loadedKey == key) {
-                                                item {
-                                                    Spacer(Modifier.fillMaxWidth().height(20.dp))
-                                                }
-                                            }
-                                            if (pageTracks.isEmpty() && !loading && !state.refreshing && state.loaded && failure == null) {
-                                                item {
-                                                    ShelfEmpty(if (favorites) "还没有红心歌曲" else "没有找到歌曲")
-                                                }
+                                    val trackRows: LazyListScope.() -> Unit = {
+                                        if (favorites) {
+                                            item(key = "favorites-album-wall") {
+                                                FavoritesHero(pageTracks.take(30))
                                             }
                                         }
+                                        itemsIndexed(pageTracks, key = { _, it -> it.id }) { index, track ->
+                                            SongRow(
+                                                track.song().copy(favorite = track.originalId in likes.ids || (favorites && !likes.ready)),
+                                                currentId == "netease:${track.id}",
+                                                {
+                                                    if (active) {
+                                                        if (track.available) onPlay(pageTracks, index) else error = "当前账号暂时无法播放这首歌"
+                                                    }
+                                                },
+                                                { if (active) onFavorite(track) },
+                                                modifier =
+                                                    Modifier
+                                                        .animateItem()
+                                                        .then(if (favorites) Modifier.padding(horizontal = 24.dp) else Modifier)
+                                                        .alpha(if (track.available) 1f else .5f),
+                                                favoriteEnabled = cloud.direct && likes.ready && track.originalId !in likes.pending,
+                                                showFavorite = !favorites,
+                                                enabled = active,
+                                            )
+                                        }
+                                        if (more && loadedKey == key) {
+                                            item {
+                                                Spacer(Modifier.fillMaxWidth().height(20.dp))
+                                            }
+                                        }
+                                        if (pageTracks.isEmpty() && !loading && !state.refreshing && state.loaded && failure == null) {
+                                            item {
+                                                ShelfEmpty(if (favorites) "还没有红心歌曲" else "没有找到歌曲")
+                                            }
+                                        }
+                                    }
+                                    val tracksModifier = Modifier.testTag("online-tracks")
+                                    if (!favorites && destination != null) {
+                                        val album = destination.kind == "album"
+                                        val summary = if (currentPage) albumSummary else cachedPage?.albumSummary
+                                        LibraryCollectionDetail(
+                                            destination.title,
+                                            destination.cover,
+                                            destination.artist,
+                                            summary?.count ?: destination.count.takeIf { it > 0 || !album },
+                                            summary?.duration,
+                                            listState = pageList,
+                                            bottomInset,
+                                            onBack = ::back,
+                                            modifier = sceneModifier,
+                                            coverModifier = libraryCoverTransition(destination.key, visibility),
+                                            trackListModifier = tracksModifier,
+                                            active = active,
+                                            padStatusBar = failure == null,
+                                            tracks = trackRows,
+                                        )
+                                    } else {
+                                        LazyColumn(
+                                            state = pageList,
+                                            modifier = sceneModifier.fillMaxSize().then(tracksModifier),
+                                            contentPadding = PaddingValues(start = if (favorites) 0.dp else 24.dp, end = if (favorites) 0.dp else 24.dp, bottom = bottomInset),
+                                            content = trackRows,
+                                        )
                                     }
                                 }
                             }
@@ -660,7 +650,7 @@ internal fun OnlineLibraryContent(
                 }
                 if (floatingToolbar || (favorites && sourceSelector != null)) {
                     Box(Modifier.align(Alignment.TopEnd)) {
-                        CompositionLocalProvider(LocalGlassBackdrop provides shelfBackdrop) { toolbar(null, false) }
+                        CompositionLocalProvider(LocalGlassBackdrop provides shelfBackdrop) { toolbar(false) }
                     }
                 }
             }

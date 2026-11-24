@@ -90,6 +90,7 @@ internal class NeteaseAccount(
     private data class PlaylistIds(
         val at: Long,
         val ids: List<String>,
+        val albumDuration: Long? = null,
     )
 
     private val lists = LinkedHashMap<String, PlaylistIds>(4, .75f, true)
@@ -239,8 +240,8 @@ internal class NeteaseAccount(
                     val album = path == "albumTracks"
                     val key = "$path:$id"
                     var albumDetail: JSONObject? = null
-                    val ids =
-                        synchronized(lists) { lists[key]?.takeIf { System.nanoTime() - it.at < 120_000_000_000L }?.ids } ?: run {
+                    val listing =
+                        synchronized(lists) { lists[key]?.takeIf { System.nanoTime() - it.at < 120_000_000_000L } } ?: run {
                             val rows =
                                 if (album) {
                                     albumDetail = web.post("v1/album/$id", JSONObject(), cookie)
@@ -252,14 +253,19 @@ internal class NeteaseAccount(
                                         ?.optJSONArray("trackIds") ?: error("暂时无法读取这张歌单")
                                 }
                             require(rows.length() <= 20000) { "这张歌单过大，暂时无法载入" }
-                            val loaded = (0 until rows.length()).map { neteaseId(rows.getJSONObject(it).optString("id")) }
+                            val loaded =
+                                PlaylistIds(
+                                    System.nanoTime(),
+                                    (0 until rows.length()).map { neteaseId(rows.getJSONObject(it).optString("id")) },
+                                    if (album) albumTotalDuration(rows) else null,
+                                )
                             synchronized(lists) {
-                                lists[key] = PlaylistIds(System.nanoTime(), loaded)
+                                lists[key] = loaded
                                 while (lists.size > 4) lists.remove(lists.keys.first())
                             }
                             loaded
                         }
-                    val page = ids.drop(offset).take(30)
+                    val page = listing.ids.drop(offset).take(30)
                     val result =
                         if (page.isEmpty()) {
                             JSONObject().put("songs", JSONArray())
@@ -295,7 +301,16 @@ internal class NeteaseAccount(
                                 )
                             }
                         }
-                    JSONObject().put("tracks", tracks).put("nextOffset", offset + page.size).put("more", offset + page.size < ids.size)
+                    JSONObject()
+                        .put("tracks", tracks)
+                        .put("nextOffset", offset + page.size)
+                        .put("more", offset + page.size < listing.ids.size)
+                        .apply {
+                            if (album) {
+                                put("albumCount", listing.ids.size)
+                                put("albumDuration", listing.albumDuration)
+                            }
+                        }
                 }
 
                 "search" -> {
@@ -554,8 +569,21 @@ internal class NeteaseAccount(
                 .put("primaryArtistId", artists.optJSONObject(0)?.optString("id"))
                 .put("primaryArtistName", artists.optJSONObject(0)?.optString("name")?.take(200))
                 .put("albumId", album?.optString("id"))
-                .put("duration", row.optLong("dt", row.optLong("duration")).coerceIn(0, 86_400_000))
+                .put("duration", trackDuration(row))
                 .put("available", (privilege?.optInt("st", 0) ?: 0) >= 0)
+        }
+
+        private fun trackDuration(row: JSONObject) = row.optLong("dt", row.optLong("duration")).coerceIn(0, 86_400_000)
+
+        // Album detail already returns metadata for every track, including tracks on later pages.
+        private fun albumTotalDuration(rows: JSONArray): Long? {
+            var total = 0L
+            for (index in 0 until rows.length()) {
+                val duration = trackDuration(rows.getJSONObject(index))
+                if (duration == 0L) return null
+                total += duration
+            }
+            return total
         }
 
         private fun hasTrial(row: JSONObject) = !row.isNull("freeTrialInfo") && row.opt("freeTrialInfo")?.toString() != "null"
