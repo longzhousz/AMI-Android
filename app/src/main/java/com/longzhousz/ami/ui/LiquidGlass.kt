@@ -13,10 +13,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.LayerBackdrop
@@ -33,15 +41,54 @@ internal val LocalGlassBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 internal val LocalVisualsActive = compositionLocalOf { true }
 internal val ColorScheme.isDark: Boolean get() = surface.luminance() < .5f
 
+@Stable
+internal class GlassLayer(
+    private val layer: LayerBackdrop,
+    private val popupBackground: GlassLayer?,
+) : Backdrop by layer {
+    private var sourceCoordinates by mutableStateOf<LayoutCoordinates?>(null, neverEqualPolicy())
+
+    fun capture(modifier: Modifier): Modifier = modifier.layerBackdrop(layer).onGloballyPositioned { sourceCoordinates = it }
+
+    // A native DropdownMenu starts a new window. Align its sample to the source on screen.
+    val inPopup: Backdrop =
+        object : Backdrop {
+            override val isCoordinatesDependent = true
+
+            override fun DrawScope.drawBackdrop(
+                density: Density,
+                coordinates: LayoutCoordinates?,
+                layerBlock: (GraphicsLayerScope.() -> Unit)?,
+            ) {
+                if (coordinates?.isAttached != true) return
+                val screen = coordinates.localToScreen(Offset.Zero)
+                if (!screen.isSpecified) return
+                with(this@GlassLayer) { drawAt(screen) }
+            }
+        }
+
+    private fun DrawScope.drawAt(screen: Offset) {
+        popupBackground?.let { with(it) { drawAt(screen) } }
+        val source = sourceCoordinates?.takeIf { it.isAttached } ?: return
+        val offset = source.screenToLocal(screen)
+        if (offset.isSpecified) translate(-offset.x, -offset.y) { drawLayer(layer.graphicsLayer) }
+    }
+}
+
+@Composable internal fun rememberGlassLayer(popupBackground: GlassLayer? = null): GlassLayer {
+    val layer = rememberLayerBackdrop()
+    return remember(layer, popupBackground) { GlassLayer(layer, popupBackground) }
+}
+
 /** Only the background is captured here. Glass children never sample their own output. */
 @Composable internal fun GlassBackdropHost(
     modifier: Modifier = Modifier,
-    backdrop: LayerBackdrop = rememberLayerBackdrop(),
     background: @Composable () -> Unit = { GlassCanvas() },
     content: @Composable BoxScope.() -> Unit,
 ) {
+    val backdrop = rememberGlassLayer()
     Box(modifier) {
-        Box(Modifier.matchParentSize().layerBackdrop(backdrop)) { background() }
+        Box(backdrop.capture(Modifier.matchParentSize())) { background() }
         CompositionLocalProvider(
             LocalGlassBackdrop provides backdrop,
             LocalContentColor provides MaterialTheme.colorScheme.onSurface,
@@ -78,13 +125,21 @@ internal val ColorScheme.isDark: Boolean get() = surface.luminance() < .5f
     shape: CornerBasedShape = RoundedCornerShape(24.dp),
     prominent: Boolean = false,
     backdrop: Backdrop? = LocalGlassBackdrop.current,
+    forMenu: Boolean = false,
 ): Modifier {
     val dark = MaterialTheme.colorScheme.isDark
-    val tint =
-        if (dark) {
-            Color(0xFF202633).copy(alpha = if (prominent) .48f else .34f)
-        } else {
-            Color.White.copy(alpha = if (prominent) .60f else .42f)
+    val tintAlpha =
+        when {
+            forMenu -> if (dark) .74f else .68f
+            prominent -> if (dark) .48f else .60f
+            else -> if (dark) .34f else .42f
+        }
+    val tint = (if (dark) Color(0xFF202633) else Color.White).copy(alpha = tintAlpha)
+    val blurRadius =
+        when {
+            forMenu -> 18.dp
+            prominent -> 10.dp
+            else -> 6.dp
         }
     // Standalone previews/tests may not have a source; the application always supplies one.
     if (backdrop == null) return this.then(Modifier.drawBehindGlassFallback(shape, tint))
@@ -93,7 +148,7 @@ internal val ColorScheme.isDark: Boolean get() = surface.luminance() < .5f
         shape = { shape },
         effects = {
             vibrancy()
-            blur(if (prominent) 10.dp.toPx() else 6.dp.toPx())
+            blur(blurRadius.toPx())
             lens(12.dp.toPx(), 24.dp.toPx(), depthEffect = true, chromaticAberration = prominent)
         },
         highlight = { Highlight(width = .7.dp, alpha = if (dark) .65f else .85f) },
@@ -183,15 +238,17 @@ private fun Modifier.drawBehindGlassFallback(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
-    containerColor: Color = Color.Transparent,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val shape = RoundedCornerShape(24.dp)
+    val source = LocalGlassBackdrop.current
+    val backdrop = (source as? GlassLayer)?.inPopup ?: source
     DropdownMenu(
         expanded,
         onDismissRequest,
-        modifier.liquidGlass(RoundedCornerShape(24.dp), prominent = true),
-        shape = RoundedCornerShape(24.dp),
-        containerColor = containerColor,
+        modifier.liquidGlass(shape, prominent = true, backdrop = backdrop, forMenu = true),
+        shape = shape,
+        containerColor = Color.Transparent,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
         content = content,

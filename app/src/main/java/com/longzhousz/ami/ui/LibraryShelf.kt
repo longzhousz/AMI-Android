@@ -183,7 +183,7 @@ internal fun SharedTransitionScope.libraryCoverTransition(
                 onLongClick = if (canSortAlbums) ({ menu = true }) else null,
             )
             if (canSortAlbums) {
-                GlassDropdownMenu(menu, { menu = false }, containerColor = MaterialTheme.colorScheme.surface) {
+                GlassDropdownMenu(menu, { menu = false }) {
                     OnlineAlbumOrder.entries.forEach { order ->
                         DropdownMenuItem(
                             { Text(order.label) },
@@ -192,7 +192,7 @@ internal fun SharedTransitionScope.libraryCoverTransition(
                                 onAlbumOrder(order)
                             },
                             modifier = Modifier.semantics { selected = albumOrder == order },
-                            trailingIcon = { if (albumOrder == order) Icon(Icons.Rounded.Check, null) },
+                            trailingIcon = { if (albumOrder == order) Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.onSurface) },
                         )
                     }
                 }

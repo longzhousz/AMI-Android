@@ -1004,10 +1004,11 @@ class OnlineLibraryTest {
     @Test fun cloudOnlyLibraryCanReshuffleAlbumsFromTheSourceMenu() {
         val shelf = library()
         val albums = shelf.collections.filter { it.kind == "album" }
+        var theme by mutableStateOf("light")
         var order by mutableStateOf(OnlineAlbumOrder.Default)
         var state by mutableStateOf(CloudLibraryState().withAlbums(albums))
         compose.setContent {
-            AmiTheme("light") {
+            AmiTheme(theme) {
                 Surface {
                     OnlineLibraryContent(
                         cloud,
@@ -1041,10 +1042,14 @@ class OnlineLibraryTest {
         val firstSlot = first.fetchSemanticsNode().boundsInRoot.left
         source.performTouchInput { longClick() }
         compose.onNodeWithText("默认").assertIsSelected()
+        screenshot("album-order-glass-light", system = true)
         compose.onNodeWithText("随机").performClick()
         assertEquals(firstSlot, second.fetchSemanticsNode().boundsInRoot.left, 1f)
+        compose.runOnIdle { theme = "dark" }
         source.performTouchInput { longClick() }
-        compose.onNodeWithText("随机").assertIsSelected().performClick()
+        compose.onNodeWithText("随机").assertIsSelected()
+        screenshot("album-order-glass-dark", system = true)
+        compose.onNodeWithText("随机").performClick()
         assertEquals(firstSlot, first.fetchSemanticsNode().boundsInRoot.left, 1f)
     }
 

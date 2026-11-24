@@ -5,13 +5,16 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -25,6 +28,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /** PixelCopy runs through Android's hardware renderer, including the library's RuntimeShaders. */
 @RunWith(AndroidJUnit4::class)
@@ -32,8 +36,16 @@ class LiquidGlassTest {
     @get:Rule val compose = createComposeRule()
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
-    private fun capture(name: String): Bitmap {
-        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+    private fun capture(
+        name: String,
+        system: Boolean = false,
+    ): Bitmap {
+        val bitmap =
+            if (system) {
+                requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+            } else {
+                compose.onRoot().captureToImage().asAndroidBitmap()
+            }
         File(context.filesDir, "qa/$name.png").apply { parentFile!!.mkdirs() }.outputStream().use {
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
         }
@@ -139,5 +151,55 @@ class LiquidGlassTest {
         assertTrue("Glass must update when the underlying layer changes", difference(light, changed) > 10)
         compose.onNodeWithContentDescription("玻璃播放").performClick()
         compose.runOnIdle { assertEquals(2, clicks) }
+    }
+
+    @Test fun menuSoftensTheBackdropAtItsScreenPositionInBothThemes() {
+        val colorBoundary = 200.dp
+        var theme by mutableStateOf("light")
+        var backdropOrigin = Offset.Unspecified
+        var menuOrigin = Offset.Unspecified
+        compose.setContent {
+            AmiTheme(theme) {
+                GlassBackdropHost(Modifier.fillMaxSize(), background = {
+                    Canvas(Modifier.fillMaxSize().onGloballyPositioned { backdropOrigin = it.localToScreen(Offset.Zero) }) {
+                        val split = colorBoundary.toPx()
+                        drawRect(Color(0xFFE1463E))
+                        drawRect(Color(0xFF3056D2), topLeft = Offset(0f, split), size = Size(size.width, size.height - split))
+                    }
+                }) {
+                    Box(Modifier.offset(54.dp, 96.dp)) {
+                        Spacer(Modifier.size(48.dp))
+                        GlassDropdownMenu(
+                            true,
+                            {},
+                            Modifier.width(160.dp).onGloballyPositioned { menuOrigin = it.localToScreen(Offset.Zero) },
+                        ) {
+                            DropdownMenuItem({ Text("默认") }, {})
+                            DropdownMenuItem({ Text("随机") }, {})
+                        }
+                    }
+                }
+            }
+        }
+        val density = context.resources.displayMetrics.density
+        for (mode in listOf("light", "dark")) {
+            compose.runOnIdle { theme = mode }
+            compose.mainClock.advanceTimeBy(500)
+            compose.onNodeWithText("默认").assertIsDisplayed()
+            compose.onNodeWithText("随机").assertIsDisplayed()
+            val (source, menu) = compose.runOnIdle { backdropOrigin to menuOrigin }
+            val bitmap = capture("glass-menu-$mode", system = true)
+            val x = (menu.x + 125 * density).roundToInt()
+            val split = source.y + colorBoundary.value * density
+
+            fun redMinusBlue(distanceDp: Int): Int {
+                val pixel = bitmap.getPixel(x, (split + distanceDp * density).roundToInt())
+                return android.graphics.Color.red(pixel) - android.graphics.Color.blue(pixel)
+            }
+            val tintChange = redMinusBlue(-24) - redMinusBlue(24)
+            val edgeChange = abs(redMinusBlue(-2) - redMinusBlue(2))
+            assertTrue("$mode: Glass must pick up both underlying colors ($tintChange)", tintChange > 50)
+            assertTrue("$mode: The color boundary must look blurred ($edgeChange / $tintChange)", edgeChange * 3 < tintChange)
+        }
     }
 }

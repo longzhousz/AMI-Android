@@ -50,8 +50,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.longzhousz.ami.AmiViewModel
 import com.longzhousz.ami.NeteaseLoginActivity
 import com.longzhousz.ami.core.*
@@ -322,7 +320,7 @@ internal fun OnlineLibraryContent(
                 GlassCanvas()
             }
         }) {
-            val shelfBackdrop = rememberLayerBackdrop()
+            val shelfBackdrop = rememberGlassLayer(popupBackground = LocalGlassBackdrop.current as? GlassLayer)
             val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             val floatingToolbar = !favorites && selected == null && !searching
             val toolbar: @Composable (Boolean) -> Unit = { toolbarSearching ->
@@ -387,7 +385,7 @@ internal fun OnlineLibraryContent(
                 Column(
                     Modifier
                         .fillMaxSize()
-                        .then(if (floatingToolbar || (favorites && sourceSelector != null)) Modifier.layerBackdrop(shelfBackdrop) else Modifier)
+                        .then(if (floatingToolbar || (favorites && sourceSelector != null)) shelfBackdrop.capture(Modifier) else Modifier)
                         .padding(top = if (floatingToolbar && searchExpanded) statusTop + 76.dp else 0.dp),
                 ) {
                     if (!favorites && searching) toolbar(true)
