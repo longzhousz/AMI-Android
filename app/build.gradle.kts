@@ -92,7 +92,7 @@ dependencies {
     implementation("androidx.media3:media3-session:1.11.1")
     implementation("androidx.work:work-runtime-ktx:2.10.5")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-    implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.4.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.4.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
