@@ -1,5 +1,6 @@
 package com.longzhousz.ami.data
 
+import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
@@ -29,6 +30,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import coil.imageLoader
 import com.longzhousz.ami.core.*
+import com.longzhousz.ami.dragLibraryContentBy
 import com.longzhousz.ami.playback.PlaybackState
 import com.longzhousz.ami.playback.RadioQueue
 import com.longzhousz.ami.playback.mediaItem
@@ -172,6 +174,107 @@ class OnlineLibraryTest {
                 compose.onRoot().captureToImage().asAndroidBitmap()
             }
         File(context.filesDir, "qa/$name.png").apply { parentFile!!.mkdirs() }.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    @Test fun onlineShelfHidesOnAQuickFlickAndRestoresItsMenusOnReversal() {
+        val cards = (1..44).map { CloudPlaylist((1000 + it).toString(), "唱片 $it", null, 35, "album", "AMI QA") }
+        val state = CloudLibraryState(CloudLibrary(cards), loaded = true)
+        compose.setContent {
+            AmiTheme("light") {
+                Surface {
+                    OnlineLibraryContent(
+                        cloud,
+                        state,
+                        false,
+                        null,
+                        {},
+                        { _, _ -> },
+                        {},
+                        sourceSelector = { LibrarySourceSwitch(false, {}, {}, albumOrder = OnlineAlbumOrder.Default) },
+                    )
+                }
+            }
+        }
+        val shelf = compose.onNodeWithTag("online-shelf")
+        val source = compose.onNodeWithTag("library-source-cloud")
+        val compass = compose.onNodeWithContentDescription("发现音乐")
+        val search = compose.onNodeWithContentDescription("搜索曲库")
+        shelf.performTouchInput { swipeWithVelocity(center, center - Offset(0f, 38.dp.toPx()), 1400.dp.toPx(), 48) }
+        source.assertDoesNotExist()
+        compass.assertDoesNotExist()
+        search.assertDoesNotExist()
+        screenshot("immersion-online-shelf-hidden")
+
+        shelf.dragLibraryContentBy((-30).dp)
+        source.assertIsDisplayed()
+        compass.assertIsDisplayed()
+        search.assertIsDisplayed()
+        compass.performClick()
+        compose.onNodeWithText("全局搜索").assertIsDisplayed()
+        screenshot("immersion-online-compass", system = true)
+        assertTrue(InstrumentationRegistry.getInstrumentation().uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK))
+        compose.onNodeWithText("全局搜索").assertDoesNotExist()
+        compass.assertIsDisplayed()
+        source.performTouchInput { longClick() }
+        compose.onNodeWithText("默认").assertIsSelected()
+        screenshot("immersion-online-sort", system = true)
+        compose.onNodeWithText("默认").performClick()
+
+        shelf.performTouchInput {
+            down(center)
+            moveBy(Offset(0f, -82.dp.toPx()), delayMillis = 100)
+            moveBy(Offset(0f, 36.dp.toPx()), delayMillis = 32)
+            advanceEventTime(140)
+            up()
+        }
+        search.assertIsDisplayed()
+        shelf.dragLibraryContentBy(76.dp)
+        search.assertDoesNotExist()
+        shelf.performScrollToIndex(0)
+        search.assertIsDisplayed()
+    }
+
+    @Test fun onlineFavoritesOnlyCollapseTheirToolbarOutsideSearch() {
+        likedIds.clear()
+        likedIds.addAll((201..235).reversed().map(Int::toString))
+        val loaded = CloudLibraryState(library(), loaded = true)
+        var state by mutableStateOf(CloudLibraryState())
+        compose.setContent {
+            AmiTheme("dark") {
+                Surface {
+                    OnlineLibraryContent(
+                        cloud,
+                        state,
+                        true,
+                        null,
+                        {},
+                        { _, _ -> },
+                        {},
+                        sourceSelector = { LibrarySourceSwitch(false, {}, {}) },
+                    )
+                }
+            }
+        }
+        val list = compose.onNodeWithTag("online-tracks")
+        val search = compose.onNodeWithContentDescription("搜索我喜欢")
+        val source = compose.onNodeWithTag("library-source-local")
+        search.assertIsDisplayed()
+        compose.runOnIdle { state = loaded }
+        compose.waitUntil(10000) { visible("红心歌曲 235") }
+        list.dragLibraryContentBy(88.dp)
+        search.assertDoesNotExist()
+        source.assertDoesNotExist()
+        screenshot("immersion-favorites-hidden")
+        list.dragLibraryContentBy((-32).dp)
+        search.assertIsDisplayed()
+        screenshot("immersion-favorites-shown")
+
+        search.performClick()
+        val field = compose.onNodeWithTag("personal-library-search")
+        field.performImeAction()
+        list.dragLibraryContentBy(92.dp)
+        field.assertIsDisplayed()
+        source.assertIsDisplayed()
     }
 
     @Test fun collectionsSeparateSavedAlbumsCreatedPlaylistsAndRedHearts() =

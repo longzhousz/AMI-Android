@@ -162,6 +162,8 @@ internal fun SharedTransitionScope.libraryCoverTransition(
         boundsTransform = { _, _ -> spring(dampingRatio = .9f, stiffness = 320f) },
     )
 
+internal val LocalLibrarySortMenu = staticCompositionLocalOf<MutableState<Boolean>?> { null }
+
 @Composable internal fun LibrarySourceSwitch(
     local: Boolean,
     onLocal: () -> Unit,
@@ -173,7 +175,8 @@ internal fun SharedTransitionScope.libraryCoverTransition(
     LibrarySegmentRow {
         if (showLocal) LibrarySegment("本地", local, "library-source-local", onLocal)
         Box {
-            var menu by remember { mutableStateOf(false) }
+            val sortMenu = LocalLibrarySortMenu.current ?: remember { mutableStateOf(false) }
+            var menu by sortMenu
             val canSortAlbums = !local && albumOrder != null
             LibrarySegment(
                 "网易云",
@@ -183,6 +186,7 @@ internal fun SharedTransitionScope.libraryCoverTransition(
                 onLongClick = if (canSortAlbums) ({ menu = true }) else null,
             )
             if (canSortAlbums) {
+                DisposableEffect(sortMenu) { onDispose { sortMenu.value = false } }
                 GlassDropdownMenu(menu, { menu = false }) {
                     OnlineAlbumOrder.entries.forEach { order ->
                         DropdownMenuItem(

@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
@@ -152,12 +153,19 @@ internal fun OnlineLibraryContent(
     var submitted by key(cloud, session) { rememberSaveable { mutableStateOf("") } }
     var searchExpanded by key(cloud, session) { rememberSaveable { mutableStateOf(false) } }
     var discoveryMenu by remember(session) { mutableStateOf(false) }
+    val sortMenu = remember(session) { mutableStateOf(false) }
     var selectedKey by key(cloud, session) { rememberSaveable { mutableStateOf<String?>(null) } }
     var selectedVisit by remember(session) { mutableIntStateOf(0) }
     val selected = libraryState.library.collections.firstOrNull { it.key == selectedKey }
     val collection = if (favorites) libraryState.library.liked else selected
     val personal = remember(cloud, session, favorites) { PersonalLibrarySearch() }
-    LaunchedEffect(searchActive, configured) { if (!searchActive || !configured) personal.close() }
+    LaunchedEffect(searchActive, configured) {
+        if (!searchActive || !configured) {
+            personal.close()
+            discoveryMenu = false
+            sortMenu.value = false
+        }
+    }
     val personalHome = configured && searchActive && personal.expanded && selected == null
     val personalTerm = if (configured && searchActive && personal.expanded) personal.term else ""
     val personalResults = rememberPersonalLibraryMatches(cloud, libraryState.library, favorites, personalTerm, likes, likesRevision, personal.retry)
@@ -225,7 +233,7 @@ internal fun OnlineLibraryContent(
     }
 
     fun select(card: CloudPlaylist) {
-        if (cloud.likes.value.session != session || !cloud.configured.value) return
+        if (!searchActive || cloud.likes.value.session != session || !cloud.configured.value) return
         selectedVisit++
         selectedKey = card.key
         offset = 0
@@ -236,7 +244,7 @@ internal fun OnlineLibraryContent(
     }
 
     fun refresh() {
-        if (loading || (!showingTracks && libraryState.refreshing)) return
+        if (!searchActive || loading || (!showingTracks && libraryState.refreshing)) return
         onRefreshLikes()
         if (showingTracks) {
             cloud.refreshCatalog()
@@ -252,7 +260,7 @@ internal fun OnlineLibraryContent(
             personal.focusRequested()
         }
     }
-    LibraryNavigationRefresh(refreshRequest, shelf, list.takeIf { favorites }) {
+    LibraryNavigationRefresh(refreshRequest, shelf, list.takeIf { favorites }, active = searchActive) {
         closeSearch()
         if (!favorites) closeDetail()
         if (favorites) refresh() else onRefresh()
@@ -371,10 +379,31 @@ internal fun OnlineLibraryContent(
                 GlassCanvas()
             }
         }) {
-            val shelfBackdrop = rememberGlassLayer(popupBackground = LocalGlassBackdrop.current as? GlassLayer)
+            val rootBackdrop = LocalGlassBackdrop.current
+            val shelfBackdrop = rememberGlassLayer(popupBackground = rootBackdrop as? GlassLayer)
             val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             val floatingToolbar = !favorites && selected == null && !searching
             val normalToolbar = !personalHome && (floatingToolbar || (favorites && (configured || sourceSelector != null)))
+            val browsing = configured && normalToolbar && !searchExpanded
+            val pullState = rememberPullToRefreshState()
+            val personalMatching = personalHome && personal.matching
+            val refreshing = !personalMatching && (libraryState.refreshing || (loading && offset == 0))
+            val toolbarScroll =
+                key(cloud, session, favorites) {
+                    rememberLibraryScrollToolbar(
+                        scroll =
+                            when {
+                                !browsing || !searchActive -> null
+                                favorites -> list.takeIf { loadedKey == key && tracks.isNotEmpty() }
+                                else -> shelf.takeIf { libraryState.library.collections.isNotEmpty() }
+                            },
+                        refreshRequest,
+                        pullState,
+                    ) { refreshing || discoveryMenu || sortMenu.value || discovering }
+                }
+            val toolbarVisibility = updateTransition(searchActive && toolbarScroll.visible, label = "online-library-toolbar")
+            val captureShelf = browsing && toolbarVisibility.hasVisibleContent
+            val browseModifier = (if (captureShelf) shelfBackdrop.capture(Modifier) else Modifier).observeLibraryScroll(toolbarScroll)
             val toolbar: @Composable (Boolean, Boolean) -> Unit = { toolbarSearching, personalToolbar ->
                 Row(
                     Modifier
@@ -399,30 +428,27 @@ internal fun OnlineLibraryContent(
                         Spacer(Modifier.weight(1f))
                     }
                     if (!favorites && !toolbarSearching && !personalToolbar && !searchExpanded && configured) {
-                        // Match the shelf sampling and prominent optics of the local library's former menu action.
-                        CompositionLocalProvider(LocalGlassBackdrop provides shelfBackdrop) {
-                            Box {
-                                ActionIcon(
-                                    Icons.Rounded.Explore,
-                                    "发现音乐",
-                                    { discoveryMenu = true },
-                                    enabled = !discovering,
-                                    modifier = Modifier.liquidGlass(CircleShape, prominent = true),
-                                )
-                                GlassDropdownMenu(discoveryMenu, { discoveryMenu = false }) {
-                                    DropdownMenuItem({ Text(stringResource(R.string.online_global_search)) }, {
-                                        discoveryMenu = false
-                                        searchExpanded = true
-                                    }, leadingIcon = { Icon(Icons.Rounded.Search, null) })
-                                    DropdownMenuItem({ Text("私人 FM") }, {
-                                        discoveryMenu = false
-                                        onDiscover("fm")
-                                    }, leadingIcon = { Icon(Icons.Rounded.Radio, null) })
-                                    DropdownMenuItem({ Text("每日推荐") }, {
-                                        discoveryMenu = false
-                                        onDiscover("daily")
-                                    }, leadingIcon = { Icon(Icons.Rounded.WbSunny, null) })
-                                }
+                        Box {
+                            ActionIcon(
+                                Icons.Rounded.Explore,
+                                "发现音乐",
+                                { discoveryMenu = true },
+                                enabled = searchActive && !discovering,
+                                modifier = Modifier.liquidGlass(CircleShape, prominent = true),
+                            )
+                            GlassDropdownMenu(discoveryMenu && searchActive, { discoveryMenu = false }) {
+                                DropdownMenuItem({ Text(stringResource(R.string.online_global_search)) }, {
+                                    discoveryMenu = false
+                                    searchExpanded = true
+                                }, leadingIcon = { Icon(Icons.Rounded.Search, null) })
+                                DropdownMenuItem({ Text("私人 FM") }, {
+                                    discoveryMenu = false
+                                    onDiscover("fm")
+                                }, leadingIcon = { Icon(Icons.Rounded.Radio, null) })
+                                DropdownMenuItem({ Text("每日推荐") }, {
+                                    discoveryMenu = false
+                                    onDiscover("daily")
+                                }, leadingIcon = { Icon(Icons.Rounded.WbSunny, null) })
                             }
                         }
                     }
@@ -440,15 +466,16 @@ internal fun OnlineLibraryContent(
                             {
                                 if (closing) closeSearch() else personal.open()
                             },
+                            enabled = searchActive,
                         )
                     }
                 }
             }
-            Box(Modifier.fillMaxSize().testTag(if (favorites) "online-favorites" else "online-library")) {
+            val pageModifier = if (searchActive) Modifier else Modifier.clearAndSetSemantics {}
+            Box(pageModifier.fillMaxSize().testTag(if (favorites) "online-favorites" else "online-library")) {
                 Column(
                     Modifier
                         .fillMaxSize()
-                        .then(if (normalToolbar) shelfBackdrop.capture(Modifier) else Modifier)
                         .padding(top = if (floatingToolbar && searchExpanded) statusTop + 76.dp else 0.dp),
                 ) {
                     if (!favorites && searching) toolbar(true, false)
@@ -525,9 +552,6 @@ internal fun OnlineLibraryContent(
                                     ),
                             )
                         }
-                        val pullState = rememberPullToRefreshState()
-                        val personalMatching = personalHome && personal.matching
-                        val refreshing = !personalMatching && (libraryState.refreshing || (loading && offset == 0))
                         PullToRefreshBox(
                             isRefreshing = refreshing,
                             onRefresh = { if (!personalMatching) refresh() },
@@ -558,12 +582,13 @@ internal fun OnlineLibraryContent(
                                     }
                                 },
                         ) {
-                            LibraryCollectionTransition(selected, selected?.key, selectedVisit) { destination, visit, active, visibility ->
+                            LibraryCollectionTransition(selected, selected?.key, selectedVisit) { destination, visit, currentScene, visibility ->
+                                val active = searchActive && currentScene
                                 val sceneModifier = if (active) Modifier else Modifier.clearAndSetSemantics {}
                                 val showPersonal = destination == null && searchActive && personal.expanded && !searching
                                 val showMatches = showPersonal && personal.matching
                                 // Exiting details retain their own list, including during rapid reversal.
-                                val pageList = remember(destination?.key, visit, searching, submitted) { list }
+                                val pageList = if (destination == null) list else remember(destination.key, visit, searching, submitted) { list }
                                 val pageKey =
                                     if (searching) {
                                         "search:$submitted"
@@ -667,7 +692,7 @@ internal fun OnlineLibraryContent(
                                             bottomInset = bottomInset,
                                             active = active,
                                             onSelect = ::select,
-                                            modifier = Modifier.testTag("online-shelf"),
+                                            modifier = (if (currentScene) browseModifier else Modifier).testTag("online-shelf"),
                                             empty = "收藏的专辑和你创建的歌单，会出现在这里".takeIf { libraryState.loaded && failure == null },
                                         ) { card ->
                                             if (card.key in visibleCards) libraryCoverTransition(card.key, visibility) else Modifier
@@ -720,7 +745,7 @@ internal fun OnlineLibraryContent(
                                         } else {
                                             LazyColumn(
                                                 state = pageList,
-                                                modifier = Modifier.fillMaxSize().then(tracksModifier),
+                                                modifier = Modifier.fillMaxSize().then(tracksModifier).then(if (currentScene && favorites) browseModifier else Modifier),
                                                 contentPadding = PaddingValues(start = if (favorites) 0.dp else 24.dp, end = if (favorites) 0.dp else 24.dp, bottom = bottomInset),
                                                 content = trackRows,
                                             )
@@ -732,8 +757,11 @@ internal fun OnlineLibraryContent(
                     }
                 }
                 if (normalToolbar) {
-                    Box(Modifier.align(Alignment.TopEnd)) {
-                        CompositionLocalProvider(LocalGlassBackdrop provides shelfBackdrop) { toolbar(false, false) }
+                    LibraryFloatingToolbar(toolbarVisibility, Modifier.align(Alignment.TopEnd)) {
+                        CompositionLocalProvider(
+                            LocalGlassBackdrop provides if (captureShelf) shelfBackdrop else rootBackdrop,
+                            LocalLibrarySortMenu provides sortMenu,
+                        ) { toolbar(false, false) }
                     }
                 }
             }

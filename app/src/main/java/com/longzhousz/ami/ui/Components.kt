@@ -262,8 +262,8 @@ internal val FavoriteRed = Color(0xFFEE4865)
     favoriteEnabled: Boolean = true,
     showFavorite: Boolean = true,
     enabled: Boolean = true,
+    onMenuVisibilityChange: ((Boolean) -> Unit)? = null,
 ) {
-    var menu by remember { mutableStateOf(false) }
     val background by animateColorAsState(
         if (playing) MaterialTheme.colorScheme.primary.copy(alpha = .08f) else Color.Transparent,
         tween(220),
@@ -317,28 +317,44 @@ internal val FavoriteRed = Color(0xFFEE4865)
             )
         }
         if (!song.isCloudSong()) {
-            Box {
-                ActionIcon(Icons.Rounded.MoreVert, "${song.title}的更多操作", { menu = true }, enabled = enabled, glass = false)
-                GlassDropdownMenu(menu && enabled, { menu = false }) {
-                    DropdownMenuItem(
-                        if (song.favorite) {
-                            { Text("取消喜欢") }
-                        } else {
-                            { Text("加入喜欢") }
-                        },
-                        {
-                            menu = false
-                            onFavorite()
-                        },
-                        leadingIcon = { Icon(if (song.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null) },
-                    )
-                    if (onRemove != null) {
-                        DropdownMenuItem({ Text("从曲库移除") }, {
-                            menu = false
-                            onRemove()
-                        }, leadingIcon = { Icon(Icons.Rounded.PlaylistRemove, null) })
-                    }
-                }
+            LocalSongOptions(song, onFavorite, onRemove, enabled, onMenuVisibilityChange)
+        }
+    }
+}
+
+@Composable
+private fun LocalSongOptions(
+    song: Song,
+    onFavorite: () -> Unit,
+    onRemove: (() -> Unit)?,
+    enabled: Boolean,
+    onMenuVisibilityChange: ((Boolean) -> Unit)?,
+) {
+    var menu by remember { mutableStateOf(false) }
+    val expanded = menu && enabled
+    if (expanded && onMenuVisibilityChange != null) {
+        val onVisibilityChange by rememberUpdatedState(onMenuVisibilityChange)
+        DisposableEffect(Unit) {
+            onVisibilityChange(true)
+            onDispose { onVisibilityChange(false) }
+        }
+    }
+    Box {
+        ActionIcon(Icons.Rounded.MoreVert, "${song.title}的更多操作", { menu = true }, enabled = enabled, glass = false)
+        GlassDropdownMenu(expanded, { menu = false }) {
+            DropdownMenuItem(
+                { Text(if (song.favorite) "取消喜欢" else "加入喜欢") },
+                {
+                    menu = false
+                    onFavorite()
+                },
+                leadingIcon = { Icon(if (song.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null) },
+            )
+            if (onRemove != null) {
+                DropdownMenuItem({ Text("从曲库移除") }, {
+                    menu = false
+                    onRemove()
+                }, leadingIcon = { Icon(Icons.Rounded.PlaylistRemove, null) })
             }
         }
     }

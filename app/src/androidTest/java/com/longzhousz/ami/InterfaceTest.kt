@@ -35,6 +35,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.swipe
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
@@ -658,7 +659,12 @@ class InterfaceTest {
             compose.onNodeWithText(songs.first().title).assertDoesNotExist()
 
             val libraryTab = compose.onNodeWithContentDescription("曲库")
+            val search = compose.onNodeWithContentDescription("搜索本地音乐")
+            compose.onNodeWithTag("library-song-list").dragLibraryContentBy(78.dp)
+            search.assertDoesNotExist()
+            libraryTab.assertIsDisplayed()
             libraryTab.performTouchInput { doubleClick() }
+            search.assertIsDisplayed()
             compose.onNodeWithText(songs.first().title).assertIsDisplayed()
             compose.onNodeWithText(songs[35].title).assertDoesNotExist()
 

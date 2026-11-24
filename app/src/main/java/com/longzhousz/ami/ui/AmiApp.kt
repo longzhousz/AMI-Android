@@ -312,6 +312,7 @@ fun AmiApp(
                                                         onReorder = model::reorder,
                                                         favorites = true,
                                                         showSourceSwitch = cloudConfigured,
+                                                        active = destination.page == page,
                                                     )
                                                 }
                                             }
@@ -342,6 +343,7 @@ fun AmiApp(
                                                         onFavorite = model::favorite,
                                                         onRemove = { remove = it },
                                                         onReorder = model::reorder,
+                                                        active = destination.page == page,
                                                     )
                                                 }
                                             }

@@ -5,6 +5,11 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -66,6 +71,7 @@ internal fun LocalLibraryScreen(
     onReorder: (List<String>) -> Unit,
     favorites: Boolean = false,
     showSourceSwitch: Boolean = true,
+    active: Boolean = true,
 ) {
     var visit by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -87,8 +93,9 @@ internal fun LocalLibraryScreen(
     GlassBackdropHost(Modifier.fillMaxSize(), background = {
         if (selectedAlbum != null) PlayerBackdrop(selectedAlbum.cover) else GlassCanvas()
     }) {
-        LibraryCollectionTransition(selectedAlbum, selectedAlbum?.key, visit) { album, _, active, visibility ->
-            val sceneModifier = if (active) Modifier else Modifier.clearAndSetSemantics {}
+        LibraryCollectionTransition(selectedAlbum, selectedAlbum?.key, visit) { album, _, currentScene, visibility ->
+            val sceneActive = active && currentScene
+            val sceneModifier = if (sceneActive) Modifier else Modifier.clearAndSetSemantics {}
             if (album == null) {
                 pages.SaveableStateProvider("shelf") {
                     LocalLibraryHome(
@@ -100,21 +107,21 @@ internal fun LocalLibraryScreen(
                         refreshing,
                         currentId,
                         bottomInset,
-                        onCloud = { if (active) onCloud() },
-                        onRefresh = { if (active) onRefresh() },
+                        onCloud = { if (sceneActive) onCloud() },
+                        onRefresh = { if (sceneActive) onRefresh() },
                         refreshRequest = refreshRequest,
                         onAlbum = {
-                            if (active) {
+                            if (sceneActive) {
                                 visit++
                                 onAlbum(it)
                             }
                         },
-                        onPlay = { songs, index -> if (active) onPlay(songs, index) },
-                        onFavorite = { if (active) onFavorite(it) },
-                        onRemove = { if (active) onRemove(it) },
+                        onPlay = { songs, index -> if (sceneActive) onPlay(songs, index) },
+                        onFavorite = { if (sceneActive) onFavorite(it) },
+                        onRemove = { if (sceneActive) onRemove(it) },
                         coverModifier = { if (it.key in visibleAlbums) libraryCoverTransition(it.key, visibility) else Modifier },
                         modifier = sceneModifier,
-                        active = active,
+                        active = sceneActive,
                         favorites = favorites,
                         showSourceSwitch = showSourceSwitch,
                     )
@@ -131,7 +138,7 @@ internal fun LocalLibraryScreen(
                     bottomInset,
                     modifier = sceneModifier,
                     coverModifier = libraryCoverTransition(album.key, visibility),
-                    active = active,
+                    active = sceneActive,
                 )
             }
         }
@@ -251,9 +258,23 @@ private fun LocalLibraryHome(
         focus.clearFocus()
     }
     KeepLibraryAtTop(results.songs.firstOrNull()?.id, { songList.firstVisibleItemIndex == 0 && songList.firstVisibleItemScrollOffset == 0 }) { songList.requestScrollToItem(0) }
+    val pullState = rememberPullToRefreshState()
+    var songMenuOpen by remember { mutableStateOf(false) }
+    val searchVisibility = updateTransition(searchExpanded, label = "local-library-search")
+    val toolbarScroll =
+        rememberLibraryScrollToolbar(
+            scroll =
+                when {
+                    !active || loading -> null
+                    mode == 0 -> albumGrid.takeIf { results.albums.isNotEmpty() }
+                    else -> songList.takeIf { results.songs.isNotEmpty() }
+                },
+            refreshRequest,
+            pullState,
+        ) { searchVisibility.hasVisibleContent || refreshing || songMenuOpen }
+    val toolbarVisibility = updateTransition(active && toolbarScroll.visible, label = "local-library-toolbar")
     val shelfBackdrop = rememberLayerBackdrop()
     Box(modifier.fillMaxSize().testTag("local-library")) {
-        val pullState = rememberPullToRefreshState()
         PullToRefreshBox(
             isRefreshing = refreshing,
             onRefresh = onRefresh,
@@ -265,7 +286,7 @@ private fun LocalLibraryHome(
                     state = pullState,
                 )
             },
-            modifier = Modifier.fillMaxSize().layerBackdrop(shelfBackdrop),
+            modifier = if (toolbarVisibility.hasVisibleContent) Modifier.fillMaxSize().layerBackdrop(shelfBackdrop) else Modifier.fillMaxSize(),
         ) {
             LocalLibraryItems(
                 mode,
@@ -286,35 +307,42 @@ private fun LocalLibraryHome(
                 onFavorite,
                 onRemove,
                 coverModifier = coverModifier,
+                toolbarScroll = toolbarScroll,
+                onSongMenuVisibilityChange = { songMenuOpen = it },
             )
         }
-        CompositionLocalProvider(LocalGlassBackdrop provides shelfBackdrop) {
-            Column(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .onSizeChanged { headerHeight = it.height }
-                    .statusBarsPadding()
-                    .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 12.dp),
-            ) {
-                LocalLibraryHeaderRow(
-                    searchExpanded,
-                    showSourceSwitch,
-                    onCloud,
-                    onSearchToggle = {
-                        searchExpanded = !searchExpanded
-                        if (searchExpanded) {
-                            requestSearchFocus = true
-                        } else {
-                            onQuery("")
-                            focus.clearFocus()
-                        }
-                    },
-                )
-                Spacer(Modifier.height(8.dp))
-                LocalLibraryModeRow(mode, favorites) { mode = it }
-                AnimatedVisibility(searchExpanded) {
-                    LocalLibrarySearch(query, searchFocus, onQuery, { focus.clearFocus() })
+        LibraryFloatingToolbar(toolbarVisibility, Modifier.align(Alignment.TopCenter).testTag("local-library-toolbar")) {
+            CompositionLocalProvider(LocalGlassBackdrop provides shelfBackdrop) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .onSizeChanged { headerHeight = it.height }
+                        .statusBarsPadding()
+                        .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 12.dp),
+                ) {
+                    LocalLibraryHeaderRow(
+                        searchExpanded,
+                        showSourceSwitch,
+                        onCloud,
+                        onSearchToggle = {
+                            searchExpanded = !searchExpanded
+                            if (searchExpanded) {
+                                requestSearchFocus = true
+                            } else {
+                                onQuery("")
+                                focus.clearFocus()
+                            }
+                        },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    LocalLibraryModeRow(mode, favorites) { mode = it }
+                    searchVisibility.AnimatedVisibility(
+                        visible = { it },
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically(),
+                    ) {
+                        LocalLibrarySearch(query, searchFocus, onQuery, { focus.clearFocus() })
+                    }
                 }
             }
         }
@@ -366,6 +394,8 @@ private fun LocalLibraryHome(
     onFavorite: (Song) -> Unit,
     onRemove: (Song) -> Unit,
     coverModifier: @Composable (Album) -> Modifier,
+    toolbarScroll: LibraryScrollToolbarState,
+    onSongMenuVisibilityChange: (Boolean) -> Unit,
 ) {
     val albumsTransition = remember { AmiMotion.page(false) }
     val songsTransition = remember { AmiMotion.page(true) }
@@ -375,7 +405,7 @@ private fun LocalLibraryHome(
     }
     AnimatedContent(mode, Modifier.fillMaxSize(), transitionSpec = { if (targetState == 0) albumsTransition else songsTransition }, label = "local-library-layout") { layout ->
         val active = layout == mode
-        val sceneModifier = if (active) Modifier else Modifier.clearAndSetSemantics {}
+        val sceneModifier = if (active) Modifier.observeLibraryScroll(toolbarScroll) else Modifier.clearAndSetSemantics {}
         when {
             loading -> {
                 Box(sceneModifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -423,6 +453,8 @@ private fun LocalLibraryHome(
                             { if (active) onFavorite(song) },
                             { if (active) onRemove(song) },
                             modifier = Modifier.animateItem(placementSpec = spring(stiffness = 320f)),
+                            enabled = active,
+                            onMenuVisibilityChange = onSongMenuVisibilityChange,
                         )
                     }
                 }
