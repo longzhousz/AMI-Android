@@ -37,7 +37,7 @@ class OnlineStateHolder internal constructor(
     private var albumsJob: kotlinx.coroutines.Job? = null
     private var likesJob: kotlinx.coroutines.Job? = null
     private var likesSession = -1L
-    private val _onlineLibrary = MutableStateFlow(CloudLibraryState())
+    private val _onlineLibrary = MutableStateFlow(CloudLibraryState(session = cloud.likes.value.session))
     val onlineLibrary = _onlineLibrary.asStateFlow()
     private val mutableAlbumOrder =
         MutableStateFlow(if (repository.prefs.getBoolean("onlineAlbumsRandom", false)) OnlineAlbumOrder.Random else OnlineAlbumOrder.Default)
@@ -54,7 +54,7 @@ class OnlineStateHolder internal constructor(
         playlistsJob?.cancel()
         albumsJob?.cancel()
         cloud.clearPages()
-        _onlineLibrary.value = CloudLibraryState()
+        _onlineLibrary.value = CloudLibraryState(session = cloud.likes.value.session)
     }
 
     fun refreshOnlineLibrary() {
@@ -66,6 +66,8 @@ class OnlineStateHolder internal constructor(
 
     /** The liked playlist arrives with this page, so a failed album request must not block it. */
     fun refreshOnlinePlaylists() {
+        val session = cloud.likes.value.session
+        if (_onlineLibrary.value.session != session) resetOnlineLibrary()
         if (!cloud.configured.value || playlistsJob?.isActive == true) return
         playlistsJob =
             scope.launch {
@@ -81,6 +83,7 @@ class OnlineStateHolder internal constructor(
                     cloud.refreshCatalog()
                     val playlists = cloud.playlists()
                     ensureActive()
+                    if (cloud.likes.value.session != session) return@launch
                     _onlineLibrary.update { current ->
                         current.withPlaylists(playlists).copy(
                             refreshing = current.albumsLoading,
@@ -91,6 +94,7 @@ class OnlineStateHolder internal constructor(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
+                    if (cloud.likes.value.session != session) return@launch
                     AppDiagnostics.errors.record(ErrorCode.ONLINE_LIBRARY, failure)
                     _onlineLibrary.update { current ->
                         current.copy(
@@ -136,6 +140,8 @@ class OnlineStateHolder internal constructor(
     fun refreshOnlineAlbums() = loadOnlineAlbums(reshuffle = true)
 
     private fun loadOnlineAlbums(reshuffle: Boolean) {
+        val session = cloud.likes.value.session
+        if (_onlineLibrary.value.session != session) resetOnlineLibrary()
         if (!cloud.configured.value || albumsJob?.isActive == true) return
         if (reshuffle && albumOrder.value == OnlineAlbumOrder.Random) {
             _onlineLibrary.update { it.withAlbumOrder(OnlineAlbumOrder.Random) }
@@ -154,6 +160,7 @@ class OnlineStateHolder internal constructor(
                     cloud.refreshCatalog()
                     val albums = cloud.albums()
                     ensureActive()
+                    if (cloud.likes.value.session != session) return@launch
                     _onlineLibrary.update { current ->
                         current.withAlbums(albums, albumOrder.value).copy(
                             refreshing = current.playlistsLoading,
@@ -164,6 +171,7 @@ class OnlineStateHolder internal constructor(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
+                    if (cloud.likes.value.session != session) return@launch
                     AppDiagnostics.errors.record(ErrorCode.ONLINE_LIBRARY, failure)
                     _onlineLibrary.update { current ->
                         current.copy(

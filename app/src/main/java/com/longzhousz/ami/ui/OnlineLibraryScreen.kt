@@ -14,14 +14,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
@@ -35,16 +33,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -52,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.longzhousz.ami.AmiViewModel
 import com.longzhousz.ami.NeteaseLoginActivity
+import com.longzhousz.ami.R
 import com.longzhousz.ami.core.*
 import com.longzhousz.ami.data.CloudMusic
 import kotlinx.coroutines.CancellationException
@@ -82,6 +79,7 @@ import kotlinx.coroutines.withContext
     onImport: (() -> Unit)? = null,
     sourceSelector: (@Composable () -> Unit)? = null,
     refreshRequest: Int = 0,
+    active: Boolean = true,
     onOpenPlayer: () -> Unit = {},
 ) {
     val configured by model.cloud.configured.collectAsStateWithLifecycle()
@@ -116,6 +114,7 @@ import kotlinx.coroutines.withContext
         sourceSelector = sourceSelector,
         onRetryPlaylists = model::refreshOnlinePlaylists,
         onRetryAlbums = model::refreshOnlineAlbums,
+        searchActive = active,
     )
 }
 
@@ -140,34 +139,47 @@ internal fun OnlineLibraryContent(
     sourceSelector: (@Composable () -> Unit)? = null,
     onRetryPlaylists: () -> Unit = onRefresh,
     onRetryAlbums: () -> Unit = onRefresh,
+    searchActive: Boolean = true,
 ) {
     val configured by cloud.configured.collectAsStateWithLifecycle()
     val likes by cloud.likes.collectAsStateWithLifecycle()
     val likesRevision by cloud.likesRevision.collectAsStateWithLifecycle()
-    var seenLikesRevision by remember { mutableLongStateOf(likesRevision) }
-    var query by rememberSaveable { mutableStateOf("") }
-    var submitted by rememberSaveable { mutableStateOf("") }
-    var searchExpanded by rememberSaveable { mutableStateOf(false) }
-    var discoveryMenu by remember { mutableStateOf(false) }
-    var selectedKey by rememberSaveable { mutableStateOf<String?>(null) }
-    var selectedVisit by remember { mutableIntStateOf(0) }
-    val selected = state.library.collections.firstOrNull { it.key == selectedKey }
-    val collection = if (favorites) state.library.liked else selected
+    val session = likes.session
+    val libraryState = if (state.session == null || state.session == session) state else CloudLibraryState()
+    var seenLikesRevision by remember(session) { mutableLongStateOf(likesRevision) }
+    // Scope the saved values to the login even if the tab was disposed during the switch.
+    var query by key(cloud, session) { rememberSaveable { mutableStateOf("") } }
+    var submitted by key(cloud, session) { rememberSaveable { mutableStateOf("") } }
+    var searchExpanded by key(cloud, session) { rememberSaveable { mutableStateOf(false) } }
+    var discoveryMenu by remember(session) { mutableStateOf(false) }
+    var selectedKey by key(cloud, session) { rememberSaveable { mutableStateOf<String?>(null) } }
+    var selectedVisit by remember(session) { mutableIntStateOf(0) }
+    val selected = libraryState.library.collections.firstOrNull { it.key == selectedKey }
+    val collection = if (favorites) libraryState.library.liked else selected
+    val personal = remember(cloud, session, favorites) { PersonalLibrarySearch() }
+    LaunchedEffect(searchActive, configured) { if (!searchActive || !configured) personal.close() }
+    val personalHome = configured && searchActive && personal.expanded && selected == null
+    val personalTerm = if (configured && searchActive && personal.expanded) personal.term else ""
+    val personalResults = rememberPersonalLibraryMatches(cloud, libraryState.library, favorites, personalTerm, likes, likesRevision, personal.retry)
+    val personalList = remember(session, personalTerm) { LazyListState() }
+    val personalGrid = remember(session, personalTerm) { LazyGridState() }
+    var personalPlaybackUnavailable by remember(session, personalTerm) { mutableStateOf(false) }
     val searching = submitted.isNotBlank()
     val showingTracks = favorites || selected != null || searching
     val key = if (searching) "search:$submitted" else collection?.key
-    val initialPage = remember { key?.let { cloud.savedPage(favorites, it) } }
-    var offset by remember { mutableIntStateOf(0) }
-    var reload by remember { mutableIntStateOf(0) }
-    var loadedKey by remember { mutableStateOf(key.takeIf { initialPage != null }) }
-    var tracks by remember { mutableStateOf(initialPage?.tracks.orEmpty()) }
-    var albumSummary by remember { mutableStateOf(initialPage?.albumSummary) }
-    var next by remember { mutableIntStateOf(initialPage?.nextOffset ?: 0) }
-    var more by remember { mutableStateOf(initialPage?.more ?: false) }
-    var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    val initialPage = remember(session) { key?.let { cloud.savedPage(favorites, it) } }
+    var offset by remember(session) { mutableIntStateOf(0) }
+    var reload by remember(session) { mutableIntStateOf(0) }
+    var loadedKey by remember(session) { mutableStateOf(key.takeIf { initialPage != null }) }
+    var tracks by remember(session) { mutableStateOf(initialPage?.tracks.orEmpty()) }
+    var albumSummary by remember(session) { mutableStateOf(initialPage?.albumSummary) }
+    var next by remember(session) { mutableIntStateOf(initialPage?.nextOffset ?: 0) }
+    var more by remember(session) { mutableStateOf(initialPage?.more ?: false) }
+    var loading by remember(session) { mutableStateOf(false) }
+    var error by remember(session) { mutableStateOf<String?>(null) }
     val focus = LocalFocusManager.current
     val searchFocus = remember { FocusRequester() }
+    val personalFocus = remember { FocusRequester() }
     val shelf = rememberLazyGridState()
     // Details intentionally do not restore scrolling when the same album is opened again.
     val list =
@@ -183,19 +195,48 @@ internal fun OnlineLibraryContent(
                 .toSet()
         }
     }
+    val visibleSearchCards by remember(personalGrid) {
+        derivedStateOf {
+            personalGrid.layoutInfo.visibleItemsInfo
+                .map { it.key }
+                .toSet()
+        }
+    }
 
-    fun back() {
+    fun closeDetail() {
         selectedKey = null
+        offset = 0
+        reload = 0
+        error = null
+        focus.clearFocus()
+    }
+
+    fun closeSearch() {
         submitted = ""
         query = ""
+        searchExpanded = false
+        personal.close()
+        if (!favorites) {
+            offset = 0
+            reload = 0
+            error = null
+        }
+        focus.clearFocus()
+    }
+
+    fun select(card: CloudPlaylist) {
+        if (cloud.likes.value.session != session || !cloud.configured.value) return
+        selectedVisit++
+        selectedKey = card.key
         offset = 0
+        reload = 0
         error = null
         searchExpanded = false
         focus.clearFocus()
     }
 
     fun refresh() {
-        if (loading || (!showingTracks && state.refreshing)) return
+        if (loading || (!showingTracks && libraryState.refreshing)) return
         onRefreshLikes()
         if (showingTracks) {
             cloud.refreshCatalog()
@@ -205,12 +246,21 @@ internal fun OnlineLibraryContent(
         if (!showingTracks || (favorites && collection == null)) onRefresh()
     }
     LaunchedEffect(searchExpanded) { if (searchExpanded) searchFocus.requestFocus() }
+    LaunchedEffect(personalHome, personal.requestFocus) {
+        if (personalHome && personal.requestFocus) {
+            personalFocus.requestFocus()
+            personal.focusRequested()
+        }
+    }
     LibraryNavigationRefresh(refreshRequest, shelf, list.takeIf { favorites }) {
-        back()
+        closeSearch()
+        if (!favorites) closeDetail()
         if (favorites) refresh() else onRefresh()
     }
-    BackHandler(selected != null || searching || searchExpanded) { back() }
-    LaunchedEffect(configured, key, offset, reload, if (favorites) likesRevision else 0L) {
+    BackHandler(searchActive && (selected != null || searching || searchExpanded || personal.expanded)) {
+        if (selected != null) closeDetail() else closeSearch()
+    }
+    LaunchedEffect(configured, session, key, offset, reload, if (favorites) likesRevision else 0L) {
         if (!configured) {
             tracks = emptyList()
             albumSummary = null
@@ -252,7 +302,7 @@ internal fun OnlineLibraryContent(
         }
         val pageOffset = offset
         val pageVisit = selectedVisit
-        val pageSession = cloud.likes.value.session
+        val pageRevision = likesRevision
         val previous = if (pageOffset == 0 || loadedKey != key) emptyList() else tracks
 
         fun isCurrentPage(): Boolean {
@@ -264,7 +314,8 @@ internal fun OnlineLibraryContent(
                 } else {
                     selectedKey
                 }
-            return currentKey == key && selectedVisit == pageVisit && cloud.configured.value && cloud.likes.value.session == pageSession
+            return currentKey == key && selectedVisit == pageVisit && cloud.configured.value && cloud.likes.value.session == session &&
+                (!favorites || cloud.likesRevision.value == pageRevision)
         }
         loading = true
         error = null
@@ -284,7 +335,7 @@ internal fun OnlineLibraryContent(
             next = page.nextOffset
             more = page.more
             if (tracks.size >= 20000) more = false
-            cloud.savePage(favorites, key, page.copy(tracks = merged, more = more))
+            cloud.savePage(favorites, key, page.copy(tracks = merged, more = more), session, pageRevision)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -299,7 +350,7 @@ internal fun OnlineLibraryContent(
             val expectedItems =
                 tracks.size + (if (selected != null) 1 else 0) +
                     (if (favorites) 1 else 0) + (if (more && loadedKey == key) 1 else 0)
-            showingTracks && loadedKey == key && tracks.isNotEmpty() && more && !loading && next > offset &&
+            showingTracks && (!favorites || !personal.matching) && loadedKey == key && tracks.isNotEmpty() && more && !loading && next > offset &&
                 list.layoutInfo.totalItemsCount == expectedItems && list.layoutInfo.visibleItemsInfo.isNotEmpty() &&
                 (
                     list.layoutInfo.visibleItemsInfo
@@ -323,17 +374,18 @@ internal fun OnlineLibraryContent(
             val shelfBackdrop = rememberGlassLayer(popupBackground = LocalGlassBackdrop.current as? GlassLayer)
             val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             val floatingToolbar = !favorites && selected == null && !searching
-            val toolbar: @Composable (Boolean) -> Unit = { toolbarSearching ->
+            val normalToolbar = !personalHome && (floatingToolbar || (favorites && (configured || sourceSelector != null)))
+            val toolbar: @Composable (Boolean, Boolean) -> Unit = { toolbarSearching, personalToolbar ->
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .statusBarsPadding()
-                        .padding(start = if (toolbarSearching) 8.dp else 24.dp, end = 24.dp, top = 12.dp, bottom = 12.dp)
+                        .padding(start = if (toolbarSearching) 8.dp else 24.dp, end = 16.dp, top = 12.dp, bottom = 12.dp)
                         .testTag("collection-toolbar"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (toolbarSearching) {
-                        ActionIcon(Icons.AutoMirrored.Rounded.ArrowBack, "返回曲库", ::back)
+                        ActionIcon(Icons.AutoMirrored.Rounded.ArrowBack, "返回曲库", ::closeSearch)
                         Spacer(Modifier.width(8.dp))
                         Text(
                             "搜索结果",
@@ -346,7 +398,7 @@ internal fun OnlineLibraryContent(
                         sourceSelector?.invoke()
                         Spacer(Modifier.weight(1f))
                     }
-                    if (!favorites && !toolbarSearching && configured) {
+                    if (!favorites && !toolbarSearching && !personalToolbar && !searchExpanded && configured) {
                         // Match the shelf sampling and prominent optics of the local library's former menu action.
                         CompositionLocalProvider(LocalGlassBackdrop provides shelfBackdrop) {
                             Box {
@@ -358,6 +410,10 @@ internal fun OnlineLibraryContent(
                                     modifier = Modifier.liquidGlass(CircleShape, prominent = true),
                                 )
                                 GlassDropdownMenu(discoveryMenu, { discoveryMenu = false }) {
+                                    DropdownMenuItem({ Text(stringResource(R.string.online_global_search)) }, {
+                                        discoveryMenu = false
+                                        searchExpanded = true
+                                    }, leadingIcon = { Icon(Icons.Rounded.Search, null) })
                                     DropdownMenuItem({ Text("私人 FM") }, {
                                         discoveryMenu = false
                                         onDiscover("fm")
@@ -370,12 +426,19 @@ internal fun OnlineLibraryContent(
                             }
                         }
                     }
-                    if (!favorites && configured) {
+                    if (configured) {
+                        val closing = personalToolbar || searchExpanded
                         ActionIcon(
-                            if (searchExpanded) Icons.Rounded.Close else Icons.Rounded.Search,
-                            if (searchExpanded) "收起搜索" else "搜索音乐",
+                            if (closing) Icons.Rounded.Close else Icons.Rounded.Search,
+                            stringResource(
+                                when {
+                                    closing -> R.string.library_search_collapse
+                                    favorites -> R.string.online_favorites_search
+                                    else -> R.string.online_library_search
+                                },
+                            ),
                             {
-                                if (searchExpanded) back() else searchExpanded = true
+                                if (closing) closeSearch() else personal.open()
                             },
                         )
                     }
@@ -385,10 +448,10 @@ internal fun OnlineLibraryContent(
                 Column(
                     Modifier
                         .fillMaxSize()
-                        .then(if (floatingToolbar || (favorites && sourceSelector != null)) shelfBackdrop.capture(Modifier) else Modifier)
+                        .then(if (normalToolbar) shelfBackdrop.capture(Modifier) else Modifier)
                         .padding(top = if (floatingToolbar && searchExpanded) statusTop + 76.dp else 0.dp),
                 ) {
-                    if (!favorites && searching) toolbar(true)
+                    if (!favorites && searching) toolbar(true, false)
                     if (!configured) {
                         if (favorites) FavoritesHero(emptyList())
                         Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
@@ -407,52 +470,48 @@ internal fun OnlineLibraryContent(
                         }
                     } else {
                         AnimatedVisibility(!favorites && selected == null && searchExpanded, enter = expandVertically(), exit = shrinkVertically()) {
-                            OutlinedTextField(
+                            OnlineLibrarySearchField(
                                 query,
-                                { query = it },
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 24.dp, end = 24.dp, bottom = 18.dp)
-                                    .liquidGlass(RoundedCornerShape(22.dp))
-                                    .focusRequester(searchFocus)
-                                    .testTag("online-search"),
-                                placeholder = { Text("搜索歌曲、艺人") },
-                                leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                                trailingIcon = {
-                                    if (query.isNotEmpty()) {
-                                        ActionIcon(Icons.Rounded.Close, "清空搜索", {
-                                            query = ""
-                                            submitted = ""
-                                            offset = 0
-                                        })
+                                {
+                                    query = it
+                                    if (it.isEmpty()) {
+                                        submitted = ""
+                                        offset = 0
+                                        error = null
                                     }
                                 },
-                                singleLine = true,
-                                shape = RoundedCornerShape(22.dp),
-                                colors =
-                                    OutlinedTextFieldDefaults.colors(
-                                        unfocusedBorderColor = Color.Transparent,
-                                        focusedBorderColor = Color.Transparent,
-                                        unfocusedContainerColor = Color.Transparent,
-                                        focusedContainerColor = Color.Transparent,
-                                    ),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                keyboardActions =
-                                    KeyboardActions(onSearch = {
-                                        focus.clearFocus()
-                                        submitted = query.trim()
-                                        selectedKey = null
-                                        offset = 0
-                                        reload++
-                                    }),
-                            )
+                                searchFocus,
+                                stringResource(R.string.online_global_search_hint),
+                                "online-search",
+                            ) {
+                                focus.clearFocus()
+                                submitted = query.trim()
+                                selectedKey = null
+                                offset = 0
+                                reload++
+                            }
                         }
-                        val libraryFailure = if (favorites) state.playlistsError else state.playlistsError ?: state.albumsError
+                        val libraryFailure = if (favorites) libraryState.playlistsError else libraryState.playlistsError ?: libraryState.albumsError
                         val failure = error ?: libraryFailure
-                        if (failure != null) {
-                            Row(
+                        val failureRow: @Composable (Modifier) -> Unit = { modifier ->
+                            if (failure != null) {
+                                OnlineLibraryNotice(failure, modifier) {
+                                    if (error != null) {
+                                        TextButton({ reload++ }) { Text("重试") }
+                                    } else {
+                                        if (libraryState.playlistsError != null) {
+                                            TextButton(onRetryPlaylists) { Text("重试歌单") }
+                                        }
+                                        if (libraryState.albumsError != null && !favorites) {
+                                            TextButton(onRetryAlbums) { Text("重试专辑") }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (!personalHome && failure != null) {
+                            failureRow(
                                 Modifier
-                                    .fillMaxWidth()
                                     .then(if (favorites || (!searching && !searchExpanded)) Modifier.statusBarsPadding() else Modifier)
                                     .padding(
                                         top =
@@ -463,35 +522,18 @@ internal fun OnlineLibraryContent(
                                             } else {
                                                 0.dp
                                             },
-                                        start = 24.dp,
-                                        end = 24.dp,
                                     ),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(failure, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                if (error == null) {
-                                    if (state.playlistsError != null) {
-                                        TextButton(onRetryPlaylists) { Text("重试歌单") }
-                                    }
-                                    if (state.albumsError != null && !favorites) {
-                                        TextButton(onRetryAlbums) { Text("重试专辑") }
-                                    }
-                                    if (state.playlistsError == null && state.albumsError == null) {
-                                        TextButton(onRefresh) { Text("重试") }
-                                    }
-                                } else {
-                                    TextButton({ reload++ }) { Text("重试") }
-                                }
-                            }
+                            )
                         }
                         val pullState = rememberPullToRefreshState()
-                        val refreshing = state.refreshing || (loading && offset == 0)
+                        val personalMatching = personalHome && personal.matching
+                        val refreshing = !personalMatching && (libraryState.refreshing || (loading && offset == 0))
                         PullToRefreshBox(
                             isRefreshing = refreshing,
-                            onRefresh = ::refresh,
+                            onRefresh = { if (!personalMatching) refresh() },
                             state = pullState,
                             indicator = {
-                                if (favorites || !showingTracks) {
+                                if (!personalHome && (favorites || !showingTracks)) {
                                     PullToRefreshDefaults.Indicator(
                                         modifier =
                                             Modifier
@@ -505,17 +547,21 @@ internal fun OnlineLibraryContent(
                             },
                             modifier =
                                 Modifier.weight(1f).semantics {
-                                    customActions =
-                                        listOf(
-                                            CustomAccessibilityAction(if (favorites) "刷新我喜欢" else "刷新曲库") {
-                                                refresh()
-                                                true
-                                            },
-                                        )
+                                    if (!personalMatching) {
+                                        customActions =
+                                            listOf(
+                                                CustomAccessibilityAction(if (favorites) "刷新我喜欢" else "刷新曲库") {
+                                                    refresh()
+                                                    true
+                                                },
+                                            )
+                                    }
                                 },
                         ) {
                             LibraryCollectionTransition(selected, selected?.key, selectedVisit) { destination, visit, active, visibility ->
                                 val sceneModifier = if (active) Modifier else Modifier.clearAndSetSemantics {}
+                                val showPersonal = destination == null && searchActive && personal.expanded && !searching
+                                val showMatches = showPersonal && personal.matching
                                 // Exiting details retain their own list, including during rapid reversal.
                                 val pageList = remember(destination?.key, visit, searching, submitted) { list }
                                 val pageKey =
@@ -529,130 +575,241 @@ internal fun OnlineLibraryContent(
                                 val currentPage = loadedKey == pageKey
                                 val cachedPage = pageKey?.takeUnless { currentPage }?.let { cloud.savedPage(favorites, it) }
                                 val pageTracks = if (currentPage) tracks else cachedPage?.tracks.orEmpty()
-                                if (!favorites && destination == null && !searching) {
-                                    LibraryShelfGrid(
-                                        state = shelf,
-                                        firstKey =
-                                            state.library.collections
-                                                .firstOrNull()
-                                                ?.key,
-                                        contentTop =
-                                            when {
-                                                searchExpanded -> 4.dp
-
-                                                // The failure row already sits below the status bar and toolbar.
-                                                failure != null -> 8.dp
-
-                                                // The initial gap scrolls away with the covers.
-                                                else -> statusTop + if (sourceSelector != null) 76.dp else 12.dp
+                                val unavailableText = stringResource(R.string.online_track_unavailable)
+                                Column(sceneModifier.fillMaxSize()) {
+                                    if (showPersonal) {
+                                        // In-flow controls sample the root background; only the floating toolbar samples the shelf.
+                                        toolbar(false, true)
+                                        OnlineLibrarySearchField(
+                                            personal.query,
+                                            {
+                                                personalPlaybackUnavailable = false
+                                                personal.changeQuery(it)
                                             },
-                                        bottomInset = bottomInset,
-                                        modifier = sceneModifier.testTag("online-shelf"),
-                                    ) {
-                                        items(state.library.collections, key = { it.key }) { card ->
-                                            LibraryShelfCard(
-                                                card.title,
-                                                if (card.kind == "album") card.artist.ifBlank { "专辑" } else "歌单 · ${card.count} 首",
-                                                card.cover,
-                                                enabled = active,
-                                                onClick = {
-                                                    selectedVisit++
-                                                    selectedKey = card.key
-                                                    submitted = ""
-                                                    offset = 0
-                                                    reload = 0
-                                                    error = null
-                                                    searchExpanded = false
-                                                    focus.clearFocus()
-                                                },
-                                                modifier = Modifier.testTag("collection-${card.key}"),
-                                                coverModifier = if (card.key in visibleCards) libraryCoverTransition(card.key, visibility) else Modifier,
-                                            )
-                                        }
-                                        if (state.loaded && state.library.collections.isEmpty() && failure == null) {
-                                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                                ShelfEmpty("收藏的专辑和你创建的歌单，会出现在这里")
+                                            personalFocus,
+                                            stringResource(if (favorites) R.string.online_favorites_search_hint else R.string.online_library_search_hint),
+                                            "personal-library-search",
+                                        ) { focus.clearFocus() }
+                                        if (showMatches && !favorites) {
+                                            Box(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)) {
+                                                LibrarySegments(
+                                                    listOf(stringResource(R.string.online_search_songs), stringResource(R.string.online_search_collections)),
+                                                    personal.mode,
+                                                    listOf("personal-search-songs", "personal-search-collections"),
+                                                    personal::selectMode,
+                                                )
                                             }
                                         }
+                                        if (!showMatches || error == null) failureRow(Modifier)
                                     }
-                                } else {
-                                    val trackRows: LazyListScope.() -> Unit = {
-                                        if (favorites) {
-                                            item(key = "favorites-album-wall") {
-                                                FavoritesHero(pageTracks.take(30))
+
+                                    if (showMatches) {
+                                        val waitingForLibrary = if (favorites) libraryState.playlistsLoading else libraryState.refreshing
+                                        PersonalSearchStatus(personalResults, waitingForLibrary, personal::retryFailed)
+                                        if (personalPlaybackUnavailable) OnlineLibraryNotice(unavailableText)
+                                        val empty =
+                                            if (!personalResults.loading && !waitingForLibrary && personalResults.failedOffsets.isEmpty() && libraryFailure == null) {
+                                                stringResource(R.string.online_personal_search_empty)
+                                            } else {
+                                                null
+                                            }
+                                        if (!favorites && personal.mode == 1) {
+                                            OnlineCollectionShelf(
+                                                personalResults.collections,
+                                                personalGrid,
+                                                contentTop = 4.dp,
+                                                bottomInset = bottomInset,
+                                                active = active,
+                                                onSelect = ::select,
+                                                modifier = Modifier.testTag("online-search-shelf"),
+                                                empty = empty,
+                                            ) { card ->
+                                                if (card.key in visibleSearchCards) libraryCoverTransition(card.key, visibility) else Modifier
+                                            }
+                                        } else {
+                                            LazyColumn(
+                                                state = personalList,
+                                                modifier = Modifier.fillMaxSize().testTag("online-tracks"),
+                                                contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = bottomInset),
+                                            ) {
+                                                onlineSongRows(
+                                                    personalResults.tracks,
+                                                    currentId,
+                                                    likes,
+                                                    cloud.direct,
+                                                    favorites,
+                                                    active,
+                                                    onPlay = { rows, index ->
+                                                        val currentLikes = cloud.likes.value
+                                                        val currentFavorites = !favorites || (currentLikes == likes && cloud.likesRevision.value == likesRevision)
+                                                        if (currentLikes.session == session && personal.term == personalTerm && currentFavorites) onPlay(rows, index)
+                                                    },
+                                                    onFavorite = { track -> if (cloud.likes.value.session == session) onFavorite(track) },
+                                                    onUnavailable = { personalPlaybackUnavailable = true },
+                                                )
+                                                if (personalResults.tracks.isEmpty() && empty != null) item { ShelfEmpty(empty) }
                                             }
                                         }
-                                        itemsIndexed(pageTracks, key = { _, it -> it.id }) { index, track ->
-                                            SongRow(
-                                                track.song().copy(favorite = track.originalId in likes.ids || (favorites && !likes.ready)),
-                                                currentId == "netease:${track.id}",
-                                                {
-                                                    if (active) {
-                                                        if (track.available) onPlay(pageTracks, index) else error = "当前账号暂时无法播放这首歌"
-                                                    }
+                                    } else if (!favorites && destination == null && !searching) {
+                                        val cards = libraryState.library.collections
+                                        OnlineCollectionShelf(
+                                            cards,
+                                            shelf,
+                                            contentTop =
+                                                when {
+                                                    showPersonal || searchExpanded -> 4.dp
+
+                                                    failure != null -> 8.dp
+
+                                                    // The initial gap scrolls away with the covers.
+                                                    else -> statusTop + if (sourceSelector != null) 76.dp else 12.dp
                                                 },
-                                                { if (active) onFavorite(track) },
-                                                modifier =
-                                                    Modifier
-                                                        .animateItem()
-                                                        .then(if (favorites) Modifier.padding(horizontal = 24.dp) else Modifier)
-                                                        .alpha(if (track.available) 1f else .5f),
-                                                favoriteEnabled = cloud.direct && likes.ready && track.originalId !in likes.pending,
-                                                showFavorite = !favorites,
-                                                enabled = active,
-                                            )
-                                        }
-                                        if (more && loadedKey == key) {
-                                            item {
-                                                Spacer(Modifier.fillMaxWidth().height(20.dp))
-                                            }
-                                        }
-                                        if (pageTracks.isEmpty() && !loading && !state.refreshing && state.loaded && failure == null) {
-                                            item {
-                                                ShelfEmpty(if (favorites) "还没有红心歌曲" else "没有找到歌曲")
-                                            }
-                                        }
-                                    }
-                                    val tracksModifier = Modifier.testTag("online-tracks")
-                                    if (!favorites && destination != null) {
-                                        val album = destination.kind == "album"
-                                        val summary = if (currentPage) albumSummary else cachedPage?.albumSummary
-                                        LibraryCollectionDetail(
-                                            destination.title,
-                                            destination.cover,
-                                            destination.artist,
-                                            summary?.count ?: destination.count.takeIf { it > 0 || !album },
-                                            summary?.duration,
-                                            listState = pageList,
-                                            bottomInset,
-                                            onBack = ::back,
-                                            modifier = sceneModifier,
-                                            coverModifier = libraryCoverTransition(destination.key, visibility),
-                                            trackListModifier = tracksModifier,
+                                            bottomInset = bottomInset,
                                             active = active,
-                                            padStatusBar = failure == null,
-                                            tracks = trackRows,
-                                        )
+                                            onSelect = ::select,
+                                            modifier = Modifier.testTag("online-shelf"),
+                                            empty = "收藏的专辑和你创建的歌单，会出现在这里".takeIf { libraryState.loaded && failure == null },
+                                        ) { card ->
+                                            if (card.key in visibleCards) libraryCoverTransition(card.key, visibility) else Modifier
+                                        }
                                     } else {
-                                        LazyColumn(
-                                            state = pageList,
-                                            modifier = sceneModifier.fillMaxSize().then(tracksModifier),
-                                            contentPadding = PaddingValues(start = if (favorites) 0.dp else 24.dp, end = if (favorites) 0.dp else 24.dp, bottom = bottomInset),
-                                            content = trackRows,
-                                        )
+                                        val trackRows: LazyListScope.() -> Unit = {
+                                            if (favorites) {
+                                                item(key = "favorites-album-wall") {
+                                                    FavoritesHero(pageTracks.take(30))
+                                                }
+                                            }
+                                            onlineSongRows(
+                                                pageTracks,
+                                                currentId,
+                                                likes,
+                                                cloud.direct,
+                                                favorites,
+                                                active,
+                                                onPlay = onPlay,
+                                                onFavorite = onFavorite,
+                                                onUnavailable = { error = unavailableText },
+                                                insetFavorites = true,
+                                            )
+                                            if (more && loadedKey == key) {
+                                                item { Spacer(Modifier.fillMaxWidth().height(20.dp)) }
+                                            }
+                                            if (pageTracks.isEmpty() && !loading && !libraryState.refreshing && libraryState.loaded && failure == null) {
+                                                item { ShelfEmpty(if (favorites) "还没有红心歌曲" else "没有找到歌曲") }
+                                            }
+                                        }
+                                        val tracksModifier = Modifier.testTag("online-tracks")
+                                        if (!favorites && destination != null) {
+                                            val album = destination.kind == "album"
+                                            val summary = if (currentPage) albumSummary else cachedPage?.albumSummary
+                                            LibraryCollectionDetail(
+                                                destination.title,
+                                                destination.cover,
+                                                destination.artist,
+                                                summary?.count ?: destination.count.takeIf { it > 0 || !album },
+                                                summary?.duration,
+                                                listState = pageList,
+                                                bottomInset,
+                                                onBack = ::closeDetail,
+                                                coverModifier = libraryCoverTransition(destination.key, visibility),
+                                                trackListModifier = tracksModifier,
+                                                active = active,
+                                                padStatusBar = failure == null,
+                                                tracks = trackRows,
+                                            )
+                                        } else {
+                                            LazyColumn(
+                                                state = pageList,
+                                                modifier = Modifier.fillMaxSize().then(tracksModifier),
+                                                contentPadding = PaddingValues(start = if (favorites) 0.dp else 24.dp, end = if (favorites) 0.dp else 24.dp, bottom = bottomInset),
+                                                content = trackRows,
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
-                if (floatingToolbar || (favorites && sourceSelector != null)) {
+                if (normalToolbar) {
                     Box(Modifier.align(Alignment.TopEnd)) {
-                        CompositionLocalProvider(LocalGlassBackdrop provides shelfBackdrop) { toolbar(false) }
+                        CompositionLocalProvider(LocalGlassBackdrop provides shelfBackdrop) { toolbar(false, false) }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun OnlineCollectionShelf(
+    cards: List<CloudPlaylist>,
+    grid: LazyGridState,
+    contentTop: Dp,
+    bottomInset: Dp,
+    active: Boolean,
+    onSelect: (CloudPlaylist) -> Unit,
+    modifier: Modifier,
+    empty: String?,
+    coverModifier: @Composable (CloudPlaylist) -> Modifier,
+) {
+    LibraryShelfGrid(grid, cards.firstOrNull()?.key, contentTop, bottomInset, modifier) {
+        items(cards, key = { it.key }) { card ->
+            val subtitle =
+                if (card.kind == "album") {
+                    card.artist.ifBlank { stringResource(R.string.online_collection_album) }
+                } else {
+                    stringResource(R.string.online_collection_playlist_size, card.count)
+                }
+            LibraryShelfCard(
+                card.title,
+                subtitle,
+                card.cover,
+                enabled = active,
+                onClick = { onSelect(card) },
+                modifier = Modifier.testTag("collection-${card.key}"),
+                coverModifier = coverModifier(card),
+            )
+        }
+        if (cards.isEmpty() && empty != null) item(span = { GridItemSpan(maxLineSpan) }) { ShelfEmpty(empty) }
+    }
+}
+
+private fun LazyListScope.onlineSongRows(
+    tracks: List<CloudTrack>,
+    currentId: String?,
+    likes: CloudLikes,
+    direct: Boolean,
+    favorites: Boolean,
+    active: Boolean,
+    onPlay: (List<CloudTrack>, Int) -> Unit,
+    onFavorite: (CloudTrack) -> Unit,
+    onUnavailable: () -> Unit,
+    insetFavorites: Boolean = false,
+) {
+    itemsIndexed(tracks, key = { _, it -> it.id }) { index, track ->
+        SongRow(
+            track.song().copy(favorite = track.originalId in likes.ids || (favorites && !likes.ready)),
+            currentId == "netease:${track.id}",
+            {
+                if (active) {
+                    if (track.available) {
+                        onPlay(tracks, index)
+                    } else {
+                        onUnavailable()
+                    }
+                }
+            },
+            { if (active) onFavorite(track) },
+            modifier =
+                Modifier
+                    .animateItem()
+                    .then(if (favorites && insetFavorites) Modifier.padding(horizontal = 24.dp) else Modifier)
+                    .alpha(if (track.available) 1f else .5f),
+            favoriteEnabled = direct && likes.ready && track.originalId !in likes.pending,
+            showFavorite = !favorites,
+            enabled = active,
+        )
     }
 }
 

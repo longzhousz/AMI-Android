@@ -12,6 +12,23 @@
     <string name="common_close" formatted="false">关闭</string>
     <string name="common_done" formatted="false">完成</string>
     <string name="common_cancel" formatted="false">取消</string>
+    <string name="online_library_search" formatted="false">搜索曲库</string>
+    <string name="online_favorites_search" formatted="false">搜索我喜欢</string>
+    <string name="online_global_search" formatted="false">全局搜索</string>
+    <string name="online_global_search_hint" formatted="false">搜索歌曲、艺人</string>
+    <string name="online_library_search_hint" formatted="false">搜索歌曲、专辑、艺人或歌单</string>
+    <string name="online_favorites_search_hint" formatted="false">搜索红心歌曲、专辑或艺人</string>
+    <string name="library_search_clear" formatted="false">清空搜索</string>
+    <string name="library_search_collapse" formatted="false">收起搜索</string>
+    <string name="online_search_songs" formatted="false">歌曲</string>
+    <string name="online_search_collections" formatted="false">专辑与歌单</string>
+    <string name="online_personal_search_empty" formatted="false">没有找到匹配的音乐</string>
+    <string name="online_personal_search_partial" formatted="false">部分歌曲暂时无法读取</string>
+    <string name="online_personal_search_limited" formatted="false">已显示前 20,000 首匹配歌曲，请缩小关键词</string>
+    <string name="online_search_retry" formatted="false">重试</string>
+    <string name="online_track_unavailable" formatted="false">当前账号暂时无法播放这首歌</string>
+    <string name="online_collection_album" formatted="false">专辑</string>
+    <string name="online_collection_playlist_size">歌单 · %1$d 首</string>
     <string name="player_quality_unknown" formatted="false">待确认</string>
     <string name="player_quality_unavailable" formatted="false">暂不可知</string>
     <string name="player_collapse" formatted="false">收起播放页</string>

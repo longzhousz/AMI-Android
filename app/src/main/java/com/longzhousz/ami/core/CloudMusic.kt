@@ -66,6 +66,7 @@ data class CloudLibraryState(
     val albumsLoaded: Boolean = false,
     val playlistsError: String? = null,
     val albumsError: String? = null,
+    val session: Long? = null,
 )
 
 /** Publish the playlist page immediately; the album page may still be loading or failed. */

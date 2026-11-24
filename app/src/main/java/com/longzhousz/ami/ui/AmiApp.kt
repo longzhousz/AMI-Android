@@ -387,6 +387,7 @@ fun AmiApp(
                                                                 }
                                                             },
                                                         refreshRequest = if (destination.page == 1) onlineFavoritesRefresh else onlineLibraryRefresh,
+                                                        active = destination.page == page,
                                                     ) {
                                                         if (page == 0) {
                                                             focus.clearFocus()

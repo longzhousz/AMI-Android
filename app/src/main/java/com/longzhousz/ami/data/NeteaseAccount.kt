@@ -2,7 +2,10 @@ package com.longzhousz.ami.data
 
 import android.content.Context
 import com.longzhousz.ami.core.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -83,9 +86,13 @@ internal class NeteaseAccount(
 
     private fun likeCredentials(session: Long): JSONObject =
         synchronized(authLock) {
-            if (likes.state.value.session != session) throw kotlinx.coroutines.CancellationException("网易云账号已变化")
+            requireSession(session)
             credentials()
         }
+
+    private fun requireSession(session: Long) {
+        if (likes.state.value.session != session) throw CancellationException("网易云账号已变化")
+    }
 
     private data class PlaylistIds(
         val at: Long,
@@ -94,6 +101,26 @@ internal class NeteaseAccount(
     )
 
     private val lists = LinkedHashMap<String, PlaylistIds>(4, .75f, true)
+
+    private class TrackRows(
+        root: JSONObject,
+    ) {
+        private val rights = privileges(root)
+        private val byId =
+            (root.optJSONArray("songs") ?: JSONArray()).let { songs ->
+                (0 until songs.length()).associate { songs.getJSONObject(it).let { row -> row.optString("id") to row } }
+            }
+
+        fun track(id: String): JSONObject =
+            byId[id]?.let { NeteaseAccount.track(it, rights[id]) } ?: JSONObject()
+                .put("id", id)
+                .put("originalId", id)
+                .put("title", "暂不可用的歌曲")
+                .put("artist", "")
+                .put("album", "")
+                .put("duration", 0)
+                .put("available", false)
+    }
 
     fun configured() = secret.configured()
 
@@ -120,9 +147,9 @@ internal class NeteaseAccount(
                 likedPlaylist = null
                 streams.clear()
                 failures.clear()
+                invalidate()
                 likes.reset()
             }
-            invalidate()
             profile.second
         }
 
@@ -132,9 +159,9 @@ internal class NeteaseAccount(
             likedPlaylist = null
             streams.clear()
             failures.clear()
+            invalidate()
             likes.reset()
         }
-        invalidate()
     }
 
     fun invalidate() = synchronized(lists) { lists.clear() }
@@ -234,83 +261,7 @@ internal class NeteaseAccount(
                 }
 
                 "tracks", "albumTracks" -> {
-                    val id = neteaseId(data.getString("id"))
-                    val offset = data.optInt("offset")
-                    require(offset in 0..20000)
-                    val album = path == "albumTracks"
-                    val key = "$path:$id"
-                    var albumDetail: JSONObject? = null
-                    val listing =
-                        synchronized(lists) { lists[key]?.takeIf { System.nanoTime() - it.at < 120_000_000_000L } } ?: run {
-                            val rows =
-                                if (album) {
-                                    albumDetail = web.post("v1/album/$id", JSONObject(), cookie)
-                                    albumDetail?.optJSONArray("songs") ?: JSONArray()
-                                } else {
-                                    web
-                                        .post("v6/playlist/detail", JSONObject().put("id", id).put("n", 0).put("s", 0), cookie)
-                                        .optJSONObject("playlist")
-                                        ?.optJSONArray("trackIds") ?: error("暂时无法读取这张歌单")
-                                }
-                            require(rows.length() <= 20000) { "这张歌单过大，暂时无法载入" }
-                            val loaded =
-                                PlaylistIds(
-                                    System.nanoTime(),
-                                    (0 until rows.length()).map { neteaseId(rows.getJSONObject(it).optString("id")) },
-                                    if (album) albumTotalDuration(rows) else null,
-                                )
-                            synchronized(lists) {
-                                lists[key] = loaded
-                                while (lists.size > 4) lists.remove(lists.keys.first())
-                            }
-                            loaded
-                        }
-                    val page = listing.ids.drop(offset).take(30)
-                    val result =
-                        if (page.isEmpty()) {
-                            JSONObject().put("songs", JSONArray())
-                        } else {
-                            albumDetail
-                                ?: web.post(
-                                    "v3/song/detail",
-                                    JSONObject().put(
-                                        "c",
-                                        JSONArray()
-                                            .apply {
-                                                page.forEach { put(JSONObject().put("id", it)) }
-                                            }.toString(),
-                                    ),
-                                    cookie,
-                                )
-                        }
-                    val songs = result.optJSONArray("songs") ?: JSONArray()
-                    val privileges = privileges(result)
-                    val byId = (0 until songs.length()).map { songs.getJSONObject(it) }.associateBy { it.optString("id") }
-                    val tracks =
-                        JSONArray().apply {
-                            page.forEach { songId ->
-                                put(
-                                    byId[songId]?.let { track(it, privileges[songId]) } ?: JSONObject()
-                                        .put("id", songId)
-                                        .put("originalId", songId)
-                                        .put("title", "暂不可用的歌曲")
-                                        .put("artist", "")
-                                        .put("album", "")
-                                        .put("duration", 0)
-                                        .put("available", false),
-                                )
-                            }
-                        }
-                    JSONObject()
-                        .put("tracks", tracks)
-                        .put("nextOffset", offset + page.size)
-                        .put("more", offset + page.size < listing.ids.size)
-                        .apply {
-                            if (album) {
-                                put("albumCount", listing.ids.size)
-                                put("albumDuration", listing.albumDuration)
-                            }
-                        }
+                    browseTracks(path, data, cookie, session)
                 }
 
                 "search" -> {
@@ -439,6 +390,113 @@ internal class NeteaseAccount(
                 }
             }
         }
+
+    private suspend fun browseTracks(
+        path: String,
+        data: JSONObject,
+        cookie: String,
+        session: Long,
+    ): JSONObject {
+        val id = neteaseId(data.getString("id"))
+        val offset = data.optInt("offset")
+        require(offset in 0..20000)
+        val album = path == "albumTracks"
+        val key = "$path:$id"
+        val (listing, albumDetail) =
+            cachedListing(key, session)?.let { it to null } ?: readTrackListing(id, album, cookie).also { (loaded, _) ->
+                synchronized(authLock) {
+                    requireSession(session)
+                    synchronized(lists) {
+                        lists[key] = loaded
+                        while (lists.size > 4) lists.remove(lists.keys.first())
+                    }
+                }
+            }
+        return trackPage(listing, offset, album, cookie, albumDetail?.let(::TrackRows)).also { requireSession(session) }
+    }
+
+    /** Walk a collection on IO until its pages run out or the callback returns false. */
+    suspend fun scanTracks(
+        collection: CloudPlaylist,
+        start: Int,
+        session: Long,
+        onPage: suspend (JSONObject) -> Boolean,
+    ) {
+        val id = neteaseId(collection.id)
+        val cookie = neteaseCookies(likeCredentials(session).getString("cookie"))
+        val album = collection.kind == "album"
+        val key = if (album) "albumTracks:$id" else "tracks:$id"
+        val (listing, detail) = cachedListing(key, session)?.let { it to null } ?: readTrackListing(id, album, cookie)
+        var offset = start
+        while (offset < listing.ids.size) {
+            currentCoroutineContext().ensureActive()
+            requireSession(session)
+            val albumRows = if (offset == 0) detail?.let(::TrackRows) else null
+            val page = trackPage(listing, offset, album, cookie, albumRows)
+            requireSession(session)
+            if (!onPage(page)) return
+            offset = page.getInt("nextOffset")
+        }
+    }
+
+    private fun cachedListing(
+        key: String,
+        session: Long,
+    ): PlaylistIds? =
+        synchronized(authLock) {
+            requireSession(session)
+            synchronized(lists) { lists[key]?.takeIf { System.nanoTime() - it.at < 120_000_000_000L } }
+        }
+
+    private suspend fun readTrackListing(
+        id: String,
+        album: Boolean,
+        cookie: String,
+    ): Pair<PlaylistIds, JSONObject?> {
+        val detail = if (album) web.post("v1/album/$id", JSONObject(), cookie) else null
+        val rows =
+            if (detail != null) {
+                detail.optJSONArray("songs") ?: JSONArray()
+            } else {
+                web
+                    .post("v6/playlist/detail", JSONObject().put("id", id).put("n", 0).put("s", 0), cookie)
+                    .optJSONObject("playlist")
+                    ?.optJSONArray("trackIds") ?: error("暂时无法读取这张歌单")
+            }
+        require(rows.length() <= 20000) { "这张歌单过大，暂时无法载入" }
+        val ids = (0 until rows.length()).map { neteaseId(rows.getJSONObject(it).optString("id")) }
+        return PlaylistIds(System.nanoTime(), ids, if (album) albumTotalDuration(rows) else null) to detail
+    }
+
+    private suspend fun trackPage(
+        listing: PlaylistIds,
+        offset: Int,
+        album: Boolean,
+        cookie: String,
+        albumRows: TrackRows?,
+    ): JSONObject {
+        val end = (offset + 30).coerceAtMost(listing.ids.size)
+        val ids = if (offset < end) listing.ids.subList(offset, end) else emptyList()
+        val tracks = JSONArray()
+        if (ids.isNotEmpty()) {
+            val rows =
+                albumRows ?: TrackRows(
+                    web.post("v3/song/detail", JSONObject().put("c", JSONArray(ids.map { JSONObject().put("id", it) }).toString()), cookie),
+                )
+            ids.forEach { tracks.put(rows.track(it)) }
+        }
+        val next = offset + ids.size
+        return JSONObject()
+            .put("tracks", tracks)
+            .put("nextOffset", next)
+            .put("more", next < listing.ids.size)
+            .apply {
+                if (album) {
+                    put("albumCount", listing.ids.size)
+                    put("albumDuration", listing.albumDuration)
+                }
+            }
+    }
 
     /** A few short-lived, account-bound URLs avoid re-resolving every range/seek. Never persisted. */
     fun stream(

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -87,6 +88,14 @@ class OnlineLibraryTest {
 
     @Volatile private var albumStatus = 200
 
+    @Volatile private var secondAlbumStatus = 200
+
+    @Volatile private var restrictedTrackId: Int? = null
+
+    @Volatile private var favoriteSnapshotIds: List<String>? = null
+
+    @Volatile private var searchAlbumGate: java.util.concurrent.CountDownLatch? = null
+
     @Volatile private var preheatCookies = false
     private val homeReads =
         java.util.concurrent.atomic
@@ -138,6 +147,7 @@ class OnlineLibraryTest {
         fmGate?.countDown()
         likeGate?.countDown()
         streamGate?.countDown()
+        searchAlbumGate?.countDown()
         runBlocking { cloud.disconnect() }
         cache.close()
         context.deleteDatabase(File(context.noBackupFilesDir, "$cacheName.db").path)
@@ -286,13 +296,203 @@ class OnlineLibraryTest {
             assertEquals("Returning to favorites must reuse its page", before, requests.size)
             favorites = false
         }
-        compose.onNodeWithContentDescription("搜索音乐").performClick()
+        compose.onNodeWithContentDescription("发现音乐").performClick()
+        compose.onNodeWithText("全局搜索").performClick()
         compose.onNodeWithTag("online-search").performTextInput("晚风")
         compose.onNodeWithTag("online-search").performImeAction()
         compose.waitUntil(10000) { visible("搜索歌曲 301") }
         compose.onNodeWithText("搜索歌曲 301").performClick()
         compose.runOnIdle { assertEquals(listOf("201", "301"), played) }
         assertEquals("晚风", requests.last { it.first == "cloudsearch/pc" }.second.getString("s"))
+    }
+
+    @Test fun personalLibrarySearchFindsLaterSongsAndRestoresTheQueryAfterAlbumDetail() {
+        restrictedTrackId = 34
+        val state = CloudLibraryState(library(), loaded = true)
+        val played = mutableListOf<String>()
+        compose.setContent {
+            AmiTheme("light") {
+                Surface {
+                    OnlineLibraryContent(cloud, state, false, null, {}, { rows, index -> played += rows[index].id }, {})
+                }
+            }
+        }
+        val beforeSearch = requests.size
+        compose.onNodeWithContentDescription("搜索曲库").performClick()
+        val search = compose.onNodeWithTag("personal-library-search")
+        search.assertIsDisplayed()
+        assertEquals(beforeSearch, requests.size)
+
+        search.performTextInput("曲目 35")
+        search.performImeAction()
+        compose.waitUntil(10000) { visible("专辑曲目 35") }
+        screenshot("personal-library-search")
+        compose.onNodeWithText("专辑曲目 35").performClick()
+        compose.runOnIdle { assertEquals(listOf("35"), played) }
+        compose.onNodeWithText("专辑与歌单").performClick()
+        compose.waitUntil(10000) { visible("晚风与回声") }
+        compose.onNodeWithText("晚风与回声").performClick()
+        compose.onNodeWithContentDescription("返回曲库").performClick()
+        search.assertTextContains("曲目 35")
+        compose.onNodeWithText("晚风与回声").assertIsDisplayed()
+
+        search.performTextReplacement("听海")
+        search.performImeAction()
+        compose.waitUntil(10000) { visible("夜里听海") }
+        compose.onNodeWithText("夜里听海").assertIsDisplayed()
+        compose.onNodeWithText("别人创建的歌单").assertDoesNotExist()
+
+        search.performTextReplacement("曲目 34")
+        search.performImeAction()
+        compose.onNodeWithTag("personal-search-songs").performClick()
+        compose.waitUntil(10000) { visible("专辑曲目 34") }
+        compose.onNodeWithText("专辑曲目 34").performClick()
+        compose.onNodeWithText("当前账号暂时无法播放这首歌").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(listOf("35"), played) }
+        assertFalse(requests.any { it.first == "cloudsearch/pc" })
+    }
+
+    @Test fun personalFavoritesSearchMatchesArtistAndFindsRedHeartsPastTheFirstPage() {
+        likedIds.clear()
+        likedIds.addAll((201..235).reversed().map(Int::toString))
+        val state = CloudLibraryState(library(), loaded = true)
+        val played = mutableListOf<String>()
+        compose.setContent {
+            AmiTheme("dark") {
+                Surface {
+                    OnlineLibraryContent(cloud, state, true, null, {}, { rows, index -> played += rows[index].id }, {})
+                }
+            }
+        }
+        compose.waitUntil(10000) { visible("红心歌曲 235") }
+        val beforeSearch = requests.size
+        compose.onNodeWithText("红心歌曲 201").assertDoesNotExist()
+        compose.onNodeWithContentDescription("搜索我喜欢").performClick()
+        val search = compose.onNodeWithTag("personal-library-search")
+        search.performTextInput("  ami · 界面验证  ")
+        search.performImeAction()
+        compose.waitUntil(10000) { visible("红心歌曲 235") }
+        compose.onNodeWithContentDescription("最近喜欢的 30 首歌曲封面").assertDoesNotExist()
+
+        search.performTextReplacement("歌曲 201")
+        search.performImeAction()
+        compose.waitUntil(10000) { visible("红心歌曲 201") }
+        compose.onNodeWithText("红心歌曲 235").assertDoesNotExist()
+        screenshot("personal-favorites-search")
+        compose.onNodeWithText("红心歌曲 201").performClick()
+        compose.runOnIdle { assertEquals(listOf("201"), played) }
+
+        favoriteSnapshotIds = likedIds.filterNot { it == "201" }
+        runBlocking(Dispatchers.IO) { cloud.refreshLikes() }
+        compose.waitUntil(10000) { visible("没有找到匹配的音乐") }
+        compose.onNodeWithText("红心歌曲 201").assertDoesNotExist()
+        assertFalse(requests.drop(beforeSearch).any { it.first in setOf("cloudsearch/pc", "album/sublist") || it.first.startsWith("v1/album/") })
+        compose.onNodeWithContentDescription("收起搜索").performClick()
+        compose.onNodeWithContentDescription("最近喜欢的 30 首歌曲封面").assertIsDisplayed()
+        compose.onNodeWithText("红心歌曲 235").assertIsDisplayed()
+    }
+
+    @Test fun personalSearchKeepsHitsWhenACollectionFailsAndCanRetry() {
+        secondAlbumStatus = 500
+        val state = CloudLibraryState(library(), loaded = true)
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 1.5f)) {
+                AmiTheme("dark") {
+                    Surface {
+                        Box(Modifier.width(320.dp).height(700.dp)) {
+                            OnlineLibraryContent(
+                                cloud,
+                                state,
+                                false,
+                                null,
+                                {},
+                                { _, _ -> },
+                                {},
+                                sourceSelector = { LibrarySourceSwitch(false, {}, {}) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        compose.onNodeWithContentDescription("搜索曲库").performClick()
+        val search = compose.onNodeWithTag("personal-library-search")
+        search.performTextInput("歌曲 105")
+        search.performImeAction()
+        compose.waitUntil(10000) {
+            visible("歌单歌曲 105") && compose.onAllNodes(hasText("重试") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+        }
+        screenshot("personal-search-large-text")
+        val beforeRetry = requests.size
+        secondAlbumStatus = 200
+        compose.onNodeWithText("重试").performClick()
+        compose.waitUntil(10000) {
+            requests.drop(beforeRetry).any { it.first == "v1/album/201" } &&
+                compose.onAllNodesWithTag("personal-library-search-loading").fetchSemanticsNodes().isEmpty() && !visible("重试")
+        }
+        compose.onNodeWithText("歌单歌曲 105").assertIsDisplayed()
+        assertFalse(requests.drop(beforeRetry).any { it.first in setOf("v1/album/200", "v6/playlist/detail") })
+    }
+
+    @Test fun personalSearchDiscardsAnAlbumResponseAfterLogoutAndRelogin() {
+        val state = CloudLibraryState(library(), loaded = true)
+        val gate = java.util.concurrent.CountDownLatch(1)
+        searchAlbumGate = gate
+        compose.setContent {
+            AmiTheme("light") {
+                Surface { OnlineLibraryContent(cloud, state, false, null, {}, { _, _ -> }, {}) }
+            }
+        }
+        compose.onNodeWithContentDescription("搜索曲库").performClick()
+        val search = compose.onNodeWithTag("personal-library-search")
+        search.performTextInput("曲目 35")
+        search.performImeAction()
+        compose.waitUntil(10000) { requests.any { it.first == "v1/album/200" } }
+        runBlocking(Dispatchers.IO) {
+            cloud.disconnect()
+            cloud.login("MUSIC_U=qa-only-not-a-real-session")
+        }
+        searchAlbumGate = null
+        gate.countDown()
+        compose.onNodeWithContentDescription("搜索曲库").assertIsDisplayed()
+        search.assertDoesNotExist()
+        compose.onNodeWithText("专辑曲目 35").assertDoesNotExist()
+    }
+
+    @Test fun globalSearchRestoresWithinTheSameLoginButClearsAtAnAccountSwitch() {
+        val state = CloudLibraryState(library(), loaded = true, session = cloud.likes.value.session)
+        var onLibrary by mutableStateOf(true)
+        compose.setContent {
+            val saved = rememberSaveableStateHolder()
+            AmiTheme("light") {
+                if (onLibrary) {
+                    saved.SaveableStateProvider("online-library") {
+                        OnlineLibraryContent(cloud, state, false, null, {}, { _, _ -> }, {})
+                    }
+                }
+            }
+        }
+        compose.onNodeWithContentDescription("发现音乐").performClick()
+        compose.onNodeWithText("全局搜索").performClick()
+        val search = compose.onNodeWithTag("online-search")
+        search.performTextInput("晚风")
+        search.performImeAction()
+        compose.waitUntil(10000) { visible("搜索歌曲 301") }
+
+        compose.runOnIdle { onLibrary = false }
+        search.assertDoesNotExist()
+        compose.runOnIdle { onLibrary = true }
+        search.assertTextContains("晚风")
+        compose.runOnIdle { onLibrary = false }
+        search.assertDoesNotExist()
+
+        val before = requests.count { it.first == "cloudsearch/pc" }
+        runBlocking(Dispatchers.IO) { cloud.login("MUSIC_U=qa-second-account") }
+        compose.runOnIdle { onLibrary = true }
+        compose.onNodeWithContentDescription("搜索曲库").assertIsDisplayed()
+        search.assertDoesNotExist()
+        assertEquals(before, requests.count { it.first == "cloudsearch/pc" })
     }
 
     @Test fun immersiveCoverWallUsesThirtyCachedTracksAndDoesNotBreakPaginationOrLikeUpdates() {
@@ -594,7 +794,8 @@ class OnlineLibraryTest {
             }
         }
         try {
-            compose.onNodeWithContentDescription("搜索音乐").performClick()
+            compose.onNodeWithContentDescription("发现音乐").performClick()
+            compose.onNodeWithText("全局搜索").performClick()
             compose.onNodeWithTag("online-search").performTextInput("晚风")
             compose.onNodeWithTag("online-search").performImeAction()
             compose.waitUntil(10000) { visible("搜索歌曲 301") }
@@ -926,7 +1127,7 @@ class OnlineLibraryTest {
             assertEquals(1, requests.count { it.first == "song/lyric" })
         }
 
-    @Test fun discoveryMenuHasTwoLightweightChoicesAndDoesNotFetchBeforeSelection() {
+    @Test fun discoveryMenuOffersGlobalSearchAndRecommendationsBeforeFetching() {
         var chosen = ""
         val state = CloudLibraryState(library(), loaded = true)
         compose.setContent {
@@ -937,6 +1138,7 @@ class OnlineLibraryTest {
             }
         }
         compose.onNodeWithContentDescription("发现音乐").performClick()
+        compose.onNodeWithText("全局搜索").assertIsDisplayed()
         compose.onNodeWithText("私人 FM").assertIsDisplayed()
         screenshot("online-discovery", system = true)
         compose.onNodeWithText("每日推荐").performClick()
@@ -1541,7 +1743,8 @@ class OnlineLibraryTest {
             val result =
                 when (path) {
                     "w/nuser/account/get" -> {
-                        JSONObject().put("profile", JSONObject().put("userId", 42).put("nickname", "AMI QA"))
+                        val uid = if (getRequestProperty("Cookie") == "MUSIC_U=qa-second-account") 84 else 42
+                        JSONObject().put("profile", JSONObject().put("userId", uid).put("nickname", "AMI QA"))
                     }
 
                     "user/playlist" -> {
@@ -1558,7 +1761,7 @@ class OnlineLibraryTest {
                         assertEquals("music.163.com", url.host)
                         assertEquals("MUSIC_U=qa-only-not-a-real-session", getRequestProperty("Cookie"))
                         assertEquals("42", body.getString("uid"))
-                        JSONObject().put("ids", JSONArray(likedIds.map(String::toLong)))
+                        JSONObject().put("ids", JSONArray((favoriteSnapshotIds ?: likedIds).map(String::toLong)))
                     }
 
                     "client-like" -> {
@@ -1578,6 +1781,7 @@ class OnlineLibraryTest {
                     }
 
                     "v1/album/200", "v1/album/1021" -> {
+                        searchAlbumGate?.await(15, java.util.concurrent.TimeUnit.SECONDS)
                         JSONObject().put("songs", JSONArray((1..35).map(::song)))
                     }
 
@@ -1602,14 +1806,13 @@ class OnlineLibraryTest {
                     }
 
                     "v3/song/detail" -> {
-                        JSONObject().put(
-                            "songs",
-                            JSONArray(
-                                JSONArray(body.getString("c")).let { ids ->
-                                    (0 until ids.length()).map { ids.getJSONObject(it).getInt("id") }.reversed().map(::song)
-                                },
-                            ),
-                        )
+                        val ids = JSONArray(body.getString("c"))
+                        val songIds = (0 until ids.length()).map { ids.getJSONObject(it).getInt("id") }
+                        JSONObject().put("songs", JSONArray(songIds.reversed().map(::song))).apply {
+                            restrictedTrackId?.takeIf { it in songIds }?.let { id ->
+                                put("privileges", JSONArray().put(JSONObject().put("id", id).put("st", -1)))
+                            }
+                        }
                     }
 
                     "cloudsearch/pc" -> {
@@ -1689,6 +1892,7 @@ class OnlineLibraryTest {
                 url.path.endsWith("song/lyric/v1") -> lyricStatus
                 url.path == "/eapi/song/like" -> likeStatus
                 url.path.endsWith("album/sublist") -> albumStatus
+                url.path.endsWith("v1/album/201") -> secondAlbumStatus
                 else -> 200
             }
         }

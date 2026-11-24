@@ -97,6 +97,8 @@ class CloudMusic internal constructor(
         }
 
     private val pages = arrayOfNulls<Pair<String, CloudTracks>>(2)
+    private var pagesSession = likes.value.session
+    private var favoritesPageRevision = likesRevision.value
 
     private data class AlbumPage(
         val page: CloudTracks,
@@ -121,6 +123,7 @@ class CloudMusic internal constructor(
         favorites: Boolean,
         key: String,
     ): CloudTracks? {
+        if (pagesSession != likes.value.session) return null
         if (!favorites && key.startsWith("album:")) {
             val saved = albumPages.get(key) ?: return null
             if (SystemClock.elapsedRealtime() - saved.at < 7 * 24 * 60 * 60 * 1000L) return saved.page
@@ -134,11 +137,16 @@ class CloudMusic internal constructor(
         favorites: Boolean,
         key: String,
         page: CloudTracks,
+        session: Long = likes.value.session,
+        revision: Long = likesRevision.value,
     ) {
+        if (session != likes.value.session || (favorites && revision != likesRevision.value)) return
+        if (pagesSession != session) clearPages()
         if (!favorites && key.startsWith("album:")) {
             albumPages.put(key, AlbumPage(page))
         } else {
             pages[if (favorites) 1 else 0] = key to page
+            if (favorites) favoritesPageRevision = revision
         }
     }
 
@@ -146,6 +154,7 @@ class CloudMusic internal constructor(
         albumCovers.clear()
         pages.fill(null)
         albumPages.evictAll()
+        pagesSession = likes.value.session
     }
 
     suspend fun refreshLikes(force: Boolean = false) {
@@ -182,7 +191,10 @@ class CloudMusic internal constructor(
         account.likes.set(track.originalId, liked, session) {
             synchronized(this@CloudMusic) {
                 if (likes.value.session == session) {
-                    pages[1]?.let { pages[1] = it.first to it.second.withLike(track, liked) }
+                    if (pagesSession == session) {
+                        pages[1]?.let { pages[1] = it.first to it.second.withLike(track, liked) }
+                        if (favoritesPageRevision == likesRevision.value) favoritesPageRevision++
+                    }
                     likesRevision.value++
                 }
             }
@@ -275,17 +287,47 @@ class CloudMusic internal constructor(
     ): CloudTracks =
         if (collection.kind == "album") {
             synchronized(this) { collection.cover?.let { albumCovers[collection.id] = it } }
-            page(request("albumTracks", JSONObject().put("id", id(collection.id)).put("offset", offset))).let { page ->
-                page.copy(
-                    tracks =
-                        page.tracks.map { track ->
-                            if (track.albumId == null || track.albumId == collection.id) track.copy(cover = track.cover ?: collection.cover, albumId = track.albumId ?: collection.id) else track
-                        },
-                )
-            }
+            page(request("albumTracks", JSONObject().put("id", id(collection.id)).put("offset", offset))).withAlbumCard(collection)
         } else {
             tracks(collection.id, offset)
         }
+
+    internal fun requireSearchSession(session: Long) {
+        if (!configured.value || likes.value.session != session) throw CancellationException("网易云账号已变化")
+    }
+
+    /** The search consumes already browsed metadata and reads the rest without replacing saved pages. */
+    internal suspend fun scanCollectionTracks(
+        collection: CloudPlaylist,
+        favorites: Boolean,
+        start: Int,
+        session: Long,
+        onPage: suspend (CloudTracks) -> Boolean,
+    ) {
+        requireSearchSession(session)
+        val cached =
+            synchronized(this) {
+                if (start == 0 && (!favorites || favoritesPageRevision == likesRevision.value)) savedPage(favorites, collection.key) else null
+            }
+        if (cached != null && (!onPage(cached) || !cached.more)) return
+        account.scanTracks(collection, cached?.nextOffset ?: start, session) { response ->
+            requireSearchSession(session)
+            val page = page(response, cacheArtwork = false)
+            onPage(if (collection.kind == "album") page.withAlbumCard(collection) else page)
+        }
+    }
+
+    private fun CloudTracks.withAlbumCard(collection: CloudPlaylist): CloudTracks =
+        copy(
+            tracks =
+                tracks.map { track ->
+                    if (track.albumId == null || track.albumId == collection.id) {
+                        track.copy(cover = track.cover ?: collection.cover, albumId = track.albumId ?: collection.id)
+                    } else {
+                        track
+                    }
+                },
+        )
 
     suspend fun tracks(
         playlist: String,
@@ -302,15 +344,22 @@ class CloudMusic internal constructor(
         return page(request(kind)).tracks.distinctBy { it.id }.filter { it.available }
     }
 
-    private fun page(result: JSONObject): CloudTracks {
+    private fun page(
+        result: JSONObject,
+        cacheArtwork: Boolean = true,
+    ): CloudTracks {
         val rows = result.getJSONArray("tracks")
         require(rows.length() <= 500)
         return CloudTracks(
             (0 until rows.length()).map { row ->
                 val track = track(rows.getJSONObject(row))
-                synchronized(this) {
-                    track.albumId?.let { albumId -> track.cover?.let { albumCovers[albumId] = it } }
-                    track.copy(cover = track.cover ?: track.albumId?.let { albumCovers[it] })
+                if (cacheArtwork) {
+                    synchronized(this) {
+                        track.albumId?.let { albumId -> track.cover?.let { albumCovers[albumId] = it } }
+                        track.copy(cover = track.cover ?: track.albumId?.let { albumCovers[it] })
+                    }
+                } else {
+                    track
                 }
             },
             result.getInt("nextOffset"),
