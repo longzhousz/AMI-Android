@@ -6,7 +6,7 @@
 
 0.2.6 更新珍珠白／墨蓝音符图标，适配系统圆形、圆角方形和主题图标。若桌面暂时显示旧图标，可移除快捷方式后从应用列表重新添加；不要卸载或清除数据。
 
-从 [最新发布](https://github.com/longzhousz/AMI-Android/releases/latest) 下载 `AMI-Android-0.4.0.apk`。最低 Android 13（API 33），包名为 `com.longzhousz.ami.musicpreview`。
+从 [最新发布](https://github.com/longzhousz/AMI-Android/releases/latest) 下载 `AMI-Android-0.4.1.apk`。最低 Android 13（API 33），包名为 `com.longzhousz.ami.musicpreview`。
 
 云端 0.1.14～0.2.14 使用相同包名与签名，直接覆盖更新可保留登录、设置、曲库和译文。0.2.14 及更早版本的自动更新只识别 preview 命名，升级到 0.3 需手动下载并覆盖安装一次；0.3 起恢复自动更新。其他包名的旧试用包可并存，数据不自动共享；本地自行签名的同包名安装通常不能直接覆盖。不要为解决签名冲突卸载或清除已有应用，卸载会丢失应用私有数据。
 
