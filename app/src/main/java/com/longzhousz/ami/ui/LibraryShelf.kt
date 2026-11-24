@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -22,6 +23,10 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -32,9 +37,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.longzhousz.ami.core.OnlineAlbumOrder
 
 @Composable internal fun LibraryNavigationRefresh(
     request: Int,
@@ -158,9 +166,37 @@ internal fun SharedTransitionScope.libraryCoverTransition(
     local: Boolean,
     onLocal: () -> Unit,
     onCloud: () -> Unit,
+    showLocal: Boolean = true,
+    albumOrder: OnlineAlbumOrder? = null,
+    onAlbumOrder: (OnlineAlbumOrder) -> Unit = {},
 ) {
-    LibrarySegments(listOf("本地", "网易云"), if (local) 0 else 1, listOf("library-source-local", "library-source-cloud")) {
-        if (it == 0) onLocal() else onCloud()
+    LibrarySegmentRow {
+        if (showLocal) LibrarySegment("本地", local, "library-source-local", onLocal)
+        Box {
+            var menu by remember { mutableStateOf(false) }
+            LibrarySegment(
+                "网易云",
+                !local,
+                "library-source-cloud",
+                onCloud,
+                onLongClick = if (albumOrder == null) null else ({ menu = true }),
+            )
+            if (albumOrder != null) {
+                GlassDropdownMenu(menu, { menu = false }) {
+                    OnlineAlbumOrder.entries.forEach { order ->
+                        DropdownMenuItem(
+                            { Text(order.label) },
+                            {
+                                menu = false
+                                onAlbumOrder(order)
+                            },
+                            modifier = Modifier.semantics { selected = albumOrder == order },
+                            trailingIcon = { if (albumOrder == order) Icon(Icons.Rounded.Check, null) },
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -170,29 +206,54 @@ internal fun SharedTransitionScope.libraryCoverTransition(
     tags: List<String>,
     onSelect: (Int) -> Unit,
 ) {
-    Row(Modifier.liquidGlass(CircleShape, prominent = true).padding(horizontal = 4.dp).selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
+    LibrarySegmentRow {
         labels.forEachIndexed { index, label ->
-            val active = selected == index
-            Box(
-                Modifier
-                    .height(48.dp)
-                    .clip(CircleShape)
-                    .selectable(selected = active, role = Role.Tab, onClick = { onSelect(index) })
-                    .testTag(tags[index]),
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxHeight()
-                        .padding(vertical = 4.dp)
-                        .clip(CircleShape)
-                        .background(if (active) MaterialTheme.colorScheme.onSurface.copy(alpha = .14f) else Color.Transparent)
-                        .padding(horizontal = 14.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, color = if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
+            LibrarySegment(label, selected == index, tags[index], { onSelect(index) })
+        }
+    }
+}
+
+@Composable private fun LibrarySegmentRow(content: @Composable RowScope.() -> Unit) {
+    Row(
+        Modifier.liquidGlass(CircleShape, prominent = true).padding(horizontal = 4.dp).selectableGroup(),
+        verticalAlignment = Alignment.CenterVertically,
+        content = content,
+    )
+}
+
+@Composable private fun LibrarySegment(
+    label: String,
+    active: Boolean,
+    tag: String,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+) {
+    val input =
+        if (onLongClick == null) {
+            Modifier.selectable(selected = active, role = Role.Tab, onClick = onClick)
+        } else {
+            Modifier
+                .combinedClickable(role = Role.Tab, onClick = onClick, onLongClick = onLongClick, onLongClickLabel = "专辑排列顺序")
+                .semantics { selected = active }
+        }
+    Box(
+        Modifier
+            .height(48.dp)
+            .clip(CircleShape)
+            .then(input)
+            .testTag(tag),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .fillMaxHeight()
+                .padding(vertical = 4.dp)
+                .clip(CircleShape)
+                .background(if (active) MaterialTheme.colorScheme.onSurface.copy(alpha = .14f) else Color.Transparent)
+                .padding(horizontal = 14.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, color = if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

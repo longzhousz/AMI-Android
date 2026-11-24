@@ -167,7 +167,7 @@ class OnlineLibraryTest {
     @Test fun collectionsSeparateSavedAlbumsCreatedPlaylistsAndRedHearts() =
         runBlocking(Dispatchers.IO) {
             val shelf = cloud.library()
-            assertEquals(setOf("album:200", "album:201", "created:200"), shelf.collections.map { it.key }.toSet())
+            assertEquals(listOf("album:200", "album:201", "created:200"), shelf.collections.map { it.key })
             assertEquals("100", shelf.liked?.id)
             assertFalse(shelf.collections.any { it.kind in setOf("liked", "collected") })
             val album = shelf.collections.first { it.key == "album:200" }
@@ -999,6 +999,53 @@ class OnlineLibraryTest {
                 assertTrue("Action text must not be clipped", layouts.isNotEmpty() && !layouts.first().hasVisualOverflow)
             }
         }
+    }
+
+    @Test fun cloudOnlyLibraryCanReshuffleAlbumsFromTheSourceMenu() {
+        val shelf = library()
+        val albums = shelf.collections.filter { it.kind == "album" }
+        var order by mutableStateOf(OnlineAlbumOrder.Default)
+        var state by mutableStateOf(CloudLibraryState().withAlbums(albums))
+        compose.setContent {
+            AmiTheme("light") {
+                Surface {
+                    OnlineLibraryContent(
+                        cloud,
+                        state,
+                        false,
+                        null,
+                        {},
+                        { _, _ -> },
+                        {},
+                        sourceSelector = {
+                            LibrarySourceSwitch(
+                                false,
+                                {},
+                                {},
+                                showLocal = false,
+                                albumOrder = order,
+                                onAlbumOrder = {
+                                    order = it
+                                    state = state.withAlbumOrder(it)
+                                },
+                            )
+                        },
+                    )
+                }
+            }
+        }
+        val source = compose.onNodeWithTag("library-source-cloud").assertIsSelected()
+        compose.onNodeWithTag("library-source-local").assertDoesNotExist()
+        val first = compose.onNodeWithTag("collection-album:200")
+        val second = compose.onNodeWithTag("collection-album:201")
+        val firstSlot = first.fetchSemanticsNode().boundsInRoot.left
+        source.performTouchInput { longClick() }
+        compose.onNodeWithText("默认").assertIsSelected()
+        compose.onNodeWithText("随机").performClick()
+        assertEquals(firstSlot, second.fetchSemanticsNode().boundsInRoot.left, 1f)
+        source.performTouchInput { longClick() }
+        compose.onNodeWithText("随机").assertIsSelected().performClick()
+        assertEquals(firstSlot, first.fetchSemanticsNode().boundsInRoot.left, 1f)
     }
 
     @Test fun sourceSwitchPreservesTheOnlineShelfAndAlbumNavigation() {

@@ -3,7 +3,9 @@ package com.longzhousz.ami
 import com.longzhousz.ami.core.CloudLibraryState
 import com.longzhousz.ami.core.CloudTrack
 import com.longzhousz.ami.core.ErrorCode
+import com.longzhousz.ami.core.OnlineAlbumOrder
 import com.longzhousz.ami.core.Song
+import com.longzhousz.ami.core.withAlbumOrder
 import com.longzhousz.ami.core.withAlbums
 import com.longzhousz.ami.core.withPlaylists
 import com.longzhousz.ami.data.AppDiagnostics
@@ -37,6 +39,9 @@ class OnlineStateHolder internal constructor(
     private var likesSession = -1L
     private val _onlineLibrary = MutableStateFlow(CloudLibraryState())
     val onlineLibrary = _onlineLibrary.asStateFlow()
+    private val mutableAlbumOrder =
+        MutableStateFlow(if (repository.prefs.getBoolean("onlineAlbumsRandom", false)) OnlineAlbumOrder.Random else OnlineAlbumOrder.Default)
+    internal val albumOrder = mutableAlbumOrder.asStateFlow()
     private val _discovering = MutableStateFlow(false)
     val discovering = _discovering.asStateFlow()
 
@@ -116,8 +121,25 @@ class OnlineStateHolder internal constructor(
         }
     }
 
-    fun refreshOnlineAlbums() {
+    internal fun selectAlbumOrder(order: OnlineAlbumOrder) {
+        if (albumOrder.value != order) {
+            repository.prefs
+                .edit()
+                .putBoolean("onlineAlbumsRandom", order == OnlineAlbumOrder.Random)
+                .apply()
+            mutableAlbumOrder.value = order
+        }
+        _onlineLibrary.update { it.withAlbumOrder(order) }
+        if (order == OnlineAlbumOrder.Random) loadOnlineAlbums(reshuffle = false)
+    }
+
+    fun refreshOnlineAlbums() = loadOnlineAlbums(reshuffle = true)
+
+    private fun loadOnlineAlbums(reshuffle: Boolean) {
         if (!cloud.configured.value || albumsJob?.isActive == true) return
+        if (reshuffle && albumOrder.value == OnlineAlbumOrder.Random) {
+            _onlineLibrary.update { it.withAlbumOrder(OnlineAlbumOrder.Random) }
+        }
         albumsJob =
             scope.launch {
                 _onlineLibrary.update {
@@ -133,7 +155,7 @@ class OnlineStateHolder internal constructor(
                     val albums = cloud.albums()
                     ensureActive()
                     _onlineLibrary.update { current ->
-                        current.withAlbums(albums).copy(
+                        current.withAlbums(albums, albumOrder.value).copy(
                             refreshing = current.playlistsLoading,
                             albumsLoading = false,
                             error = if (current.playlistsError != null) "曲库暂时无法刷新" else null,

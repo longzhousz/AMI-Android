@@ -46,6 +46,13 @@ data class CloudLibrary(
     val liked: CloudPlaylist? = null,
 )
 
+internal enum class OnlineAlbumOrder(
+    val label: String,
+) {
+    Default("默认"),
+    Random("随机"),
+}
+
 data class CloudLibraryState(
     val library: CloudLibrary = CloudLibrary(),
     val loaded: Boolean = false,
@@ -63,11 +70,11 @@ data class CloudLibraryState(
 
 /** Publish the playlist page immediately; the album page may still be loading or failed. */
 internal fun CloudLibraryState.withPlaylists(playlists: List<CloudPlaylist>): CloudLibraryState {
-    val created = playlists.filter { it.kind == "created" }
+    val created = playlists.filter { it.kind == "created" }.distinctBy { it.key }
     return copy(
         library =
             library.copy(
-                collections = shuffledShelf(albums + created, library.collections),
+                collections = visibleAlbums() + created,
                 liked = playlists.firstOrNull { it.kind == "liked" },
             ),
         createdPlaylists = created,
@@ -77,14 +84,36 @@ internal fun CloudLibraryState.withPlaylists(playlists: List<CloudPlaylist>): Cl
     )
 }
 
-internal fun CloudLibraryState.withAlbums(albums: List<CloudPlaylist>): CloudLibraryState =
-    copy(
-        library = library.copy(collections = shuffledShelf(albums + createdPlaylists, library.collections)),
-        albums = albums,
+internal fun CloudLibraryState.withAlbums(
+    albums: List<CloudPlaylist>,
+    order: OnlineAlbumOrder = OnlineAlbumOrder.Default,
+): CloudLibraryState {
+    val serverOrder = albums.distinctBy { it.key }
+    val visible =
+        if (order == OnlineAlbumOrder.Random) {
+            val previous = visibleAlbums()
+            val incoming = serverOrder.associateBy { it.key }
+            // Keep the order already shown when the refresh returns the same albums.
+            val retained = previous.mapNotNull { incoming[it.key] }
+            if (retained.size == serverOrder.size) retained else shuffledShelf(serverOrder, previous)
+        } else {
+            serverOrder
+        }
+    return copy(
+        library = library.copy(collections = visible + createdPlaylists),
+        albums = serverOrder,
         albumsLoaded = true,
         albumsError = null,
         loaded = playlistsLoaded,
     )
+}
+
+internal fun CloudLibraryState.withAlbumOrder(order: OnlineAlbumOrder): CloudLibraryState {
+    val visible = if (order == OnlineAlbumOrder.Random) shuffledShelf(albums, visibleAlbums()) else albums
+    return copy(library = library.copy(collections = visible + createdPlaylists))
+}
+
+private fun CloudLibraryState.visibleAlbums() = library.collections.filter { it.kind == "album" }
 
 /** Reorder the shelf only; collection tracks and the playback queue are separate. */
 internal fun shuffledShelf(

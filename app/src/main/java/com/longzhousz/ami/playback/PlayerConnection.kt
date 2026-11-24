@@ -3,6 +3,7 @@ package com.longzhousz.ami.playback
 import android.content.ComponentName
 import android.content.Context
 import androidx.core.content.ContextCompat
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -117,8 +118,20 @@ class PlayerConnection(
             c.repeatMode = Player.REPEAT_MODE_OFF
             c.shuffleModeEnabled = false
         }
-        c.setMediaItems(songs.map { it.mediaItem() }, index, 0)
-        c.prepare()
+        val items = songs.map { it.mediaItem() }
+        val sameQueue =
+            !radio && c.playbackState != Player.STATE_IDLE && c.playerError == null &&
+                c.isCommandAvailable(Player.COMMAND_GET_TIMELINE) &&
+                c.isCommandAvailable(Player.COMMAND_SEEK_TO_MEDIA_ITEM) &&
+                c.mediaItemCount == items.size &&
+                items.indices.all { c.getMediaItemAt(it).matchesQueueItem(items[it]) }
+        if (sameQueue) {
+            // Preserve the native queue and its prepared media when choosing another track after auto-advance.
+            c.seekTo(index, 0)
+        } else {
+            c.setMediaItems(items, index, 0)
+            c.prepare()
+        }
         c.play()
     }
 
@@ -227,4 +240,13 @@ class PlayerConnection(
         controller?.removeListener(listener)
         MediaController.releaseFuture(future)
     }
+}
+
+private fun MediaItem.matchesQueueItem(other: MediaItem): Boolean {
+    if (this != other) return false
+    // Compare the listening identifiers separately from MediaItem equality.
+    val extras = mediaMetadata.extras ?: return other.mediaMetadata.extras == null
+    val otherExtras = other.mediaMetadata.extras ?: return false
+    val keys = extras.keySet()
+    return keys == otherExtras.keySet() && keys.all { extras.getString(it) == otherExtras.getString(it) }
 }

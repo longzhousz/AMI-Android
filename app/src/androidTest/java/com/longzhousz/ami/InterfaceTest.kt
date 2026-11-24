@@ -2,6 +2,7 @@ package com.longzhousz.ami
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.ComponentName
 import android.os.ParcelFileDescriptor
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.compose.ui.geometry.Offset
@@ -15,6 +16,7 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -32,10 +34,17 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.swipe
 import androidx.lifecycle.ViewModelProvider
+import androidx.media3.common.Player
+import androidx.media3.common.Timeline
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import coil.imageLoader
+import com.longzhousz.ami.core.OnlineAlbumOrder
 import com.longzhousz.ami.core.Song
+import com.longzhousz.ami.playback.PlayMode
+import com.longzhousz.ami.playback.PlaybackService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -43,6 +52,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(AndroidJUnit4::class)
 class InterfaceTest {
@@ -148,6 +159,40 @@ class InterfaceTest {
         compose.onNodeWithContentDescription("曲库").performClick()
         compose.waitUntil(10000) { compose.onAllNodesWithTag("library-source-local").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("library-source-local").performClick()
+    }
+
+    @Test fun longPressingNeteaseInTheLibraryOpensAndSavesAlbumOrder() {
+        val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
+        val previous = model.online.albumOrder.value
+        val song = Song("qa-album-order", "file:///unused", folder = "qa", title = "排序验证")
+        try {
+            compose.runOnIdle { model.online.selectAlbumOrder(OnlineAlbumOrder.Default) }
+            model.repository.db.upsert(song)
+            model.repository.reload()
+            openLocalLibrary()
+            val cloud = compose.onNodeWithTag("library-source-cloud")
+            cloud.performTouchInput { longClick() }
+            compose.onNodeWithTag("library-source-local").assertIsSelected()
+            compose.onNodeWithText("默认").assertIsSelected()
+            compose.onNodeWithText("随机").performClick()
+            cloud.assertIsSelected()
+            compose.runOnIdle {
+                assertEquals(OnlineAlbumOrder.Random, model.online.albumOrder.value)
+                assertTrue(model.repository.prefs.getBoolean("onlineAlbumsRandom", false))
+            }
+
+            cloud.performTouchInput { longClick() }
+            compose.onNodeWithText("随机").assertIsSelected()
+            compose.onNodeWithText("默认").performClick()
+            compose.runOnIdle {
+                assertEquals(OnlineAlbumOrder.Default, model.online.albumOrder.value)
+                assertFalse(model.repository.prefs.getBoolean("onlineAlbumsRandom", true))
+            }
+        } finally {
+            compose.runOnIdle { model.online.selectAlbumOrder(previous) }
+            model.repository.db.remove(song.id)
+            model.repository.reload()
+        }
     }
 
     @Test fun homeOffersImportAndShowsLocalAndCloudAfterMusicIsAdded() {
@@ -408,6 +453,88 @@ class InterfaceTest {
             songs.forEach { model.repository.db.remove(it.id) }
             model.repository.reload()
             image.delete()
+        }
+    }
+
+    @Test fun tappingThePreviousAlbumTrackAfterAutoAdvanceKeepsTheActiveQueue() {
+        val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
+        val songs =
+            listOf(1, 2).map { track ->
+                Song(
+                    "qa-reselect-$track",
+                    "content://com.longzhousz.ami.test.fixtures/document/album.wav",
+                    folder = "qa-reselect",
+                    title = "切歌验证曲目 $track",
+                    album = "切歌验证专辑",
+                    track = track,
+                    duration = if (track == 1) 3_000 else 6_000,
+                    end = if (track == 1) 3_000 else null,
+                )
+            }
+        val session = SessionToken(compose.activity, ComponentName(compose.activity, PlaybackService::class.java))
+        val future = compose.runOnIdle { MediaController.Builder(compose.activity, session).buildAsync() }
+        val playingId = AtomicReference<String?>()
+        var replacements = 0
+        val originalMode =
+            model.player.state.value
+                .let { PlayMode.from(it.shuffle, it.repeat) }
+        try {
+            val observer = future.get(30, TimeUnit.SECONDS)
+            compose.runOnIdle {
+                observer.addListener(
+                    object : Player.Listener {
+                        override fun onTimelineChanged(
+                            timeline: Timeline,
+                            reason: Int,
+                        ) {
+                            if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) replacements++
+                        }
+
+                        override fun onEvents(
+                            player: Player,
+                            events: Player.Events,
+                        ) {
+                            playingId.set(player.currentMediaItem?.mediaId?.takeIf { player.isPlaying })
+                        }
+                    },
+                )
+            }
+            songs.forEach(model.repository.db::upsert)
+            model.repository.reload()
+            openLocalLibrary()
+            compose.waitUntil(10_000) { model.player.state.value.connected }
+            compose.runOnIdle { model.player.mode(PlayMode.Loop) }
+            compose.onNodeWithText(songs.first().album).performClick()
+            val previousRow = compose.onNodeWithText(songs.first().title)
+            previousRow.performTouchInput { click() }
+            compose.waitUntil(10_000) { playingId.get() == songs.first().id }
+            compose.waitUntil(10_000) { playingId.get() == songs.last().id }
+            val before = compose.runOnIdle { replacements }
+
+            previousRow.performTouchInput { click() }
+            compose.waitUntil(10_000) { playingId.get() == songs.first().id }
+            compose.runOnIdle {
+                assertEquals("Selecting from the playing album should not replace its queue", before, replacements)
+                assertEquals(songs.map { it.id }, model.player.state.value.queue)
+            }
+
+            // Rescanning can change a CUE boundary while the song IDs and order stay the same.
+            val rescanned = listOf(songs.first().copy(end = 4_500, duration = 4_500), songs.last())
+            compose.runOnIdle { model.play(rescanned) }
+            compose.waitUntil(10_000) {
+                compose.runOnIdle {
+                    observer.mediaItemCount == songs.size && observer.getMediaItemAt(0).clippingConfiguration.endPositionMs == 4_500L
+                }
+            }
+        } finally {
+            compose.runOnIdle {
+                model.player.pause()
+                songs.forEach { model.player.remove(it.id) }
+                model.player.mode(originalMode)
+                MediaController.releaseFuture(future)
+            }
+            songs.forEach { model.repository.db.remove(it.id) }
+            model.repository.reload()
         }
     }
 

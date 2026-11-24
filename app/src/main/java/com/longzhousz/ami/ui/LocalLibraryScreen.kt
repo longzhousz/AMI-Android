@@ -42,6 +42,7 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.longzhousz.ami.core.Album
 import com.longzhousz.ami.core.LibrarySearchResult
 import com.longzhousz.ami.core.LibrarySnapshot
+import com.longzhousz.ami.core.OnlineAlbumOrder
 import com.longzhousz.ami.core.Song
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -66,6 +67,8 @@ internal fun LocalLibraryScreen(
     onReorder: (List<String>) -> Unit,
     favorites: Boolean = false,
     showSourceSwitch: Boolean = true,
+    albumOrder: OnlineAlbumOrder? = null,
+    onAlbumOrder: (OnlineAlbumOrder) -> Unit = {},
 ) {
     var visit by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -100,7 +103,6 @@ internal fun LocalLibraryScreen(
                         refreshing,
                         currentId,
                         bottomInset,
-                        onCloud = { if (active) onCloud() },
                         onRefresh = { if (active) onRefresh() },
                         refreshRequest = refreshRequest,
                         onAlbum = {
@@ -116,7 +118,20 @@ internal fun LocalLibraryScreen(
                         modifier = sceneModifier,
                         active = active,
                         favorites = favorites,
-                        showSourceSwitch = showSourceSwitch,
+                        sourceSelector =
+                            if (showSourceSwitch) {
+                                {
+                                    LibrarySourceSwitch(
+                                        true,
+                                        {},
+                                        { if (active) onCloud() },
+                                        albumOrder = albumOrder,
+                                        onAlbumOrder = { if (active) onAlbumOrder(it) },
+                                    )
+                                }
+                            } else {
+                                null
+                            },
                     )
                 }
             } else {
@@ -204,7 +219,6 @@ private fun LocalLibraryHome(
     refreshing: Boolean,
     currentId: String?,
     bottomInset: Dp,
-    onCloud: () -> Unit,
     onRefresh: () -> Unit,
     refreshRequest: Int,
     onAlbum: (Album) -> Unit,
@@ -215,13 +229,13 @@ private fun LocalLibraryHome(
     modifier: Modifier,
     active: Boolean,
     favorites: Boolean,
-    showSourceSwitch: Boolean,
+    sourceSelector: (@Composable () -> Unit)?,
 ) {
     var mode by rememberSaveable { mutableIntStateOf(if (favorites) 1 else 0) }
     var searchExpanded by rememberSaveable { mutableStateOf(false) }
     var requestSearchFocus by remember { mutableStateOf(false) }
     val density = LocalDensity.current
-    var headerHeight by rememberSaveable(density.density, density.fontScale, showSourceSwitch) { mutableIntStateOf(0) }
+    var headerHeight by rememberSaveable(density.density, density.fontScale, sourceSelector != null) { mutableIntStateOf(0) }
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val contentTop = if (headerHeight > 0) with(density) { headerHeight.toDp() } else statusTop + 128.dp
     val focus = LocalFocusManager.current
@@ -299,8 +313,7 @@ private fun LocalLibraryHome(
             ) {
                 LocalLibraryHeaderRow(
                     searchExpanded,
-                    showSourceSwitch,
-                    onCloud,
+                    sourceSelector,
                     onSearchToggle = {
                         searchExpanded = !searchExpanded
                         if (searchExpanded) {
@@ -323,12 +336,11 @@ private fun LocalLibraryHome(
 
 @Composable private fun LocalLibraryHeaderRow(
     searchExpanded: Boolean,
-    showSourceSwitch: Boolean,
-    onCloud: () -> Unit,
+    sourceSelector: (@Composable () -> Unit)?,
     onSearchToggle: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        if (showSourceSwitch) LibrarySourceSwitch(true, {}, onCloud)
+        sourceSelector?.invoke()
         Spacer(Modifier.weight(1f))
         ActionIcon(
             if (searchExpanded) Icons.Rounded.Close else Icons.Rounded.Search,

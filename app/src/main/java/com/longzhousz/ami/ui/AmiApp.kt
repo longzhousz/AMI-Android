@@ -88,6 +88,7 @@ fun AmiApp(
     ) {
         val focus = LocalFocusManager.current
         val onlineLikes by model.cloud.likes.collectAsStateWithLifecycle()
+        val albumOrder by model.online.albumOrder.collectAsStateWithLifecycle()
         val playback by model.player.state.collectAsStateWithLifecycle()
         val selection by model.playerSelection.collectAsStateWithLifecycle()
         val importing by model.repository.importState.collectAsStateWithLifecycle()
@@ -341,6 +342,11 @@ fun AmiApp(
                                                         onFavorite = model::favorite,
                                                         onRemove = { remove = it },
                                                         onReorder = model::reorder,
+                                                        albumOrder = albumOrder,
+                                                        onAlbumOrder = {
+                                                            model.online.selectAlbumOrder(it)
+                                                            librarySource = "cloud"
+                                                        },
                                                     )
                                                 }
                                             }
@@ -364,8 +370,17 @@ fun AmiApp(
                                                             },
                                                         sourceSelector =
                                                             when {
-                                                                destination.page == 0 && hasLocalMusic -> {
-                                                                    { LibrarySourceSwitch(false, { librarySource = "local" }, {}) }
+                                                                destination.page == 0 && (hasLocalMusic || cloudConfigured) -> {
+                                                                    {
+                                                                        LibrarySourceSwitch(
+                                                                            false,
+                                                                            { librarySource = "local" },
+                                                                            {},
+                                                                            showLocal = hasLocalMusic,
+                                                                            albumOrder = albumOrder,
+                                                                            onAlbumOrder = model.online::selectAlbumOrder,
+                                                                        )
+                                                                    }
                                                                 }
 
                                                                 destination.page == 1 && hasLocalMusic && cloudConfigured -> {
