@@ -342,11 +342,6 @@ fun AmiApp(
                                                         onFavorite = model::favorite,
                                                         onRemove = { remove = it },
                                                         onReorder = model::reorder,
-                                                        albumOrder = albumOrder,
-                                                        onAlbumOrder = {
-                                                            model.online.selectAlbumOrder(it)
-                                                            librarySource = "cloud"
-                                                        },
                                                     )
                                                 }
                                             }

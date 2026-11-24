@@ -183,6 +183,7 @@ private fun Modifier.drawBehindGlassFallback(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
+    containerColor: Color = Color.Transparent,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     DropdownMenu(
@@ -190,7 +191,7 @@ private fun Modifier.drawBehindGlassFallback(
         onDismissRequest,
         modifier.liquidGlass(RoundedCornerShape(24.dp), prominent = true),
         shape = RoundedCornerShape(24.dp),
-        containerColor = Color.Transparent,
+        containerColor = containerColor,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
         content = content,

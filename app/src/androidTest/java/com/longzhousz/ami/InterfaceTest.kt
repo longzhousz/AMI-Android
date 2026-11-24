@@ -8,6 +8,8 @@ import android.view.accessibility.AccessibilityNodeInfo
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
@@ -161,7 +163,7 @@ class InterfaceTest {
         compose.onNodeWithTag("library-source-local").performClick()
     }
 
-    @Test fun longPressingNeteaseInTheLibraryOpensAndSavesAlbumOrder() {
+    @Test fun onlyTheActiveNeteaseSourceOffersTheAlbumOrderMenu() {
         val model = ViewModelProvider(compose.activity)[AmiViewModel::class.java]
         val previous = model.online.albumOrder.value
         val song = Song("qa-album-order", "file:///unused", folder = "qa", title = "排序验证")
@@ -171,8 +173,10 @@ class InterfaceTest {
             model.repository.reload()
             openLocalLibrary()
             val cloud = compose.onNodeWithTag("library-source-cloud")
+            cloud.assert(SemanticsMatcher.keyNotDefined(SemanticsActions.OnLongClick))
+            cloud.performClick()
+            cloud.assertIsSelected()
             cloud.performTouchInput { longClick() }
-            compose.onNodeWithTag("library-source-local").assertIsSelected()
             compose.onNodeWithText("默认").assertIsSelected()
             compose.onNodeWithText("随机").performClick()
             cloud.assertIsSelected()
@@ -188,6 +192,8 @@ class InterfaceTest {
                 assertEquals(OnlineAlbumOrder.Default, model.online.albumOrder.value)
                 assertFalse(model.repository.prefs.getBoolean("onlineAlbumsRandom", true))
             }
+            compose.onNodeWithTag("library-source-local").performClick()
+            cloud.assert(SemanticsMatcher.keyNotDefined(SemanticsActions.OnLongClick))
         } finally {
             compose.runOnIdle { model.online.selectAlbumOrder(previous) }
             model.repository.db.remove(song.id)

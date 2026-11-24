@@ -174,15 +174,16 @@ internal fun SharedTransitionScope.libraryCoverTransition(
         if (showLocal) LibrarySegment("本地", local, "library-source-local", onLocal)
         Box {
             var menu by remember { mutableStateOf(false) }
+            val canSortAlbums = !local && albumOrder != null
             LibrarySegment(
                 "网易云",
                 !local,
                 "library-source-cloud",
                 onCloud,
-                onLongClick = if (albumOrder == null) null else ({ menu = true }),
+                onLongClick = if (canSortAlbums) ({ menu = true }) else null,
             )
-            if (albumOrder != null) {
-                GlassDropdownMenu(menu, { menu = false }) {
+            if (canSortAlbums) {
+                GlassDropdownMenu(menu, { menu = false }, containerColor = MaterialTheme.colorScheme.surface) {
                     OnlineAlbumOrder.entries.forEach { order ->
                         DropdownMenuItem(
                             { Text(order.label) },
