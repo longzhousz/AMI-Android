@@ -100,16 +100,16 @@ class CloudMusic internal constructor(
     private var pagesSession = likes.value.session
     private var favoritesPageRevision = likesRevision.value
 
-    private data class AlbumPage(
+    private data class CachedTrackPage(
         val page: CloudTracks,
         val at: Long = SystemClock.elapsedRealtime(),
     )
 
-    private val albumPages =
-        object : LruCache<String, AlbumPage>(1024 * 1024) {
+    private fun trackPageCache(maxBytes: Int) =
+        object : LruCache<String, CachedTrackPage>(maxBytes) {
             override fun sizeOf(
                 key: String,
-                value: AlbumPage,
+                value: CachedTrackPage,
             ) = 128 + key.length * 2 +
                 value.page.tracks.sumOf {
                     384 + 2 * (
@@ -118,6 +118,10 @@ class CloudMusic internal constructor(
                     )
                 }
         }
+
+    private val albumPages = trackPageCache(1024 * 1024)
+    private val searchPages = trackPageCache(6 * 1024 * 1024)
+    private var searchPageGeneration = 0L
 
     @Synchronized fun savedPage(
         favorites: Boolean,
@@ -143,7 +147,7 @@ class CloudMusic internal constructor(
         if (session != likes.value.session || (favorites && revision != likesRevision.value)) return
         if (pagesSession != session) clearPages()
         if (!favorites && key.startsWith("album:")) {
-            albumPages.put(key, AlbumPage(page))
+            albumPages.put(key, CachedTrackPage(page))
         } else {
             pages[if (favorites) 1 else 0] = key to page
             if (favorites) favoritesPageRevision = revision
@@ -154,7 +158,13 @@ class CloudMusic internal constructor(
         albumCovers.clear()
         pages.fill(null)
         albumPages.evictAll()
+        clearSearchPages()
         pagesSession = likes.value.session
+    }
+
+    @Synchronized private fun clearSearchPages() {
+        searchPages.evictAll()
+        searchPageGeneration++
     }
 
     suspend fun refreshLikes(force: Boolean = false) {
@@ -231,6 +241,7 @@ class CloudMusic internal constructor(
 
     fun refreshCatalog() {
         if (direct) account.invalidate()
+        clearSearchPages()
     }
 
     internal suspend fun clearQueueForRelogin() = clearQueue()
@@ -296,7 +307,38 @@ class CloudMusic internal constructor(
         if (!configured.value || likes.value.session != session) throw CancellationException("网易云账号已变化")
     }
 
-    /** The search consumes already browsed metadata and reads the rest without replacing saved pages. */
+    /** Returns the first offset requiring a request, or null when the available pages are enough. */
+    internal suspend fun scanCachedSearchTracks(
+        collection: CloudPlaylist,
+        favorites: Boolean,
+        start: Int,
+        session: Long,
+        onPage: suspend (CloudTracks) -> Boolean,
+    ): Int? {
+        requireSearchSession(session)
+        val browsed =
+            synchronized(this) {
+                if (start == 0 && (!favorites || favoritesPageRevision == likesRevision.value)) savedPage(favorites, collection.key) else null
+            }
+        if (browsed != null && (!onPage(browsed) || !browsed.more)) return null
+        var offset = browsed?.nextOffset ?: start
+        // The red-heart page follows the live likes snapshot. Only reuse its normal browse prefix.
+        while (!favorites) {
+            requireSearchSession(session)
+            val cached =
+                synchronized(this) {
+                    requireSearchSession(session)
+                    searchPages
+                        .get(searchPageKey(session, collection, offset))
+                        ?.takeIf { SystemClock.elapsedRealtime() - it.at < 120_000L }
+                        ?.page
+                } ?: break
+            if (!onPage(cached) || !cached.more) return null
+            offset = cached.nextOffset
+        }
+        return offset
+    }
+
     internal suspend fun scanCollectionTracks(
         collection: CloudPlaylist,
         favorites: Boolean,
@@ -305,17 +347,28 @@ class CloudMusic internal constructor(
         onPage: suspend (CloudTracks) -> Boolean,
     ) {
         requireSearchSession(session)
-        val cached =
+        val generation = synchronized(this) { searchPageGeneration }
+        var offset = start
+        account.scanTracks(collection, start, session) { response ->
+            currentCoroutineContext().ensureActive()
+            val read = page(response, cacheArtwork = false)
+            val page = if (collection.kind == "album") read.withAlbumCard(collection) else read
             synchronized(this) {
-                if (start == 0 && (!favorites || favoritesPageRevision == likesRevision.value)) savedPage(favorites, collection.key) else null
+                requireSearchSession(session)
+                if (!favorites && generation == searchPageGeneration) {
+                    searchPages.put(searchPageKey(session, collection, offset), CachedTrackPage(page))
+                }
             }
-        if (cached != null && (!onPage(cached) || !cached.more)) return
-        account.scanTracks(collection, cached?.nextOffset ?: start, session) { response ->
-            requireSearchSession(session)
-            val page = page(response, cacheArtwork = false)
-            onPage(if (collection.kind == "album") page.withAlbumCard(collection) else page)
+            offset = page.nextOffset
+            onPage(page)
         }
     }
+
+    private fun searchPageKey(
+        session: Long,
+        collection: CloudPlaylist,
+        offset: Int,
+    ) = "$session:${collection.key}:$offset"
 
     private fun CloudTracks.withAlbumCard(collection: CloudPlaylist): CloudTracks =
         copy(
@@ -555,11 +608,13 @@ class CloudMusic internal constructor(
             document
         }
 
-    fun trim() =
+    fun trim() {
         synchronized(lyricCache) {
             lyricCache.clear()
             lyricBytes = 0
         }
+        clearSearchPages()
+    }
 
     suspend fun maintainAudioCache() =
         withContext(Dispatchers.IO) {

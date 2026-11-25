@@ -2,14 +2,11 @@ package com.longzhousz.ami.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.updateTransition
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -18,9 +15,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -33,17 +27,17 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.longzhousz.ami.R
 import com.longzhousz.ami.core.Album
 import com.longzhousz.ami.core.LibrarySearchResult
 import com.longzhousz.ami.core.LibrarySnapshot
@@ -339,12 +333,15 @@ private fun LocalLibraryHome(
                     )
                     Spacer(Modifier.height(8.dp))
                     LocalLibraryModeRow(mode, favorites) { mode = it }
-                    searchVisibility.AnimatedVisibility(
-                        visible = { it },
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically(),
-                    ) {
-                        LocalLibrarySearch(query, searchFocus, onQuery, { focus.clearFocus() })
+                    searchVisibility.LibrarySearchExpansion {
+                        LibrarySearchField(
+                            query,
+                            onQuery,
+                            searchFocus,
+                            stringResource(R.string.local_library_search_hint),
+                            "library-search",
+                            Modifier.padding(top = 8.dp),
+                        ) { focus.clearFocus() }
                     }
                 }
             }
@@ -464,30 +461,4 @@ private fun LocalLibraryHome(
             }
         }
     }
-}
-
-@Composable private fun LocalLibrarySearch(
-    query: String,
-    searchFocus: FocusRequester,
-    onQuery: (String) -> Unit,
-    onDone: () -> Unit,
-) {
-    OutlinedTextField(
-        query,
-        onQuery,
-        Modifier
-            .fillMaxWidth()
-            .padding(top = 8.dp)
-            .liquidGlass(RoundedCornerShape(22.dp))
-            .focusRequester(searchFocus)
-            .testTag("library-search"),
-        placeholder = { Text("搜索专辑、歌曲、艺人") },
-        leadingIcon = { Icon(Icons.Rounded.Search, null) },
-        trailingIcon = { if (query.isNotEmpty()) ActionIcon(Icons.Rounded.Close, "清空搜索", { onQuery("") }) },
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { onDone() }),
-        singleLine = true,
-        shape = RoundedCornerShape(22.dp),
-        colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent, focusedBorderColor = androidx.compose.ui.graphics.Color.Transparent, unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent, focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent),
-    )
 }

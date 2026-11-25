@@ -431,7 +431,7 @@ internal class NeteaseAccount(
             currentCoroutineContext().ensureActive()
             requireSession(session)
             val albumRows = if (offset == 0) detail?.let(::TrackRows) else null
-            val page = trackPage(listing, offset, album, cookie, albumRows)
+            val page = trackPage(listing, offset, album, cookie, albumRows, pageSize = if (albumRows != null) 30 else 90)
             requireSession(session)
             if (!onPage(page)) return
             offset = page.getInt("nextOffset")
@@ -473,8 +473,9 @@ internal class NeteaseAccount(
         album: Boolean,
         cookie: String,
         albumRows: TrackRows?,
+        pageSize: Int = 30,
     ): JSONObject {
-        val end = (offset + 30).coerceAtMost(listing.ids.size)
+        val end = (offset + pageSize).coerceAtMost(listing.ids.size)
         val ids = if (offset < end) listing.ids.subList(offset, end) else emptyList()
         val tracks = JSONArray()
         if (ids.isNotEmpty()) {

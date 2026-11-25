@@ -383,7 +383,8 @@ internal fun OnlineLibraryContent(
             val shelfBackdrop = rememberGlassLayer(popupBackground = rootBackdrop as? GlassLayer)
             val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             val floatingToolbar = !favorites && selected == null && !searching
-            val normalToolbar = !personalHome && (floatingToolbar || (favorites && (configured || sourceSelector != null)))
+            val personalVisibility = updateTransition(personalHome && !searching, label = "online-personal-search")
+            val normalToolbar = !personalVisibility.hasVisibleContent && (floatingToolbar || (favorites && (configured || sourceSelector != null)))
             val browsing = configured && normalToolbar && !searchExpanded
             val pullState = rememberPullToRefreshState()
             val personalMatching = personalHome && personal.matching
@@ -453,7 +454,7 @@ internal fun OnlineLibraryContent(
                         }
                     }
                     if (configured) {
-                        val closing = personalToolbar || searchExpanded
+                        val closing = (personalToolbar && personal.expanded) || searchExpanded
                         ActionIcon(
                             if (closing) Icons.Rounded.Close else Icons.Rounded.Search,
                             stringResource(
@@ -497,7 +498,7 @@ internal fun OnlineLibraryContent(
                         }
                     } else {
                         AnimatedVisibility(!favorites && selected == null && searchExpanded, enter = expandVertically(), exit = shrinkVertically()) {
-                            OnlineLibrarySearchField(
+                            LibrarySearchField(
                                 query,
                                 {
                                     query = it
@@ -510,6 +511,7 @@ internal fun OnlineLibraryContent(
                                 searchFocus,
                                 stringResource(R.string.online_global_search_hint),
                                 "online-search",
+                                Modifier.padding(start = 24.dp, end = 24.dp, bottom = 12.dp),
                             ) {
                                 focus.clearFocus()
                                 submitted = query.trim()
@@ -601,37 +603,46 @@ internal fun OnlineLibraryContent(
                                 val cachedPage = pageKey?.takeUnless { currentPage }?.let { cloud.savedPage(favorites, it) }
                                 val pageTracks = if (currentPage) tracks else cachedPage?.tracks.orEmpty()
                                 val unavailableText = stringResource(R.string.online_track_unavailable)
-                                Column(sceneModifier.fillMaxSize()) {
-                                    if (showPersonal) {
-                                        // In-flow controls sample the root background; only the floating toolbar samples the shelf.
+                                val waitingForLibrary = if (favorites) libraryState.playlistsLoading else libraryState.refreshing
+                                PersonalLibrarySearchLayout(
+                                    sceneModifier,
+                                    showToolbar = destination == null && currentScene && personalVisibility.hasVisibleContent,
+                                    estimatedHeight = statusTop + 148.dp,
+                                    header = {
                                         toolbar(false, true)
-                                        OnlineLibrarySearchField(
-                                            personal.query,
-                                            {
-                                                personalPlaybackUnavailable = false
-                                                personal.changeQuery(it)
-                                            },
-                                            personalFocus,
-                                            stringResource(if (favorites) R.string.online_favorites_search_hint else R.string.online_library_search_hint),
-                                            "personal-library-search",
-                                        ) { focus.clearFocus() }
-                                        if (showMatches && !favorites) {
-                                            Box(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)) {
-                                                LibrarySegments(
-                                                    listOf(stringResource(R.string.online_search_songs), stringResource(R.string.online_search_collections)),
-                                                    personal.mode,
-                                                    listOf("personal-search-songs", "personal-search-collections"),
-                                                    personal::selectMode,
-                                                )
+                                        personalVisibility.LibrarySearchExpansion {
+                                            Column {
+                                                LibrarySearchField(
+                                                    personal.query,
+                                                    {
+                                                        personalPlaybackUnavailable = false
+                                                        personal.changeQuery(it)
+                                                    },
+                                                    personalFocus,
+                                                    stringResource(if (favorites) R.string.online_favorites_search_hint else R.string.online_library_search_hint),
+                                                    "personal-library-search",
+                                                    Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 12.dp),
+                                                ) { focus.clearFocus() }
+                                                if (showMatches && !favorites) {
+                                                    Box(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)) {
+                                                        LibrarySegments(
+                                                            listOf(stringResource(R.string.online_search_songs), stringResource(R.string.online_search_collections)),
+                                                            personal.mode,
+                                                            listOf("personal-search-songs", "personal-search-collections"),
+                                                            personal::selectMode,
+                                                        )
+                                                    }
+                                                }
+                                                if (!showMatches || error == null) failureRow(Modifier)
+                                                if (showMatches) {
+                                                    PersonalSearchStatus(personalResults, waitingForLibrary, personal::retryFailed)
+                                                    if (personalPlaybackUnavailable) OnlineLibraryNotice(unavailableText)
+                                                }
                                             }
                                         }
-                                        if (!showMatches || error == null) failureRow(Modifier)
-                                    }
-
+                                    },
+                                ) { searchTop ->
                                     if (showMatches) {
-                                        val waitingForLibrary = if (favorites) libraryState.playlistsLoading else libraryState.refreshing
-                                        PersonalSearchStatus(personalResults, waitingForLibrary, personal::retryFailed)
-                                        if (personalPlaybackUnavailable) OnlineLibraryNotice(unavailableText)
                                         val empty =
                                             if (!personalResults.loading && !waitingForLibrary && personalResults.failedOffsets.isEmpty() && libraryFailure == null) {
                                                 stringResource(R.string.online_personal_search_empty)
@@ -642,7 +653,7 @@ internal fun OnlineLibraryContent(
                                             OnlineCollectionShelf(
                                                 personalResults.collections,
                                                 personalGrid,
-                                                contentTop = 4.dp,
+                                                contentTop = searchTop + 4.dp,
                                                 bottomInset = bottomInset,
                                                 active = active,
                                                 onSelect = ::select,
@@ -655,7 +666,7 @@ internal fun OnlineLibraryContent(
                                             LazyColumn(
                                                 state = personalList,
                                                 modifier = Modifier.fillMaxSize().testTag("online-tracks"),
-                                                contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = bottomInset),
+                                                contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = searchTop, bottom = bottomInset),
                                             ) {
                                                 onlineSongRows(
                                                     personalResults.tracks,
@@ -682,7 +693,7 @@ internal fun OnlineLibraryContent(
                                             shelf,
                                             contentTop =
                                                 when {
-                                                    showPersonal || searchExpanded -> 4.dp
+                                                    searchTop > 0.dp || searchExpanded -> searchTop + 4.dp
 
                                                     failure != null -> 8.dp
 
@@ -746,7 +757,13 @@ internal fun OnlineLibraryContent(
                                             LazyColumn(
                                                 state = pageList,
                                                 modifier = Modifier.fillMaxSize().then(tracksModifier).then(if (currentScene && favorites) browseModifier else Modifier),
-                                                contentPadding = PaddingValues(start = if (favorites) 0.dp else 24.dp, end = if (favorites) 0.dp else 24.dp, bottom = bottomInset),
+                                                contentPadding =
+                                                    PaddingValues(
+                                                        start = if (favorites) 0.dp else 24.dp,
+                                                        end = if (favorites) 0.dp else 24.dp,
+                                                        top = searchTop,
+                                                        bottom = bottomInset,
+                                                    ),
                                                 content = trackRows,
                                             )
                                         }

@@ -1,33 +1,27 @@
 package com.longzhousz.ami.ui
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.longzhousz.ami.R
 import com.longzhousz.ami.core.CloudLibrary
 import com.longzhousz.ami.core.CloudLikes
 import com.longzhousz.ami.data.CloudLibrarySearchResult
 import com.longzhousz.ami.data.CloudMusic
 import com.longzhousz.ami.data.searchPersonalLibrary
-import kotlinx.coroutines.delay
 
 @Stable
 internal class PersonalLibrarySearch {
@@ -92,7 +86,6 @@ internal fun rememberPersonalLibraryMatches(
     LaunchedEffect(cloud, sources, term, session, favoriteIds, revision, retry) {
         if (term.isBlank()) return@LaunchedEffect
         val previous = result.takeIf { retry > 0 && it.failedOffsets.isNotEmpty() }
-        if (previous == null) delay(220)
         cloud.searchPersonalLibrary(sources, term, session, favorites, previous).collect {
             val currentLikes = cloud.likes.value
             val currentFavorites = !favorites || (cloud.likesRevision.value == revision && currentLikes.ids.takeIf { currentLikes.ready } == favoriteIds)
@@ -103,41 +96,33 @@ internal fun rememberPersonalLibraryMatches(
 }
 
 @Composable
-internal fun OnlineLibrarySearchField(
-    query: String,
-    onQuery: (String) -> Unit,
-    focus: FocusRequester,
-    placeholder: String,
-    tag: String,
-    onSubmit: () -> Unit,
+internal fun PersonalLibrarySearchLayout(
+    modifier: Modifier,
+    showToolbar: Boolean,
+    estimatedHeight: Dp,
+    header: @Composable ColumnScope.() -> Unit,
+    content: @Composable ColumnScope.(Dp) -> Unit,
 ) {
-    val shape = RoundedCornerShape(22.dp)
-    OutlinedTextField(
-        query,
-        onQuery,
-        Modifier
-            .fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, bottom = 12.dp)
-            .liquidGlass(shape)
-            .focusRequester(focus)
-            .testTag(tag),
-        placeholder = { Text(placeholder, maxLines = 1) },
-        leadingIcon = { Icon(Icons.Rounded.Search, null) },
-        trailingIcon = {
-            if (query.isNotEmpty()) ActionIcon(Icons.Rounded.Close, stringResource(R.string.library_search_clear), { onQuery("") })
-        },
-        singleLine = true,
-        shape = shape,
-        colors =
-            OutlinedTextFieldDefaults.colors(
-                unfocusedBorderColor = Color.Transparent,
-                focusedBorderColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-                focusedContainerColor = Color.Transparent,
-            ),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
-    )
+    val shelfBackdrop = if (showToolbar) rememberLayerBackdrop() else null
+    val density = LocalDensity.current
+    var height by remember(density) { mutableIntStateOf(0) }
+    val contentTop =
+        if (!showToolbar) {
+            0.dp
+        } else if (height == 0) {
+            estimatedHeight
+        } else {
+            with(density) { height.toDp() }
+        }
+    Box(modifier.fillMaxSize()) {
+        val listModifier = Modifier.fillMaxSize()
+        Column(if (shelfBackdrop != null) listModifier.layerBackdrop(shelfBackdrop) else listModifier) { content(contentTop) }
+        if (shelfBackdrop != null) {
+            CompositionLocalProvider(LocalGlassBackdrop provides shelfBackdrop) {
+                Column(Modifier.fillMaxWidth().onSizeChanged { height = it.height }, content = header)
+            }
+        }
+    }
 }
 
 @Composable

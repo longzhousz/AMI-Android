@@ -39,6 +39,7 @@ import com.longzhousz.ami.ui.LibrarySourceSwitch
 import com.longzhousz.ami.ui.OnlineLibraryContent
 import com.longzhousz.ami.ui.PlayerActions
 import com.longzhousz.ami.ui.PlayerContent
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -46,6 +47,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -115,6 +117,8 @@ class OnlineLibraryTest {
 
     @Volatile private var likeGate: java.util.concurrent.CountDownLatch? = null
     private val likedIds = CopyOnWriteArrayList(listOf("201", "202"))
+
+    @Volatile private var createdPlaylistIds = listOf("105", "101", "104")
 
     @Before fun prepare() {
         val web = NeteaseTransport(webForm = { it }, open = { address -> Fixture(address) })
@@ -212,10 +216,11 @@ class OnlineLibraryTest {
         compass.assertIsDisplayed()
         search.assertIsDisplayed()
         compass.performClick()
-        compose.onNodeWithText("全局搜索").assertIsDisplayed()
+        compose.onNodeWithText("网络搜索").assertIsDisplayed()
         screenshot("immersion-online-compass", system = true)
         assertTrue(InstrumentationRegistry.getInstrumentation().uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK))
-        compose.onNodeWithText("全局搜索").assertDoesNotExist()
+        compose.waitUntil(5000) { !visible("网络搜索") }
+        compose.onNodeWithText("网络搜索").assertDoesNotExist()
         compass.assertIsDisplayed()
         source.performTouchInput { longClick() }
         compose.onNodeWithText("默认").assertIsSelected()
@@ -402,7 +407,7 @@ class OnlineLibraryTest {
             favorites = false
         }
         compose.onNodeWithContentDescription("发现音乐").performClick()
-        compose.onNodeWithText("全局搜索").performClick()
+        compose.onNodeWithText("网络搜索").performClick()
         compose.onNodeWithTag("online-search").performTextInput("晚风")
         compose.onNodeWithTag("online-search").performImeAction()
         compose.waitUntil(10000) { visible("搜索歌曲 301") }
@@ -418,7 +423,16 @@ class OnlineLibraryTest {
         compose.setContent {
             AmiTheme("light") {
                 Surface {
-                    OnlineLibraryContent(cloud, state, false, null, {}, { rows, index -> played += rows[index].id }, {})
+                    OnlineLibraryContent(
+                        cloud,
+                        state,
+                        false,
+                        null,
+                        {},
+                        { rows, index -> played += rows[index].id },
+                        {},
+                        sourceSelector = { LibrarySourceSwitch(false, {}, {}) },
+                    )
                 }
             }
         }
@@ -427,6 +441,19 @@ class OnlineLibraryTest {
         val search = compose.onNodeWithTag("personal-library-search")
         search.assertIsDisplayed()
         assertEquals(beforeSearch, requests.size)
+        val field = search.fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            compose
+                .onNodeWithTag("collection-toolbar")
+                .fetchSemanticsNode()
+                .boundsInRoot.bottom <= field.top,
+        )
+        assertTrue(
+            compose
+                .onNodeWithTag("online-shelf")
+                .fetchSemanticsNode()
+                .boundsInRoot.top < field.top,
+        )
 
         search.performTextInput("曲目 35")
         search.performImeAction()
@@ -478,6 +505,17 @@ class OnlineLibraryTest {
         search.performImeAction()
         compose.waitUntil(10000) { visible("红心歌曲 235") }
         compose.onNodeWithContentDescription("最近喜欢的 30 首歌曲封面").assertDoesNotExist()
+        val list = compose.onNodeWithTag("online-tracks")
+        val fieldBounds = search.fetchSemanticsNode().boundsInRoot
+        assertTrue(list.fetchSemanticsNode().boundsInRoot.top < fieldBounds.top)
+        assertTrue(
+            compose
+                .onNodeWithText("红心歌曲 235")
+                .fetchSemanticsNode()
+                .boundsInRoot.top >= fieldBounds.bottom,
+        )
+        list.dragLibraryContentBy(240.dp)
+        assertEquals(fieldBounds, search.fetchSemanticsNode().boundsInRoot)
 
         search.performTextReplacement("歌曲 201")
         search.performImeAction()
@@ -496,6 +534,59 @@ class OnlineLibraryTest {
         compose.onNodeWithContentDescription("最近喜欢的 30 首歌曲封面").assertIsDisplayed()
         compose.onNodeWithText("红心歌曲 235").assertIsDisplayed()
     }
+
+    @Test fun personalSearchBatchesLargePlaylistsAndReusesReadPagesForNewTerms() =
+        runBlocking(Dispatchers.IO) {
+            createdPlaylistIds = (105..304).map(Int::toString)
+            val sources = cloud.library().collections.filter { it.kind == "created" }
+            val session = cloud.likes.value.session
+            requests.clear()
+
+            val cold = cloud.searchPersonalLibrary(sources, "歌曲 304", session, false).last()
+            assertEquals(listOf("304"), cold.tracks.map { it.id })
+            assertEquals(
+                listOf(90, 90, 20),
+                requests.filter { it.first == "v3/song/detail" }.map { JSONArray(it.second.getString("c")).length() },
+            )
+            assertEquals(1, requests.count { it.first == "v6/playlist/detail" })
+            requests.clear()
+
+            val refined = cloud.searchPersonalLibrary(sources, "歌曲 197", session, false).last()
+            assertEquals(listOf("197"), refined.tracks.map { it.id })
+            assertTrue(requests.isEmpty())
+
+            cloud.refreshCatalog()
+            assertEquals(
+                listOf("197"),
+                cloud
+                    .searchPersonalLibrary(sources, "歌曲 197", session, false)
+                    .last()
+                    .tracks
+                    .map { it.id },
+            )
+            assertEquals(1, requests.count { it.first == "v6/playlist/detail" })
+        }
+
+    @Test fun personalSearchShowsOtherSourcesWhileAnAlbumRequestIsWaiting() =
+        runBlocking(Dispatchers.IO) {
+            val sources = cloud.library().collections.filter { it.id == "200" || it.kind == "created" }
+            val gate = java.util.concurrent.CountDownLatch(1)
+            searchAlbumGate = gate
+            val found = CompletableDeferred<Unit>()
+            val search =
+                async {
+                    cloud.searchPersonalLibrary(sources, "歌曲 105", cloud.likes.value.session, false).collect {
+                        if (it.tracks.any { track -> track.id == "105" }) found.complete(Unit)
+                    }
+                }
+            try {
+                withTimeout(5000) { found.await() }
+                assertEquals(1L, gate.count)
+            } finally {
+                gate.countDown()
+            }
+            search.await()
+        }
 
     @Test fun personalSearchKeepsHitsWhenACollectionFailsAndCanRetry() {
         secondAlbumStatus = 500
@@ -579,7 +670,7 @@ class OnlineLibraryTest {
             }
         }
         compose.onNodeWithContentDescription("发现音乐").performClick()
-        compose.onNodeWithText("全局搜索").performClick()
+        compose.onNodeWithText("网络搜索").performClick()
         val search = compose.onNodeWithTag("online-search")
         search.performTextInput("晚风")
         search.performImeAction()
@@ -900,7 +991,7 @@ class OnlineLibraryTest {
         }
         try {
             compose.onNodeWithContentDescription("发现音乐").performClick()
-            compose.onNodeWithText("全局搜索").performClick()
+            compose.onNodeWithText("网络搜索").performClick()
             compose.onNodeWithTag("online-search").performTextInput("晚风")
             compose.onNodeWithTag("online-search").performImeAction()
             compose.waitUntil(10000) { visible("搜索歌曲 301") }
@@ -1259,7 +1350,7 @@ class OnlineLibraryTest {
             }
         }
         compose.onNodeWithContentDescription("发现音乐").performClick()
-        compose.onNodeWithText("全局搜索").assertIsDisplayed()
+        compose.onNodeWithText("网络搜索").assertIsDisplayed()
         compose.onNodeWithText("私人 FM").assertIsDisplayed()
         screenshot("online-discovery", system = true)
         compose.onNodeWithText("每日推荐").performClick()
@@ -1918,7 +2009,7 @@ class OnlineLibraryTest {
                             JSONObject().put(
                                 "trackIds",
                                 JSONArray(
-                                    (if (body.getString("id") == "100") likedIds else listOf("105", "101", "104")).map {
+                                    (if (body.getString("id") == "100") likedIds else createdPlaylistIds).map {
                                         JSONObject().put("id", it)
                                     },
                                 ),

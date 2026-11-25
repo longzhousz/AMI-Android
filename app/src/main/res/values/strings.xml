@@ -14,10 +14,11 @@
     <string name="common_cancel" formatted="false">取消</string>
     <string name="online_library_search" formatted="false">搜索曲库</string>
     <string name="online_favorites_search" formatted="false">搜索我喜欢</string>
-    <string name="online_global_search" formatted="false">全局搜索</string>
+    <string name="online_global_search" formatted="false">网络搜索</string>
     <string name="online_global_search_hint" formatted="false">搜索歌曲、艺人</string>
     <string name="online_library_search_hint" formatted="false">搜索歌曲、专辑、艺人或歌单</string>
     <string name="online_favorites_search_hint" formatted="false">搜索红心歌曲、专辑或艺人</string>
+    <string name="local_library_search_hint" formatted="false">搜索专辑、歌曲、艺人</string>
     <string name="library_search_clear" formatted="false">清空搜索</string>
     <string name="library_search_collapse" formatted="false">收起搜索</string>
     <string name="online_search_songs" formatted="false">歌曲</string>
