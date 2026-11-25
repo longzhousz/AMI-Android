@@ -51,6 +51,32 @@ class NeteaseLyricsTest {
         assertEquals("[00:01.230]Hello world", NeteaseLyrics.decode("{\"t\":1230,\"c\":[{\"tx\":\"Hello \"},{\"tx\":\"world\"}]}").original)
     }
 
+    @Test fun rawCreditOnlyLyricsShowReadableTextWithoutSeekTimes() {
+        val raw =
+            """
+            {"t":-1,"c":[{"tx":"作词: "},{"tx":"词作者","or":"orpheus://nm/artist/home?id=1"}]}
+            { "c": [{"tx":"作曲: 曲作者"}], "t": -1 }
+            {"t":-1,"c":[
+            """.trimIndent()
+        val lines = SongLyrics(raw).lines
+        assertEquals(listOf(LyricLine(null, "作词: 词作者"), LyricLine(null, "作曲: 曲作者")), lines)
+        assertEquals(-1, Lyrics.active(lines, 90_000))
+    }
+
+    @Test fun structuredRowsCanCoexistWithTimedLyricsAndTranslations() {
+        val original =
+            """
+            {"t":-1,"c":[{"tx":"作词: 词作者"}]}
+            [00:01.20]Hello
+            {"t":3000,"c":[{"tx":"World "},{"tx":"again"}]}
+            {Interlude}
+            """.trimIndent()
+        val document = SongLyrics(original, "[00:01.20]你好\n{\"t\":3000,\"c\":[{\"tx\":\"再次相见\"}]}")
+        assertEquals(listOf(1200L, 3000L, null, null), document.lines.map { it.time })
+        assertEquals(listOf("Hello", "World again", "作词: 词作者", "{Interlude}"), document.lines.map { it.text })
+        assertEquals(listOf("你好", "再次相见", "", ""), document.embeddedTranslation)
+    }
+
     @Test fun plainLrcHandlesUtf16AndLegacyChineseEncoding() {
         assertEquals("[00:01]你好", NeteaseLyrics.decode(byteArrayOf(0xFF.toByte(), 0xFE.toByte()) + "[00:01]你好".toByteArray(Charsets.UTF_16LE)).original)
         assertEquals("[00:01]你好", NeteaseLyrics.decode("[00:01]你好".toByteArray(charset("GB18030"))).original)
@@ -60,6 +86,12 @@ class NeteaseLyricsTest {
     @Test fun wordTimedLyricsFallBackToAccurateLineTimestamps() {
         val doc = NeteaseLyrics.decode("[1230,800](1230,400,0)Hello (1630,400,0)world")
         assertEquals(listOf(LyricLine(1230, "Hello world")), Lyrics.parse(doc.original))
+    }
+
+    @Test fun onlineFallbackKeepsNormalLrcFromEitherField() {
+        val lrc = "[00:01.230]Hello"
+        assertEquals(lrc, NeteaseLyrics.playbackOriginal(lrc, "[2300,800](2300,800,0)Different"))
+        assertEquals(lrc, NeteaseLyrics.playbackOriginal("", lrc))
     }
 
     @Test fun invalidOrOversizedCachesDoNotBecomeVisibleLyrics() {

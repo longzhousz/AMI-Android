@@ -159,7 +159,8 @@ internal fun LocalAlbumDetail(
     coverModifier: Modifier = Modifier,
     active: Boolean = true,
 ) {
-    var reorder by remember { mutableStateOf(false) }
+    val canReorder = album.songs.size >= 3
+    var reorder by remember(album.key, canReorder) { mutableStateOf(false) }
     LibraryCollectionDetail(
         album.title,
         album.cover,
@@ -174,9 +175,11 @@ internal fun LocalAlbumDetail(
         trackListModifier = Modifier.testTag("local-album-tracks"),
         active = active,
         actions = {
-            TextButton({ reorder = true }, enabled = active) {
-                Icon(Icons.Rounded.SwapVert, null, Modifier.size(18.dp))
-                Text("曲序")
+            if (canReorder) {
+                TextButton({ reorder = true }, enabled = active) {
+                    Icon(Icons.Rounded.SwapVert, null, Modifier.size(18.dp))
+                    Text("曲序")
+                }
             }
         },
     ) {

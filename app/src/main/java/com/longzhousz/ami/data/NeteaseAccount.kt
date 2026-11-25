@@ -371,9 +371,8 @@ internal class NeteaseAccount(
                             ?.optString("lyric")
                             .orEmpty()
                             .take(500000)
-                            .ifBlank { if (words.isBlank()) "" else runCatching { NeteaseLyrics.decode(words).original }.getOrDefault("") }
                     JSONObject()
-                        .put("original", original)
+                        .put("original", NeteaseLyrics.playbackOriginal(original, words))
                         .put("wordTimed", words)
                         .put(
                             "translated",

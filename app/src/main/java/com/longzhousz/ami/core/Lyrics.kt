@@ -29,6 +29,10 @@ object Lyrics {
             .lineSequence()
             .flatMap { line ->
                 val trimmed = line.trim()
+                if (NeteaseLyrics.isStructuredLine(trimmed)) {
+                    val row = NeteaseLyrics.parseStructuredLine(trimmed)
+                    return@flatMap if (row == null || row.text.isBlank()) emptySequence() else sequenceOf(row.copy(text = row.text.trim()))
+                }
                 val matches = timestamp.findAll(trimmed).toList()
                 val text = timestamp.replace(trimmed, "").trim()
                 when {

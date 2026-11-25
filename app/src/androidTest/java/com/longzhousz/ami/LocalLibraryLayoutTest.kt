@@ -37,6 +37,7 @@ import com.longzhousz.ami.core.Album
 import com.longzhousz.ami.core.LibrarySnapshot
 import com.longzhousz.ami.core.Song
 import com.longzhousz.ami.ui.AmiTheme
+import com.longzhousz.ami.ui.LocalAlbumDetail
 import com.longzhousz.ami.ui.LocalLibraryScreen
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -48,6 +49,40 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class LocalLibraryLayoutTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun trackOrderIsOfferedOnlyWhenTheLocalAlbumHasAtLeastThreeSongs() {
+        val songs = (1..3).map { Song("qa-order-$it", "file:///qa/$it", folder = "qa", title = "歌曲 $it") }
+        var count by mutableIntStateOf(1)
+        compose.setContent {
+            AmiTheme("light") {
+                Surface {
+                    LocalAlbumDetail(
+                        Album("qa-order", "专辑", "艺人", songs.take(count)),
+                        currentId = null,
+                        onBack = {},
+                        onPlay = { _, _ -> },
+                        onFavorite = {},
+                        onRemove = {},
+                        onReorder = {},
+                        bottomInset = 24.dp,
+                    )
+                }
+            }
+        }
+        val order = compose.onNodeWithText("曲序")
+        order.assertDoesNotExist()
+        compose.runOnIdle { count = 2 }
+        order.assertDoesNotExist()
+        compose.runOnIdle { count = 3 }
+        order.assertIsDisplayed().performClick()
+        compose.onNodeWithText("调整曲序").assertIsDisplayed()
+        compose.runOnIdle { count = 2 }
+        order.assertDoesNotExist()
+        compose.onNodeWithText("调整曲序").assertDoesNotExist()
+        compose.runOnIdle { count = 3 }
+        order.assertIsDisplayed()
+        compose.onNodeWithText("调整曲序").assertDoesNotExist()
+    }
 
     @Test fun albumBrowsingHidesTheToolbarAndRestoresItAtTheSameCardOnReturn() {
         val library = LibrarySnapshot((10..49).map { Song("qa-immersion-$it", "file:///qa/$it", folder = "qa", title = "歌曲 $it", album = "专辑 $it") })

@@ -82,6 +82,8 @@ class OnlineLibraryTest {
 
     @Volatile private var lyricStatus = 200
 
+    @Volatile private var lyricV1Response: JSONObject? = null
+
     @Volatile private var clientAudioCode = 200
 
     @Volatile private var desktopAudioCode = 403
@@ -1212,6 +1214,22 @@ class OnlineLibraryTest {
             }
         }
 
+    @Test fun creditOnlyOrdinaryLyricsFallBackToTheActualWordTimedLyrics() =
+        runBlocking(Dispatchers.IO) {
+            val song = cloud.discovery("daily").first().song()
+            lyricV1Response =
+                JSONObject()
+                    .put("lrc", JSONObject().put("lyric", """{"t":-1,"c":[{"tx":"作词: 词作者"}]}"""))
+                    .put("yrc", JSONObject().put("lyric", "[1200,2000](1200,1000,0)风 (2200,1000,0)来了"))
+                    .put("tlyric", JSONObject().put("lyric", "[00:01.200]The wind arrived"))
+            val document = cloud.lyrics(song)
+            val line = document.lines.single()
+            assertEquals("风 来了", line.text)
+            assertEquals(1200L, line.time)
+            assertEquals(listOf(1200L, 2200L), line.words.map { it.start })
+            assertEquals(listOf("The wind arrived"), document.embeddedTranslation)
+        }
+
     @Test fun wordEndpointFailureKeepsOrdinaryLyricsButDoesNotHideExpiredLogin() =
         runBlocking(Dispatchers.IO) {
             val songs = cloud.discovery("daily")
@@ -1949,7 +1967,7 @@ class OnlineLibraryTest {
                     }
 
                     "song/lyric/v1" -> {
-                        JSONObject()
+                        lyricV1Response ?: JSONObject()
                             .put("lrc", JSONObject().put("lyric", "[00:00]歌词 ${body.getString("id")}"))
                             .put("yrc", JSONObject().put("lyric", "[0,2000](0,1000,0)歌词 (1000,1000,0)${body.getString("id")}"))
                     }

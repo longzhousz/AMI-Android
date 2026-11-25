@@ -294,11 +294,14 @@ class LyricsPresentationTest {
     }
 
     @Test fun untimedLyricsStayReadableWithoutFalseHighlightOrSeek() {
-        val plain = song.copy(lyrics = "这是一段没有时间轴的歌词\n可以从容地阅读\n也可以随意向下翻阅")
+        val credit = """{"t":-1,"c":[{"tx":"作词: "},{"tx":"词作者"}]}"""
+        val plain = song.copy(lyrics = "$credit\n这是一段没有时间轴的歌词\n可以从容地阅读")
         compose.setContent {
             AmiTheme("light") { PlayerContent(plain, PlaybackState(), null, false, PlayerActions(), lyricsPage = remember { mutableStateOf(true) }) }
         }
         compose.onNodeWithTag("lyric-0").assertIsNotSelected().assertIsNotEnabled()
+        compose.onNodeWithText("作词: 词作者").assertIsDisplayed()
+        compose.onNodeWithText(credit).assertDoesNotExist()
         compose.onNodeWithText("暂无时间轴 · 可自由滚动阅读").assertIsDisplayed()
         screenshot("lyrics-untimed")
     }
