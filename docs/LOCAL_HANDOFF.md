@@ -21,4 +21,10 @@
 
 本地专辑至少有三首歌才显示「曲序」。网易云作词和作曲署名显示为文字，普通歌词只有无时间轴的署名时优先使用可用的逐字歌词。
 
+格式、静态分析、143 项 JVM 单测、Lint、Debug 和 MusicPreview 构建通过。14 项 Android 36 模拟器回归覆盖歌词、曲序与相关流程。网易云使用接口夹具。优化包从 0.4.2 同签名覆盖安装并启动。
+
+安装包大小为 5737334 bytes。SHA-256 为 01a7a83e26795bed6b4c101871b8f63409a10ebc98dabeb0fb7915f7077be0d6。APK 构建自 c049caf。
+
+发布证书 SHA-256 为 238e0c33d7deebc6dd873ae8f0e844cf626b873f2ddf2ea8900d4916e2dd6f39。下载入口为 [GitHub 最新发布](https://github.com/longzhousz/AMI-Android/releases/latest)。
+
 此前验证记录保留在 Git 历史中。原始数据和签名兼容规则见 [本地开发](LOCAL_DEVELOPMENT.md)。
