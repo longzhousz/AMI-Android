@@ -23,4 +23,10 @@
 
 本地与网易云个人搜索共用悬浮玻璃搜索框和展开动效。网易云个人曲库搜索优先匹配已读曲目，并行读取缺少的来源。歌曲详情最多每批 90 首。
 
+格式、静态分析、143 项 JVM 单测、Lint、Debug 和 MusicPreview 构建通过。19 项 Android 36 模拟器回归覆盖搜索悬浮、分页、缓存复用、失败重试、账号隔离和曲库回归。网易云使用接口夹具。200 首歌的歌单读取使用三次歌曲详情请求，缓存有效期间更换关键词无新增请求。优化包从 0.4.3 同签名覆盖安装并启动。
+
+安装包大小为 5754154 bytes。SHA-256 为 0f695ad54e7c0a0c0eac3155dfe68af1daa5755f27db60bca9b4440a9d5faeb2。APK 构建自 db3e9bc。
+
+发布证书 SHA-256 为 238e0c33d7deebc6dd873ae8f0e844cf626b873f2ddf2ea8900d4916e2dd6f39。下载入口为 [GitHub 最新发布](https://github.com/longzhousz/AMI-Android/releases/latest)。
+
 此前验证记录保留在 Git 历史中。原始数据和签名兼容规则见 [本地开发](LOCAL_DEVELOPMENT.md)。
