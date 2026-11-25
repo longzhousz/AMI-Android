@@ -1,6 +1,6 @@
 # AMI 当前交接
 
-当前版本 **0.4.3 / versionCode 51**，最低 Android 13，包名为 `com.longzhousz.ami.musicpreview`。
+当前版本 **0.4.4 / versionCode 52**，最低 Android 13，包名为 `com.longzhousz.ami.musicpreview`。
 
 - 未登录时可在首页登录网易云或导入本地音乐；导入后可在曲库切换本地与网易云。
 - 本地曲库支持专辑和歌曲视图、搜索、收藏与曲序；专辑保留封面转场和透明状态栏体验。本地右上角不再放菜单，最近导入和随机播放入口已移除。
@@ -21,10 +21,6 @@
 
 本地专辑至少有三首歌才显示「曲序」。网易云作词和作曲署名显示为文字，普通歌词只有无时间轴的署名时优先使用可用的逐字歌词。
 
-格式、静态分析、143 项 JVM 单测、Lint、Debug 和 MusicPreview 构建通过。14 项 Android 36 模拟器回归覆盖歌词、曲序与相关流程。网易云使用接口夹具。优化包从 0.4.2 同签名覆盖安装并启动。
-
-安装包大小为 5737334 bytes。SHA-256 为 01a7a83e26795bed6b4c101871b8f63409a10ebc98dabeb0fb7915f7077be0d6。APK 构建自 c049caf。
-
-发布证书 SHA-256 为 238e0c33d7deebc6dd873ae8f0e844cf626b873f2ddf2ea8900d4916e2dd6f39。下载入口为 [GitHub 最新发布](https://github.com/longzhousz/AMI-Android/releases/latest)。
+本地与网易云个人搜索共用悬浮玻璃搜索框和展开动效。网易云个人曲库搜索优先匹配已读曲目，并行读取缺少的来源。歌曲详情最多每批 90 首。
 
 此前验证记录保留在 Git 历史中。原始数据和签名兼容规则见 [本地开发](LOCAL_DEVELOPMENT.md)。
